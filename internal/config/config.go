@@ -1,15 +1,19 @@
 // Package config load, merge and validate statusline.toml.
 //
-// Format hybrid on purpose: a line is one ordered list of segment names, and a
-// segment may carry a template controlling its text down to each character.
-// Names alone cover common edits -- reorder, drop, two on one row -- with no
-// templating language to learn. Template wait for whoever want it.
+// Format hybrid on purpose: line is ordered list of segment names, and segment
+// may carry template controlling its text down to each character. Names alone
+// cover common edits -- reorder, drop, two on one row -- with no templating
+// language to learn.
 package config
 
 type Config struct {
 	Defaults Defaults            `toml:"defaults"`
 	Lines    []Line              `toml:"lines"`
 	Segments map[string]*Segment `toml:"segments"`
+
+	// Keys TOML decode dropped, located at parse while their file still known.
+	// Typo discard its setting in silence otherwise.
+	unknown []*Error
 }
 
 // Defaults apply to every segment that override nothing.
@@ -23,9 +27,8 @@ type Defaults struct {
 
 // Line is one rendered row.
 //
-// No segments = deliberate blank row; reference layout split header from rate
-// limit bars that way. All segments empty = row dropped, so absent value leave
-// no bare separator. Two distinct cases, so no explicit "blank" flag.
+// No segments = deliberate blank row. All segments empty = row dropped, so
+// absent value leave no bare separator. Two distinct cases, so no blank flag.
 type Line struct {
 	Segments  []string `toml:"segments"`
 	Separator *string  `toml:"separator"`
@@ -34,7 +37,7 @@ type Line struct {
 func (l Line) Blank() bool { return len(l.Segments) == 0 }
 
 // Segment configure one instance. Every field optional; nil = inherit, which is
-// what make per-key merging of a project override work.
+// what make per-key merging of project override work.
 type Segment struct {
 	// Implementation name. Empty = segment's own key, so most segments need no
 	// [segments.NAME] block at all.
@@ -59,7 +62,7 @@ type Segment struct {
 	CacheMS *int `toml:"cache_ms"`
 }
 
-// Kind name implementation, falling back to declaring key.
+// Kind name implementation. Nil receiver = segment with no block of its own.
 func (s *Segment) Kind(name string) string {
 	if s != nil && s.Type != nil && *s.Type != "" {
 		return *s.Type
@@ -74,7 +77,12 @@ const (
 	DefaultWarn      = 50
 	DefaultHigh      = 70
 	DefaultCrit      = 90
+	DefaultScope     = "session"
+	DefaultTimeoutMS = 1000
 )
+
+// ScopeProject count across whole project, not one session.
+const ScopeProject = "project"
 
 // Resolved collapse defaults and overrides into concrete values, so renderers
 // chase no nil pointers.
@@ -106,34 +114,29 @@ func (c *Config) Separator(l Line) string {
 
 // Resolve produce effective settings for one segment name.
 //
-// defaultTemplate come from implementation, so reordering a line inherit
-// sensible text with no template written.
+// defaultTemplate come from implementation, so reordering line inherit sensible
+// text with no template written.
 func (c *Config) Resolve(name, defaultTemplate string) Resolved {
 	s := c.Segments[name]
+	if s == nil {
+		s = &Segment{}
+	}
 
 	r := Resolved{
 		Kind:      s.Kind(name),
 		Name:      name,
 		Template:  defaultTemplate,
-		Warn:      pick(nil, c.Defaults.Warn, DefaultWarn),
-		High:      pick(nil, c.Defaults.High, DefaultHigh),
-		Crit:      pick(nil, c.Defaults.Crit, DefaultCrit),
-		BarWidth:  pick(nil, c.Defaults.BarWidth, DefaultBarWidth),
-		Scope:     "session",
-		TimeoutMS: 1000,
-	}
-	if s == nil {
-		return r
+		Warn:      pick(s.Warn, c.Defaults.Warn, DefaultWarn),
+		High:      pick(s.High, c.Defaults.High, DefaultHigh),
+		Crit:      pick(s.Crit, c.Defaults.Crit, DefaultCrit),
+		BarWidth:  pick(s.BarWidth, c.Defaults.BarWidth, DefaultBarWidth),
+		Scope:     DefaultScope,
+		TimeoutMS: DefaultTimeoutMS,
 	}
 
 	if s.Template != nil {
 		r.Template = *s.Template
 	}
-	r.Warn = pick(s.Warn, c.Defaults.Warn, DefaultWarn)
-	r.High = pick(s.High, c.Defaults.High, DefaultHigh)
-	r.Crit = pick(s.Crit, c.Defaults.Crit, DefaultCrit)
-	r.BarWidth = pick(s.BarWidth, c.Defaults.BarWidth, DefaultBarWidth)
-
 	if s.Scope != nil {
 		r.Scope = *s.Scope
 	}
@@ -152,7 +155,6 @@ func (c *Config) Resolve(name, defaultTemplate string) Resolved {
 	return r
 }
 
-// First non-nil of segment then global, else builtin.
 func pick(segment, global *int, builtin int) int {
 	if segment != nil {
 		return *segment
