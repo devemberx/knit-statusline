@@ -69,6 +69,14 @@ linters:
           - errchkjson
           - gosec
 
+      # G304 file-inclusion taint and G301 dir mode: transcript path arrive from
+      # Claude Code stdin, cache dir sit under $HOME/.claude at conventional
+      # 0o755. Reading transcripts is what this package do.
+      - path: internal/transcript/
+        text: G304|G301
+        linters:
+          - gosec
+
       # Shadowing err and ok is Go house style, not a defect.
       - text: '^shadow: declaration of "(err|ok)" shadows declaration'
         linters:
