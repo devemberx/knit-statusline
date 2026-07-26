@@ -39,12 +39,13 @@ That is the `reference` preset, and it produces:
 Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
-weekly  ●○○○○○○○○○  18% ⟳ jul 27, 5:00pm
+weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm
 ```
 
 A blank row between content is kept. A row whose segments all turn out empty is
 dropped, along with its separators — so a value that does not exist never leaves
-`│ │` behind. Blank rows at the very top or bottom are trimmed too.
+`│ │` behind. Blank rows at the very top or bottom are trimmed, and a run of
+consecutive blank rows collapses to one.
 
 ---
 
@@ -75,7 +76,8 @@ scope = "session"          # or "project"
 
 These are not the same numbers Claude Code reports on stdin. Those describe what
 is currently in the context window; these are read from the transcript and are
-cumulative for the session, deduplicated on message id.
+cumulative for the session. The transcript is scanned incrementally, and the last
+counted message id is remembered, so a re-scan does not count a message twice.
 
 `{io}` and `{cache}` are preformatted groups — fresh traffic in white, cache
 traffic in cyan, each with its own label and arrows. A session that touched no
@@ -96,9 +98,12 @@ cache_ms = 5000
 timeout_ms = 1000
 ```
 
-The command runs through `sh -c` in the session's working directory. Only its
-first line is used. A command that fails or times out drops its own segment and
-leaves the rest of the row intact.
+The command runs in the session's working directory, through `sh -c` — `cmd /c`
+on Windows. Only its first line is used. A command that fails or times out drops
+its own segment and leaves the rest of the row intact.
+
+`cache_ms` reuses the previous output for that long, which is what keeps a slow
+command off the render path. It applies to `command` segments only.
 
 ### Change a threshold or a bar
 
@@ -121,13 +126,19 @@ A segment's `template` is its text, with `{field}` placeholders:
 
 ```toml
 [segments."limit.5h"]
-template = "current {bar} {pct:>3}% ⟳ {reset}"
+template = "current {bar} {pct:>3}%{reset}"
 ```
 
 `{pct:>3}` right-aligns to width 3; `{pct:<3}` left-aligns; a bare `{pct:3}`
 right-aligns. Width is counted in visible characters, so colored values and bars
 line up the way they look. Nothing is ever truncated — a clipped number is a
 wrong number.
+
+Some fields are preformatted and carry their own punctuation: `{reset}` above
+already begins with ` ⟳ `, and `{git}` is a whole ` (branch*)`. That is what lets
+them vanish cleanly when the value is absent, instead of leaving a stray `⟳ ` or
+`()` behind. Write the pieces yourself — `⟳ {reset_time}`, `({branch})` — only if
+you accept that orphan.
 
 Every segment has a default template, so a row that only reorders names needs no
 `[segments.*]` blocks at all. `doctor` lists the fields each segment offers, and
@@ -169,6 +180,11 @@ Merge rules:
 - **`[segments.*]` merges key by key.** You can change one field of one segment
   without restating a layout.
 - **`[defaults]` merges key by key.**
+- **`command` is dropped from a project file.** A project config is repository
+  content, so honouring it would mean cloning a repository and opening it runs
+  whatever that file says, on the first render and with no prompt. The trust
+  boundary sits at `$HOME`: the key is ignored, `doctor` reports each one, and
+  every other setting in the file still applies.
 
 So this project file changes only the threshold, keeping the global layout:
 
@@ -222,17 +238,22 @@ exact digits.
 | --- | --- | --- | --- |
 | `template` | any | The text, with `{field}` placeholders | the segment's own |
 | `type` | any | The implementation, when it differs from the key name — how `command` segments are declared | the key name |
-| `warn` `high` `crit` | anything with a percentage | Color thresholds, 0–100 | `50` `70` `90` |
+| `warn` `high` `crit` | anything with a percentage | Color thresholds, 0–100, in that order | `50` `70` `90` |
 | `bar_width` | `context`, `limit.*` | Bar width in characters | `10` |
 | `scope` | `tokens` | `"session"` or `"project"` | `"session"` |
 | `include_sidechain` | `tokens` | Count subagent transcripts too | `false` |
 | `command` | `type = "command"` | What to run | — |
 | `timeout_ms` | `type = "command"` | How long to wait | `1000` |
-| `cache_ms` | anything that shells out | Reuse the previous output for this long | `0` |
+| `cache_ms` | `type = "command"` | Reuse the previous output for this long | `0` |
 
 Set fallbacks for `separator`, `bar_width`, `warn`, `high` and `crit` under
 `[defaults]`. A per-line `separator` overrides the default for that row; the
 built-in separator is `" │ "`.
+
+`warn` must not exceed `high`, nor `high` exceed `crit`, and the check runs
+against effective values — set `warn = 95` alone and it is compared against the
+`high` you inherited, so `doctor` reports it rather than painting a row that
+never leaves red.
 
 ---
 
@@ -254,7 +275,7 @@ entirely.
 | `~/.claude/statusline.toml` | Your configuration |
 | `<project>/.claude/statusline.toml` | Per-project override |
 | `~/.claude/settings.json` | Where the `statusLine` key points at the binary |
-| `~/.claude/settings.json.bak` | Backup taken before any install or uninstall |
+| `~/.claude/settings.json.bak` | Backup of your pre-install settings, written once and never overwritten |
 | `~/.claude/knit-statusline` | The installed binary |
 | `~/.claude/statusline-cache/` | Transcript cursors and command output caches |
 
