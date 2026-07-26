@@ -14,8 +14,8 @@ release is *one* annotated tag — no bump commit, nothing to push to `main`.
 
 **Nothing publishes without a human approval.** `publish.yml` runs in the `release`
 GitHub environment. A tag push starts the run, then it waits for a required reviewer.
-There is no npm token anywhere: the workflow authenticates over OIDC against a trusted
-publisher configured per package on npmjs.com.
+No npm credential exists in the repository or its secrets: the workflow authenticates over
+OIDC against a trusted publisher configured per package on npmjs.com.
 
 ## Step 1 — Pre-flight checks (abort on any failure)
 
@@ -69,22 +69,26 @@ npm trust list @devemberx/knit-statusline          # and the five platform packa
 
 The six are `@devemberx/knit-statusline` plus `@devemberx/knit-statusline-<target>` for
 `darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64` and `win32-x64`. Each must point at
-repository `devemberx/knit-statusline`, workflow `publish.yml`, environment `release`.
+repository `devemberx/knit-statusline`, workflow file `publish.yml`, environment `release`.
 
 Unconfigured → stop, and give the user the bootstrap procedure:
 
 ```bash
 npm install -g npm@12                # npm trust needs 11.15.0+
-npm login                            # web auth + 2FA, no token created
+npm login                            # web auth + 2FA; stores a local token in ~/.npmrc
 for dir in npm/platforms/*/ npm/knit-statusline; do
-  npm publish "./$dir" --access public --tag bootstrap
+  npm publish "./${dir%/}" --access public --tag bootstrap
 done
 npm trust github <pkg> --repository devemberx/knit-statusline \
-  --workflow publish.yml --environment release --allow-publish --yes
+  --file publish.yml --environment release --allow-publish --yes
+npm logout                           # local token is not needed again
 ```
 
+The workflow flag is `--file`, not `--workflow`.
+
 `--tag bootstrap` keeps the placeholder off `latest`, so the first real release claims it.
-Leave two seconds between `npm trust` calls; the endpoint rate-limits.
+Leave two seconds between `npm trust` calls; the endpoint rate-limits, and the whole loop has
+to finish inside the five-minute window `npm login` opens before 2FA is asked again.
 
 Skip the bootstrap and GoReleaser still cuts the GitHub Release, then every `npm publish` fails
 on auth — a released tag with no packages behind it.
