@@ -20,14 +20,19 @@ separator = "  "
 segments = ["tokens", "lines", "cost"]
 
 [segments."limit.5h"]
-template = "current {bar} {pct:>3}% ⟳ {reset}"
+template = "current {bar} {pct:>3}%{reset}"
 
 [segments."limit.7d"]
-template = "weekly {bar} {pct:>3}% ⟳ {reset}"
+template = "weekly {bar} {pct:>3}%{reset}"
 
 # Fresh input and cache traffic are kept apart on purpose. Cache reads run an
 # order of magnitude larger than fresh input and are priced differently, so a
 # single combined "input" number would badly misrepresent a session.
+#
+# {io} and {cache} carry their own label, arrows and colour -- white for fresh
+# traffic, cyan for cache. A session that touched no cache drops {cache} and the
+# gap before it. To lay the numbers out yourself: {input} {output} {cache_write}
+# {cache_read} {total} {cache_hit} {input_raw} {output_raw}.
 [segments.tokens]
-template = "↑{input} ↓{output}  cache ↑{cache_write} ↓{cache_read}"
+template = "{io}{cache}"
 scope = "session"

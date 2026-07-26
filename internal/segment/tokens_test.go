@@ -4,10 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
+	"github.com/devemberx/knit-statusline/internal/render"
+	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
 // assistantLine mirror what Claude Code write: one JSONL line per content block,
@@ -82,6 +85,59 @@ func TestBuildTokensRendersAbbreviatedCounts(t *testing.T) {
 		if got := res.Fields[tc.field].Text; got != tc.want {
 			t.Errorf("{%s} = %q, want %q", tc.field, got, tc.want)
 		}
+	}
+}
+
+// Default row carry both sets, not io alone.
+func TestBuildTokensDefaultTemplateShowsBothGroups(t *testing.T) {
+	c := tokensCtx(t, assistantLine("msg_a", 62_093, 1_200_000, 32_400_000, 231_000))
+
+	if got := draw(c); got != "↑62.1k ↓231k  cache ↑1.2M ↓32.4M" {
+		t.Errorf("rendered %q", got)
+	}
+}
+
+// Session touching no cache drop whole group, its separator included.
+func TestBuildTokensCacheGroupVanishesWithoutCacheTraffic(t *testing.T) {
+	c := tokensCtx(t, assistantLine("msg_a", 100, 0, 0, 400))
+
+	if got := draw(c); got != "↑100 ↓400" {
+		t.Errorf("rendered %q, want no cache group and no trailing gap", got)
+	}
+}
+
+// Two groups differ in color, so eye split them before reading labels.
+func TestBuildTokensGroupsCarryDistinctColour(t *testing.T) {
+	c := tokensCtx(t, assistantLine("msg_a", 62_093, 1_200_000, 32_400_000, 231_000))
+	c.Palette = render.NewPalette()
+	t.Setenv("NO_COLOR", "")
+
+	res := Build(c)
+	io, cache := res.Fields["io"].Text, res.Fields["cache"].Text
+	if !strings.Contains(io, string(render.White)) {
+		t.Errorf("io group carry no white: %q", io)
+	}
+	if !strings.Contains(cache, string(render.Cyan)) {
+		t.Errorf("cache group carry no cyan: %q", cache)
+	}
+	if strings.Contains(io, string(render.Cyan)) {
+		t.Errorf("io group borrowed cache colour: %q", io)
+	}
+}
+
+func TestBuildTokensReportsCacheHitRate(t *testing.T) {
+	// 100 fresh + 200 written + 700 read = 1000 in, 700 of it cached.
+	c := tokensCtx(t, assistantLine("msg_a", 100, 200, 700, 50))
+
+	if got := Build(c).Fields["cache_hit"].Text; got != "70" {
+		t.Errorf("{cache_hit} = %q, want 70", got)
+	}
+}
+
+// Dividing by zero input yield NaN, which only pct's own guard hide.
+func TestCacheHitWithoutInput(t *testing.T) {
+	if got := cacheHit(transcript.Totals{Output: 400}); got != 0 {
+		t.Errorf("cacheHit with no input = %v, want 0", got)
 	}
 }
 
