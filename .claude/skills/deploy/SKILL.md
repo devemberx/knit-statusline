@@ -79,7 +79,7 @@ Unconfigured → stop, and give the user the bootstrap procedure. `npm trust` at
 publisher to one package, so it runs once per package — six times:
 
 ```bash
-npm install -g npm@12                # npm trust need 11.15.0+
+npm install -g npm@11                # npm trust need 11.15.0+; 11.18 run on node 22.9+
 npm login                            # web auth + 2FA, token into ~/.npmrc
 for dir in npm/platforms/*/ npm/knit-statusline; do
   npm publish "./${dir%/}" --access public --tag bootstrap
@@ -94,6 +94,11 @@ npm logout                           # local token dead weight, release run over
 ```
 
 The workflow flag is `--file`, not `--workflow`.
+
+`npm@11` not `npm@12` on purpose. Both carry `npm trust`, but npm 12 demands node
+`^22.22.2 || ^24.15.0 || >=26.0.0` and fails `EBADENGINE` on an earlier node — a node upgrade
+the operator does not need for a one-off bootstrap. `publish.yml` runs npm 12 because
+`setup-node` gives it the latest 24.x.
 
 The whole loop has to finish inside the five-minute window `npm login` opens before 2FA is asked
 again.

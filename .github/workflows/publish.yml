@@ -67,6 +67,8 @@ jobs:
 
       # Trusted publishing need npm >= 11.5.1.
       # Major pinned: unpinned upgrade put every release at mercy of newest npm.
+      # npm 12 need node ^22.22.2 || ^24.15.0 || >=26, so node-version above
+      # never drop to an earlier 24.x -- EBADENGINE here kill the release.
       - run: npm install -g npm@12
 
       - name: build and publish GitHub release
