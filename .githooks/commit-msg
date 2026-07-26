@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Commit-message rules from .github/CONTRIBUTING.md:
+#   - subject `type(scope)!: summary`, <= 50 chars
+#   - body exactly 2 bullets, each <= 120 chars
+# Types duplicated in .github/workflows/label-pr.yml, which check a PR title —
+# squash turn that title into this subject. Edit both.
+# Enable locally: git config core.hooksPath .githooks
+
+set -e
+
+msg_file="$1"
+first_line=$(head -n 1 "$msg_file")
+
+case "$first_line" in
+    "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"amend! "*) exit 0 ;;
+esac
+
+types='feat|fix|docs|refactor|perf|test|ci|chore'
+
+clean=$(grep -v '^#' "$msg_file" | sed -e 's/[[:space:]]*$//')
+
+subject=$(printf '%s\n' "$clean" | awk 'NF { print; exit }')
+subject_len=${#subject}
+if [ "$subject_len" -gt 50 ]; then
+    printf 'commit-msg: subject is %d chars (limit: 50)\n  %s\n' \
+        "$subject_len" "$subject" >&2
+    exit 1
+fi
+
+# Scope free-form: allowlist need edit per package rename, and label-pr.yml
+# validate type only — allowlist here diverge silent. Squash drop local scope.
+if ! printf '%s' "$subject" | grep -qE "^($types)(\([a-z][a-z0-9-]*\))?!?: [a-z]"; then
+    printf 'commit-msg: subject must be "type(scope): summary"\n  %s\n' "$subject" >&2
+    printf '  types: %s\n' "$types" >&2
+    printf '  scope: optional, lowercase kebab\n' >&2
+    exit 1
+fi
+
+case "$subject" in
+    *.) printf 'commit-msg: subject must not end with a period\n  %s\n' "$subject" >&2; exit 1 ;;
+esac
+
+bullets=$(printf '%s\n' "$clean" | awk '
+    subject_seen && /^- / { print }
+    NF && !subject_seen { subject_seen = 1 }
+')
+
+bullet_count=0
+if [ -n "$bullets" ]; then
+    bullet_count=$(printf '%s\n' "$bullets" | grep -c '^- ' || true)
+fi
+
+if [ "$bullet_count" -ne 2 ]; then
+    printf 'commit-msg: body must contain exactly 2 bullets (- ...), found %d\n' \
+        "$bullet_count" >&2
+    printf '  first bullet says why the change is needed, second says what changed\n' >&2
+    exit 1
+fi
+
+while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    line_len=${#line}
+    if [ "$line_len" -gt 120 ]; then
+        printf 'commit-msg: bullet is %d chars (limit: 120)\n  %s\n' \
+            "$line_len" "$line" >&2
+        exit 1
+    fi
+done <<< "$bullets"
+
+exit 0
