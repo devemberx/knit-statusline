@@ -1,0 +1,66 @@
+{
+  "cwd": "/home/dev/project/acme",
+  "session_id": "abc123de-4567-890f-abcd-ef1234567890",
+  "session_name": "refactor-auth",
+  "prompt_id": "550e8400-e29b-41d4-a716-446655440000",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-project-acme/abc123de.jsonl",
+  "model": {
+    "id": "claude-opus-4-8",
+    "display_name": "Opus"
+  },
+  "workspace": {
+    "current_dir": "/home/dev/project/acme",
+    "project_dir": "/home/dev/project/acme",
+    "added_dirs": [],
+    "repo": {
+      "host": "github.com",
+      "owner": "acme",
+      "name": "acme"
+    }
+  },
+  "version": "2.1.211",
+  "output_style": {
+    "name": "default"
+  },
+  "cost": {
+    "total_cost_usd": 1.2345,
+    "total_duration_ms": 4512000,
+    "total_api_duration_ms": 233000,
+    "total_lines_added": 156,
+    "total_lines_removed": 23
+  },
+  "context_window": {
+    "total_input_tokens": 84200,
+    "total_output_tokens": 1200,
+    "context_window_size": 200000,
+    "used_percentage": 42,
+    "remaining_percentage": 58,
+    "current_usage": {
+      "input_tokens": 8500,
+      "output_tokens": 1200,
+      "cache_creation_input_tokens": 5000,
+      "cache_read_input_tokens": 70700
+    }
+  },
+  "exceeds_200k_tokens": false,
+  "fast_mode": false,
+  "effort": {
+    "level": "high"
+  },
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 42.4,
+      "resets_at": 1753257600
+    },
+    "seven_day": {
+      "used_percentage": 18.2,
+      "resets_at": 1753603200
+    }
+  },
+  "vim": {
+    "mode": "NORMAL"
+  }
+}

@@ -1,7 +1,8 @@
 # CLAUDE.md
 
-Status line for Claude Code. Migration in progress — `LICENSE`, `.githooks/`,
-`.github/` and `.claude/hooks/` here so far; the rest move over from
+Status line for Claude Code. Migration in progress — the harness (`LICENSE`,
+`.githooks/`, `.github/`, `.claude/hooks/`), the CI pipeline, and
+`internal/schema` + `internal/fixtures` here so far; the rest move over from
 `bare-statusline`.
 
 Contribution rules — branch names, commit format, PR and merge — live in

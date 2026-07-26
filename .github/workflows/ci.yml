@@ -1,0 +1,158 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# PR push supersede its own stale run. main push never cancel: release tags get
+# cut from those commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # go.mod toolchain line newer than setup-go's install make go fetch a third
+  # version and test that one -- the pin prove nothing. local fail loudly.
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Real runners, not cross-compilation: path handling, file modes and
+        # terminal behaviour diverge per OS. Program live in $HOME/.claude on all three.
+        include:
+          - {os: ubuntu-latest, race: "-race"}
+          - {os: macos-latest, race: "-race"}
+          # Race detector need a C toolchain on Windows, catch nothing OS-specific.
+          - {os: windows-latest, race: ""}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          # No external module yet, so no go.sum, and setup-go fail outright
+          # when cache is on and the file missing. Flip on with the first require.
+          cache: false
+
+      - run: go test ${{ matrix.race }} ./...
+
+      # Rendered times use the viewer's local zone, so an assertion written
+      # against one zone pass only there. bash: windows runner default to pwsh,
+      # where VAR=x cmd is a syntax error.
+      - name: tests under a second timezone
+        shell: bash
+        run: TZ=Asia/Seoul go test -count=1 ./...
+
+      # Binary-level checks -- hostile stdin, install/uninstall round trip, npm
+      # launcher parse -- land with cmd/statusline and npm/.
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # gofmt and go vet run from in here. .golangci.yml hold the full set.
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
+      # Hand-added require, or an orphaned one, show as a dirty tree here rather
+      # than a mystery build failure later.
+      - name: go.mod stays tidy
+        run: |
+          go mod tidy
+          test -z "$(git status --porcelain --untracked-files=all)" || {
+            echo "go mod tidy changed the tree:"; git status --short; exit 1; }
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mirror the release targets. A tag push is the wrong moment to learn
+        # darwin or windows stopped compiling.
+        include:
+          - {goos: linux, goarch: amd64}
+          - {goos: linux, goarch: arm64}
+          - {goos: darwin, goarch: amd64}
+          - {goos: darwin, goarch: arm64}
+          - {goos: windows, goarch: amd64}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # vet per GOOS: build-tag guarded code compile nowhere else. ./... not the
+      # command path -- no main package yet.
+      - name: cross build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build ./...
+          go vet ./...
+
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      # Reachability based: a CVE in a required but never called module not fail
+      # the build. Database fetched fresh each run, so the pinned tool still see
+      # today's advisories.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+      # zizmor.yml relax the hash-pin rule alone. advanced-security off keep this
+      # job on contents: read -- findings land as PR annotations, not security tab.
+      - uses: zizmorcore/zizmor-action@v0.6.1
+        with:
+          advanced-security: false
+          annotations: true
+          persona: pedantic
+          min-severity: medium
+          min-confidence: medium
+
+  # Single required check for branch protection. Jobs and matrix entries change
+  # without editing repository settings. skipped count as failure: an `if:` or
+  # paths-ignore added to a job else turn the required check green with nothing run.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: always()
+    needs: [test, lint, build, scan]
+    steps:
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+        run: exit 1
+      - run: echo "ci green"

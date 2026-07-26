@@ -7,10 +7,10 @@ This guide walks the contributor's path: **pick something to work on → set up 
 the change → open a pull request.** Comment style and the rules for the code itself
 live in [CLAUDE.md](../CLAUDE.md).
 
-> **Migration in progress.** The program itself has not landed yet — it moves over
-> from `bare-statusline` piece by piece. What is here today is the harness:
-> `LICENSE`, `.githooks/`, this guide, the pull request template, and the Claude Code
-> hooks. So the useful contributions right now are harness and docs, not features.
+> **Migration in progress.** The program moves over from `bare-statusline` piece by
+> piece. Landed so far: the harness (`LICENSE`, `.githooks/`, this guide, the pull
+> request template, the Claude Code hooks), the CI pipeline, and `internal/schema`
+> with `internal/fixtures`. There is no command yet, so nothing runs end to end.
 
 ---
 
@@ -34,8 +34,9 @@ GitHub's security advisory form, **not** a public issue.
 
 ### Prerequisites
 
-- `git`. Nothing else yet — there is no source tree, no test suite and no CI to run.
-  Go and the build commands arrive with the code.
+- `git` and **Go 1.26** — the version in `go.mod`, which is where CI reads it from
+  too. `go test ./...` is the whole suite for now; there is no binary to build until
+  `cmd/statusline` lands.
 
 ### Get the code
 
@@ -125,8 +126,15 @@ type(scope)!: summary       ← imperative, lowercase, no period, ≤50 chars
 - **No real paths or session content.** Transcripts hold conversation text; never
   commit one as a fixture, and scrub paths out of pasted output.
 
-There is no CI yet, so nothing verifies a PR automatically. Say in **Testing** how you
-checked the change by hand.
+CI runs on every PR: the test suite on Linux, macOS and Windows runners, the same
+tests again under `TZ=Asia/Seoul`, `golangci-lint`, a `go mod tidy` drift check, a
+five-target cross-compile matrix, `govulncheck`, and a `zizmor` audit of the
+workflows. The `gate` job aggregates them into one required check. Say in **Testing**
+what you checked beyond that.
+
+Release-note labels are stamped from the PR title, and re-stamped every time the title
+is edited — so do not apply `feature`, `bug`, `breaking` or the rest by hand; the next
+edit drops them. `skip-changelog` is never touched, apply that one manually.
 
 ### Review and merge
 

@@ -1,0 +1,83 @@
+version: "2"
+
+# run.go stay unset: lint target come from go.mod, one place the Go version live.
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+linters:
+  enable:
+    - copyloopvar     # loop variable copied needlessly
+    - durationcheck   # two time.Duration multiplied
+    - errchkjson      # unsupported type handed to encoding/json
+    - errorlint       # error compared or asserted instead of errors.Is/As
+    - gocritic        # bug, performance and style patterns
+    - gosec           # security patterns
+    - govet
+    - ineffassign
+    - misspell
+    - nilnesserr      # nil error returned where a real one exist
+    - perfsprint      # fmt.Sprintf where a cheaper conversion do
+    - revive
+    - staticcheck
+    - unconvert       # redundant type conversion
+    - unused
+    - usestdlibvars   # magic string where the stdlib hold the constant
+    - wastedassign
+
+  # errcheck stay off. Render path drop errors on purpose -- a segment that
+  # fail get dropped, never surfaced -- so errcheck flag the design, not a bug.
+  # errorlint and nilnesserr keep the error checks that do catch defects.
+  disable:
+    - errcheck
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # struct padding not worth the field reordering here
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000  # package comment format; godoc prose not caveman comment
+
+    revive:
+      rules:
+        - name: increment-decrement
+        - name: redefines-builtin-id
+        - name: superfluous-else
+          arguments: [preserve-scope]
+        - name: use-any
+        - name: use-errors-new
+        - name: var-declaration
+
+    # G204, G301, G302, G304, G306 and G703 stay out: they excused code no
+    # package here has yet. Each return path-scoped under exclusions.rules with
+    # the package that earn it, never repo-wide.
+    gosec:
+      excludes:
+        - G104  # unhandled error: same ground errcheck cover, disabled above
+
+  exclusions:
+    # Explicit rules only. New upstream defaults never inherited silently.
+    rules:
+      - path: _test\.go
+        linters:
+          - errchkjson
+          - gosec
+
+      # Shadowing err and ok is Go house style, not a defect.
+      - text: '^shadow: declaration of "(err|ok)" shadows declaration'
+        linters:
+          - govet
+
+    # Unused exclusion = stale exclusion. Say so.
+    warn-unused: true
+
+issues:
+  # Defaults truncate at 50 per linter and 3 per message. Show everything.
+  max-issues-per-linter: 0
+  max-same-issues: 0

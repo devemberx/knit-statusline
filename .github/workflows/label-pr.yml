@@ -1,0 +1,101 @@
+name: label pr
+
+# Stamp a release-note label from the PR title's conventional-commit type.
+# release.yml group the notes by those labels.
+# pull_request_target for fork write access. Nothing checked out, and the title
+# reach the script as an env var, never spliced in by ${{ }} -- so no fork code
+# and no fork text execute against this token.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions: {}
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write # gh label create hit issues endpoint
+    steps:
+      - name: Apply label from conventional-commit title
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          # 1. Parse "type(scope)!: subject".
+          type="$(printf '%s' "$PR_TITLE" | sed -nE 's/^([a-z]+)(\([^)]*\))?!?:.*/\1/p')"
+          scope="$(printf '%s' "$PR_TITLE" | sed -nE 's/^[a-z]+\(([^)]*)\)!?:.*/\1/p')"
+          bang="$(printf '%s' "$PR_TITLE" | sed -nE 's/^[a-z]+(\([^)]*\))?(!):.*/\2/p')"
+
+          # 2. Map to labels.
+          declare -A map=(
+            [feat]=feature
+            [fix]=bug
+            [perf]=performance
+            [refactor]=refactor
+            [docs]=documentation
+            [test]=test
+            [ci]=ci
+            [chore]=chore
+          )
+          labels=()
+          case "$scope" in
+            deps|deps-dev) labels+=("dependencies") ;; # dependabot
+            # Empty type = unparseable title, step 5 warn. Bare index spray
+            # "bad array subscript" instead.
+            *) [ -n "$type" ] && [ -n "${map[$type]:-}" ] && labels+=("${map[$type]}") ;;
+          esac
+          [ -n "$bang" ] && labels+=("breaking")
+
+          # 3. Drop owned labels the title no longer imply. Runs on `edited`:
+          #    "feat!:" retitled to "fix:" else keep feature+breaking.
+          #    release.yml file a PR under its FIRST matching category.
+          #    Unowned labels (skip-changelog, triage) untouched.
+          managed=(feature bug performance refactor documentation test ci chore
+                   dependencies breaking)
+          current="$(gh api "repos/$REPO/issues/$PR_NUMBER/labels" --paginate \
+            --jq '.[].name')"
+          for l in "${managed[@]}"; do
+            printf '%s\n' "$current" | grep -qxF "$l" || continue
+            [ ${#labels[@]} -gt 0 ] && printf '%s\n' "${labels[@]}" | grep -qxF "$l" && continue
+            gh api -X DELETE "repos/$REPO/issues/$PR_NUMBER/labels/$l" >/dev/null
+          done
+
+          # 4. Prior warning comment drive dedup + cleanup.
+          #    awk not `head -n1`: head exit early, next --paginate write hit a
+          #    closed pipe, pipefail fail the step.
+          marker='<!-- label-pr:unlabeled -->'
+          prior="$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.body | contains(\"$marker\")) | .id" | awk 'NR==1')"
+
+          # 5. No label: warn once, stop.
+          if [ ${#labels[@]} -eq 0 ]; then
+            echo "Title has no conventional-commit type; nothing to label."
+            if [ -z "$prior" ]; then
+              body="$(printf '%s\n%s\n\n%s\n' \
+                "$marker" \
+                "This PR title does not start with a conventional-commit type, so it is not auto-labeled for release-note grouping." \
+                'Rename it to "type(scope): summary" using one of: feat, fix, docs, refactor, perf, test, ci, chore. Editing the title re-runs this check.')"
+              gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" -f body="$body" >/dev/null
+            fi
+            exit 0
+          fi
+
+          # 6. Create, apply, drop stale warning.
+          for l in "${labels[@]}"; do
+            gh label create "$l" --repo "$REPO" --color ededed >/dev/null 2>&1 || true
+          done
+          # gh pr edit --add-label hit Projects-classic GraphQL bug. Use REST.
+          args=()
+          for l in "${labels[@]}"; do args+=(-f "labels[]=$l"); done
+          gh api -X POST "repos/$REPO/issues/$PR_NUMBER/labels" "${args[@]}" >/dev/null
+
+          if [ -n "$prior" ]; then
+            gh api -X DELETE "repos/$REPO/issues/$PR_NUMBER/comments/$prior" >/dev/null
+          fi
+
