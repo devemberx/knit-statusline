@@ -34,8 +34,9 @@ GitHub's security advisory form, **not** a public issue.
 
 ### Prerequisites
 
-- `git` and **Go 1.26**, the version CI pins. `go test ./...` is the whole suite for
-  now — there is no binary to build until `cmd/statusline` lands.
+- `git` and **Go 1.26** — the version in `go.mod`, which is where CI reads it from
+  too. `go test ./...` is the whole suite for now; there is no binary to build until
+  `cmd/statusline` lands.
 
 ### Get the code
 
@@ -125,10 +126,11 @@ type(scope)!: summary       ← imperative, lowercase, no period, ≤50 chars
 - **No real paths or session content.** Transcripts hold conversation text; never
   commit one as a fixture, and scrub paths out of pasted output.
 
-CI runs on every PR: `go test -race`, the same tests again under `TZ=Asia/Seoul`,
-`golangci-lint`, a five-target cross-compile matrix, `govulncheck`, and a `zizmor`
-audit of the workflows. The `gate` job aggregates them into one required check. Say
-in **Testing** what you checked beyond that.
+CI runs on every PR: the test suite on Linux, macOS and Windows runners, the same
+tests again under `TZ=Asia/Seoul`, `golangci-lint`, a `go mod tidy` drift check, a
+five-target cross-compile matrix, `govulncheck`, and a `zizmor` audit of the
+workflows. The `gate` job aggregates them into one required check. Say in **Testing**
+what you checked beyond that.
 
 ### Review and merge
 
