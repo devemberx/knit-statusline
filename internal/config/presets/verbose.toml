@@ -1,0 +1,33 @@
+# knit-statusline -- verbose preset
+#
+# Everything worth showing, including cumulative token counts:
+#
+#   Opus │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high │ 2.1.211
+#   current ●●●●○○○○○○  42% ⟳ 3:00pm  weekly ●●○○○○○○○○  18% ⟳ jul 28, 3:00pm
+#   ↑62.1k ↓231k  cache ↑1.2M ↓32.4M │ +156 -23 │ $1.23
+#
+# Note the second row: putting "limit.5h" and "limit.7d" in one segments list is
+# all it takes to move them onto the same line.
+
+[[lines]]
+segments = ["model", "context", "dir", "session", "effort", "version"]
+
+[[lines]]
+segments = ["limit.5h", "limit.7d"]
+separator = "  "
+
+[[lines]]
+segments = ["tokens", "lines", "cost"]
+
+[segments."limit.5h"]
+template = "current {bar} {pct:>3}% ⟳ {reset}"
+
+[segments."limit.7d"]
+template = "weekly {bar} {pct:>3}% ⟳ {reset}"
+
+# Fresh input and cache traffic are kept apart on purpose. Cache reads run an
+# order of magnitude larger than fresh input and are priced differently, so a
+# single combined "input" number would badly misrepresent a session.
+[segments.tokens]
+template = "↑{input} ↓{output}  cache ↑{cache_write} ↓{cache_read}"
+scope = "session"
