@@ -7,10 +7,9 @@ This guide walks the contributor's path: **pick something to work on → set up 
 the change → open a pull request.** Comment style and the rules for the code itself
 live in [CLAUDE.md](../CLAUDE.md).
 
-> **Migration in progress.** The program moves over from `bare-statusline` piece by
-> piece. Every Go package has landed, `cmd/statusline` included, so the binary builds
-> and runs end to end, and the release pipeline came over with it. Still to come:
-> `SECURITY.md` and the `pre-push` hook.
+> **Migration complete.** The program moved over from `bare-statusline` piece by
+> piece: every Go package, `cmd/statusline`, the release pipeline, `SECURITY.md` and
+> the `pre-push` hook are all here. Nothing is waiting on a port any more.
 
 ---
 
@@ -22,11 +21,11 @@ live in [CLAUDE.md](../CLAUDE.md).
   describe the data before writing code.
 - **Improve the docs** — this guide and `CLAUDE.md` are the only docs so far. Gaps in
   either are bugs. Small docs PRs need no prior discussion.
-- **Help the migration** — port a piece of `bare-statusline`. Say which piece in the
-  issue so two people do not port the same thing.
+- **Fix the port** — the code came over from `bare-statusline` package by package.
+  Anything that behaves differently from the original is a bug worth an issue.
 
-`SECURITY.md` is not ported yet. Until it is, report a vulnerability privately through
-GitHub's security advisory form, **not** a public issue.
+Report a vulnerability privately through GitHub's security advisory form, **not** a
+public issue. [SECURITY.md](SECURITY.md) says what counts as one and what does not.
 
 ---
 
@@ -45,15 +44,16 @@ GitHub's security advisory form, **not** a public issue.
 
 > Collaborators with write access may skip the fork and branch directly in this repo.
 
-Enable the local hooks — they check your commit message before you get as far as a
-review comment:
+Enable the local hooks — they check your commit message and your branch name before
+you get as far as a review comment:
 
 ```sh
 git config core.hooksPath .githooks
 ```
 
-This is opt-in **per clone**. Leave it unset and nothing checks your commits locally;
-the same rules still apply at review, so turning it on saves you a rewrite.
+This is opt-in **per clone**. Leave it unset and nothing checks your commits or
+branch names locally; the same rules still apply at review, so turning it on saves
+you a rewrite.
 
 ---
 
@@ -72,9 +72,9 @@ the same rules still apply at review, so turning it on saves you a rewrite.
    | `chore/`    | deps, tooling, housekeeping                | `chore/pr-harness`           |
    | `ci/`       | GitHub Actions / release pipeline          | `ci/hostile-input-check`     |
 
-   One topic per branch; split unrelated work apart. Nothing enforces this yet —
-   `bare-statusline` has a `pre-push` hook for it that is not ported. When it lands,
-   its type list has to stay in step with the one below.
+   One topic per branch; split unrelated work apart. `.githooks/pre-push` checks the
+   name and refuses a direct push to `main`, if you enabled the hooks below. Its type
+   list is the table above plus `perf`, and the two have to stay in step.
 
 2. **Make your change.** Follow [CLAUDE.md](../CLAUDE.md) for comment style: caveman
    phrasing, why rather than what, one fact per line.

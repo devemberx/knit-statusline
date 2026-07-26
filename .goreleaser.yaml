@@ -7,7 +7,8 @@ before:
     # -diff report instead of rewriting: goreleaser abort on a dirty tree, so a
     # tidying hook turn a stale go.sum into a failed release mid-publish.
     - go mod tidy -diff
-    - go test ./...
+    # -race match ci.yml. Weaker check here gate nothing: tag already public.
+    - go test -race ./...
 
 builds:
   - id: knit-statusline
@@ -22,6 +23,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}}
+    # Build time otherwise embedded, so one commit build to two different
+    # binaries and nobody reproduce a published checksum.
+    mod_timestamp: "{{ .CommitTimestamp }}"
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
@@ -35,7 +39,9 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    # Version in name: without it two releases ship byte-different files under
+    # one name, and checksums.txt line name no release it belong to.
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     # Archive = go-install-free path: license and config reference travel with
     # the binary.
     files:
@@ -57,6 +63,12 @@ release:
   # packages.
   draft: true
   prerelease: auto
+  # Draft window is retry path: publish.yml skip npm versions already on
+  # registry, so a rerun reach goreleaser again. GitHub allow many drafts on one
+  # tag and match none of them by tag, so second run otherwise stack a draft and
+  # `gh release edit <tag>` pick between them. Re-uploaded assets 422 alike.
+  replace_existing_draft: true
+  replace_existing_artifacts: true
   # Highlights live in annotated tag message, so repository keep no per-release
   # notes file. .TagBody = git %(contents:body): message minus subject and the
   # blank line after. Empty on a tag carrying only the dated marker, and then
