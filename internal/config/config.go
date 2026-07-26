@@ -1,9 +1,8 @@
 // Package config load, merge and validate statusline.toml.
 //
-// Format hybrid on purpose: line is ordered list of segment names, and segment
-// may carry template controlling its text down to each character. Names alone
-// cover common edits -- reorder, drop, two on one row -- with no templating
-// language to learn.
+// Format hybrid on purpose: line is ordered list of segment names, segment may
+// carry template controlling its text per character. Names alone cover common
+// edits -- reorder, drop, two on one row -- no templating language to learn.
 package config
 
 type Config struct {
@@ -36,11 +35,11 @@ type Line struct {
 
 func (l Line) Blank() bool { return len(l.Segments) == 0 }
 
-// Segment configure one instance. Every field optional; nil = inherit, which is
-// what make per-key merging of project override work.
+// Segment configure one instance. Every field optional; nil = inherit, so
+// project override merge per key.
 type Segment struct {
 	// Implementation name. Empty = segment's own key, so most segments need no
-	// [segments.NAME] block at all.
+	// [segments.NAME] block.
 	Type     *string `toml:"type"`
 	Template *string `toml:"template"`
 
@@ -58,7 +57,7 @@ type Segment struct {
 	Command   *string `toml:"command"`
 	TimeoutMS *int    `toml:"timeout_ms"`
 
-	// Throttle any segment that shell out.
+	// type = "command" only, despite generic name.
 	CacheMS *int `toml:"cache_ms"`
 
 	// Set where project layer declared command and Load dropped it. Validate

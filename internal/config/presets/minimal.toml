@@ -1,6 +1,6 @@
 # knit-statusline -- minimal preset
 #
-# One row, nothing that needs a subprocess or a file read:
+# One row, no subprocess, no file read:
 #
 #   Opus 4.8 │ ✍️ 42% │ acme
 #
@@ -9,7 +9,7 @@
 [[lines]]
 segments = ["model", "context", "dir"]
 
-# The default template for "dir" is "{name}{git}", and {git} costs a git
-# subprocess on every render. Delete this block to get " (main*)" back.
+# "dir" default template "{name}{git}" pay git subprocess every render.
+# Delete block to restore " (main*)".
 [segments.dir]
 template = "{name}"
