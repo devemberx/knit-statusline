@@ -3,6 +3,7 @@ package segment
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/devemberx/knit-statusline/internal/render"
@@ -10,17 +11,24 @@ import (
 
 func init() {
 	register("model", Def{
-		Fields:          []string{"name", "id"},
+		Fields:          []string{"name", "family", "version", "id"},
 		DefaultTemplate: "{name}",
 		Build: func(c Context) Result {
 			if c.In.Model.DisplayName == "" && c.In.Model.ID == "" {
 				return empty
 			}
+			// display_name carry family alone -- "Opus" read same across every
+			// Opus release, so row name a model it cannot pin. name join version
+			// in here, where absent half is one branch; template joining them
+			// leave stray space instead.
+			family, version := c.In.Model.DisplayName, modelVersion(c.In.Model.ID)
 			return Result{
 				Base: render.Blue,
 				Fields: render.Fields{
-					"name": render.Colored(c.In.Model.DisplayName, render.Blue),
-					"id":   render.Colored(c.In.Model.ID, render.Blue),
+					"name":    render.Colored(strings.TrimSpace(family+" "+version), render.Blue),
+					"family":  render.Colored(family, render.Blue),
+					"version": render.Colored(version, render.Blue),
+					"id":      render.Colored(c.In.Model.ID, render.Blue),
 				},
 			}
 		},

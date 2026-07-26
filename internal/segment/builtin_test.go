@@ -12,7 +12,7 @@ import (
 // most users never see anything else.
 func TestDefaultTemplatesOnFullData(t *testing.T) {
 	for _, tc := range []struct{ kind, want string }{
-		{"model", "Opus"},
+		{"model", "Opus 4.8"},
 		{"context", "✍️ 42%"},
 		{"session", "⏱ 1h15m"},
 		{"effort", "● high"},
@@ -77,6 +77,36 @@ func TestModelFallsBackToIDWhenUnnamed(t *testing.T) {
 	c.In.Model.ID = ""
 	if res := Build(c); !res.Empty {
 		t.Error("model with neither name nor id should be empty")
+	}
+}
+
+// {name} join family and version, so absent half leave no stray space. Template
+// writing "{family} {version}" cannot do that.
+func TestModelNameJoinsFamilyAndVersion(t *testing.T) {
+	c := ctx(t, fixtures.Full, "model")
+	res := Build(c)
+
+	for _, tc := range []struct{ field, want string }{
+		{"name", "Opus 4.8"},
+		{"family", "Opus"},
+		{"version", "4.8"},
+	} {
+		if got := res.Fields[tc.field].Text; got != tc.want {
+			t.Errorf("{%s} = %q, want %q", tc.field, got, tc.want)
+		}
+	}
+
+	// Id carrying no version leave family standing alone.
+	c.In.Model.ID = "some-vendor-model"
+	if got := Build(c).Fields["name"].Text; got != "Opus" {
+		t.Errorf("versionless id rendered %q, want Opus", got)
+	}
+
+	// Unnamed family leave version standing alone, never a leading space.
+	c.In.Model.DisplayName = ""
+	c.In.Model.ID = "claude-opus-4-8"
+	if got := Build(c).Fields["name"].Text; got != "4.8" {
+		t.Errorf("unnamed family rendered %q, want 4.8", got)
 	}
 }
 

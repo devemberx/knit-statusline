@@ -2,7 +2,7 @@
 #
 # One row, nothing that needs a subprocess or a file read:
 #
-#   Opus │ ✍️ 42% │ acme
+#   Opus 4.8 │ ✍️ 42% │ acme
 #
 # Add "git" for the branch, or "session" for elapsed time.
 

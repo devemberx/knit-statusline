@@ -2,7 +2,7 @@
 #
 # Recreates the layout of nilbuild/claude-statusline:
 #
-#   Opus │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
+#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
 #
 #   current ●●●●○○○○○○  42% ⟳ 3:00pm
 #   weekly  ●●○○○○○○○○  18% ⟳ jul 28, 3:00pm

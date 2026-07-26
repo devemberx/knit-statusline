@@ -67,3 +67,31 @@ func pct(f float64) string {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// modelVersion pull release number out of model id: claude-opus-4-8 give "4.8",
+// claude-sonnet-5 give "5", claude-3-5-sonnet-20241022 give "3.5".
+//
+// Numeric runs joined with dots, in id order, so family placement never matter.
+// Eight digits is date stamp -- every dated id end in one -- and dropped.
+func modelVersion(id string) string {
+	var parts []string
+	for _, p := range strings.Split(id, "-") {
+		if !digits(p) || len(p) == 8 {
+			continue
+		}
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, ".")
+}
+
+func digits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}

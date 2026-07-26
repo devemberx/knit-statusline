@@ -84,3 +84,40 @@ func TestItoaKeepsEveryDigit(t *testing.T) {
 		t.Errorf("itoa = %q, want %q", got, "62093")
 	}
 }
+
+// display_name is family alone, so "Opus" read identical across every Opus
+// release. Version come out of id or nowhere.
+func TestModelVersion(t *testing.T) {
+	for _, tc := range []struct {
+		id, want string
+	}{
+		{"claude-opus-4-8", "4.8"},
+		{"claude-opus-5", "5"},
+		{"claude-sonnet-5", "5"},
+		{"claude-haiku-4-5-20251001", "4.5"},  // date stamp dropped
+		{"claude-3-5-sonnet-20241022", "3.5"}, // older id put family last
+		{"claude-3-opus-20240229", "3"},       // single component
+		{"claude-opus-4-1-20250805", "4.1"},   // date stamp beside two parts
+		{"", ""},                              // no id, no version
+		{"some-vendor-model", ""},             // nothing numeric to report
+		{"claude-opus-4-8-thinking", "4.8"},   // trailing word ignored
+	} {
+		if got := modelVersion(tc.id); got != tc.want {
+			t.Errorf("modelVersion(%q) = %q, want %q", tc.id, got, tc.want)
+		}
+	}
+}
+
+// Eight digits is date stamp, any other run is version. Boundary decide whether
+// a hypothetical version 12345678 read as date, so pin both sides.
+func TestModelVersionDropsEightDigitRunsOnly(t *testing.T) {
+	if got := modelVersion("claude-x-1234567"); got != "1234567" {
+		t.Errorf("seven digits = %q, want kept", got)
+	}
+	if got := modelVersion("claude-x-12345678"); got != "" {
+		t.Errorf("eight digits = %q, want dropped", got)
+	}
+	if got := modelVersion("claude-x-123456789"); got != "123456789" {
+		t.Errorf("nine digits = %q, want kept", got)
+	}
+}

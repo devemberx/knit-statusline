@@ -169,7 +169,7 @@ func TestKnownReportsDeclaredFields(t *testing.T) {
 	if !ok {
 		t.Fatal("model should be known")
 	}
-	if !slices.Equal(fields, []string{"name", "id"}) {
+	if !slices.Equal(fields, []string{"name", "family", "version", "id"}) {
 		t.Errorf("model fields = %v", fields)
 	}
 	if _, ok := Known("no-such-segment"); ok {
