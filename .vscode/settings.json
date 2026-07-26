@@ -1,0 +1,10 @@
+{
+  // Go keep _test.go beside its source, so explorer list two entries per file.
+  // Nest test under source: one row per source file, chevron open it.
+  // Files never move, so go test, coverage and go-to-test stay untouched.
+  "explorer.fileNesting.enabled": true,
+  "explorer.fileNesting.expand": false,
+  "explorer.fileNesting.patterns": {
+    "*.go": "${capture}_test.go"
+  }
+}
