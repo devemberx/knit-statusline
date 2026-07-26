@@ -1,0 +1,19 @@
+{
+  "name": "@devemberx/knit-statusline-darwin-x64",
+  "version": "0.0.0",
+  "description": "knit-statusline binary for darwin-x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devemberx/knit-statusline.git"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/knit-statusline"
+  ]
+}

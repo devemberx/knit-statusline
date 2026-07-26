@@ -1,0 +1,19 @@
+{
+  "name": "@devemberx/knit-statusline-win32-x64",
+  "version": "0.0.0",
+  "description": "knit-statusline binary for win32-x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devemberx/knit-statusline.git"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "bin/knit-statusline.exe"
+  ]
+}

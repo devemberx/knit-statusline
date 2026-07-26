@@ -1,0 +1,69 @@
+version: 2
+
+project_name: knit-statusline
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: knit-statusline
+    main: ./cmd/statusline
+    binary: knit-statusline
+    # No cgo, so every target cross-compile from one machine and the binaries
+    # carry no runtime dependency at all -- which is the point: the shell
+    # implementation this replaces need jq and curl, and a status line that fail
+    # on a machine without them fail invisibly.
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      # Claude Code does not ship for Windows on ARM.
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    # Archive is the go-install-free path: whoever unpack it get the license and
+    # the config reference, not a bare binary.
+    files:
+      - LICENSE
+      - README.md
+      - docs/CONFIGURATION.md
+
+checksum:
+  name_template: checksums.txt
+
+# github-native delegate to GitHub's generator, so .github/release.yml decide
+# grouping. No filters on purpose: old exclude list dropped docs, test and chore
+# commits outright; release.yml file them under Maintenance instead.
+changelog:
+  use: github-native
+
+release:
+  # Created as draft. publish.yml flip it public only after every npm publish
+  # succeed, so a failed publish never front nonexistent packages.
+  draft: true
+  prerelease: auto
+  # Curated highlights live in the annotated tag's message, so the repository
+  # never accumulate a per-release notes file. .TagBody is git's
+  # %(contents:body): the message minus its subject line and the blank line
+  # after it. Stay empty when the tag carry only the dated marker -- then the
+  # release ship the generated change list alone.
+  header: |
+    {{- with .TagBody -}}
+    ## Highlights
+
+    {{ . }}
+    {{- end }}

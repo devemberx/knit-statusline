@@ -1,0 +1,34 @@
+{
+  "name": "@devemberx/knit-statusline",
+  "version": "0.0.0",
+  "description": "A status line for Claude Code that you knit yourself: every row, every piece of every row, is one line of config",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "statusline",
+    "cli"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/devemberx/knit-statusline.git"
+  },
+  "homepage": "https://github.com/devemberx/knit-statusline#readme",
+  "bin": {
+    "knit-statusline": "bin/cli.js"
+  },
+  "files": [
+    "bin/cli.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "optionalDependencies": {
+    "@devemberx/knit-statusline-darwin-arm64": "0.0.0",
+    "@devemberx/knit-statusline-darwin-x64": "0.0.0",
+    "@devemberx/knit-statusline-linux-arm64": "0.0.0",
+    "@devemberx/knit-statusline-linux-x64": "0.0.0",
+    "@devemberx/knit-statusline-win32-x64": "0.0.0"
+  }
+}
