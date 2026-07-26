@@ -1,0 +1,34 @@
+version: 2
+
+updates:
+  # Pinned action SHAs go stale in silence -- nothing in CI notice that a pin
+  # sit three releases behind. Dependabot bump the sha and its trailing
+  # version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Wait a week before adopting a release. A compromised version get yanked
+    # within days, and nothing here need the newest action the hour it land.
+    cooldown:
+      default-days: 7
+    # One PR a week for every action, not one per action.
+    groups:
+      actions:
+        patterns: ["*"]
+    # scope "deps" is what label-pr.yml map to the dependencies label.
+    commit-message:
+      prefix: ci
+      include: scope
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore
+      include: scope

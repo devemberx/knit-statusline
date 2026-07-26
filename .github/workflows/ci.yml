@@ -1,0 +1,133 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A PR push supersede its own stale run. A main push never cancel: a release tag
+# get cut from one of those commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Read-only. Nothing here write to the repository.
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # No external module yet, so no go.sum. setup-go fail outright when
+          # cache is on and the file is missing. Flip on with the first require.
+          cache: false
+
+      - run: go test -race ./...
+
+      # Rendered times formatted in the viewer's local zone, so an assertion
+      # written against one zone pass only there. A second zone catch that
+      # before it reach a contributor in a different one.
+      - name: tests under a second timezone
+        run: TZ=Asia/Seoul go test -count=1 ./...
+
+      # Binary-level checks -- hostile stdin, install/uninstall round trip, npm
+      # launcher parse -- land with cmd/statusline and npm/.
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      # gofmt and go vet both run from in here. .golangci.yml hold the full set.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.12.2
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Mirror the release targets. A tag push is the wrong moment to learn
+        # that darwin or windows stopped compiling.
+        include:
+          - {goos: linux, goarch: amd64}
+          - {goos: linux, goarch: arm64}
+          - {goos: darwin, goarch: amd64}
+          - {goos: darwin, goarch: arm64}
+          - {goos: windows, goarch: amd64}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      # vet under each GOOS too: build-tag guarded code compile nowhere else.
+      # ./... rather than the command path: no main package in the tree yet.
+      - name: cross build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build ./...
+          go vet ./...
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      # Reachability based: a CVE in a module we require but never call not
+      # fail the build. The vulnerability database is fetched fresh each run,
+      # so a pinned tool version still see today's advisories.
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+      # Audit the workflows themselves: unpinned actions, workflow-wide write
+      # permissions, expressions that interpolate attacker text into a shell.
+      # advanced-security off keep this job on contents: read -- findings land
+      # as PR annotations instead of the security tab.
+      - uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
+        with:
+          advanced-security: false
+          annotations: true
+          persona: pedantic
+          min-severity: medium
+          min-confidence: medium
+
+  # Single required check for branch protection. Jobs and matrix entries change
+  # without anyone editing the repository settings.
+  gate:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [test, lint, build, scan]
+    steps:
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+        run: exit 1
+      - run: echo "ci green"
