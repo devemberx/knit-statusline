@@ -1,0 +1,10 @@
+# knit-statusline -- minimal preset
+#
+# One row, nothing that needs a subprocess or a file read:
+#
+#   Opus │ ✍️ 42% │ acme
+#
+# Add "git" for the branch, or "session" for elapsed time.
+
+[[lines]]
+segments = ["model", "context", "dir"]

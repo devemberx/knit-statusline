@@ -41,9 +41,9 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          # No external module yet, so no go.sum, and setup-go fail outright
-          # when cache is on and the file missing. Flip on with the first require.
-          cache: false
+          # go.sum exist since config pull BurntSushi/toml, so setup-go key its
+          # module cache off it.
+          cache: true
 
       - run: go test ${{ matrix.race }} ./...
 
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
 
       # gofmt and go vet run from in here. .golangci.yml hold the full set.
       - uses: golangci/golangci-lint-action@v9
@@ -103,7 +103,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
 
       # vet per GOOS: build-tag guarded code compile nowhere else. ./... not the
       # command path -- no main package yet.
@@ -126,7 +126,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-          cache: false
+          cache: true
 
       # Reachability based: a CVE in a required but never called module not fail
       # the build. Database fetched fresh each run, so the pinned tool still see

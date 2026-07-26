@@ -77,6 +77,13 @@ linters:
         linters:
           - gosec
 
+      # G304 file-inclusion taint: statusline.toml path derive from $HOME and
+      # workspace.project_dir, never from stdin. Reading it is what config do.
+      - path: internal/config/
+        text: G304
+        linters:
+          - gosec
+
       # Shadowing err and ok is Go house style, not a defect.
       - text: '^shadow: declaration of "(err|ok)" shadows declaration'
         linters:
