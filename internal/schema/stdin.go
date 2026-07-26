@@ -8,7 +8,10 @@
 // that distinction live in type, not at each call site.
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 type Input struct {
 	CWD            string  `json:"cwd"`
@@ -155,8 +158,13 @@ func (in *Input) ContextPercent() (float64, bool) {
 	if in.Context == nil {
 		return 0, false
 	}
-	if in.Context.UsedPercentage != nil {
-		return clampPercent(*in.Context.UsedPercentage), true
+	if p := in.Context.UsedPercentage; p != nil {
+		// NaN clear p<0 and p>100 alike, so clampPercent hand it straight on,
+		// and int(NaN) is minInt64 on amd64. Unknown, not zero.
+		if math.IsNaN(*p) {
+			return 0, false
+		}
+		return clampPercent(*p), true
 	}
 	u := in.Context.CurrentUsage
 	if u == nil || in.Context.ContextWindowSize == nil || *in.Context.ContextWindowSize <= 0 {

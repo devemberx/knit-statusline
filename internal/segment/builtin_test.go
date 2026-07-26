@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -140,6 +141,18 @@ func TestContextDistinguishesUnknownFromZero(t *testing.T) {
 	c.In.Context.UsedPercentage = &zero
 	if got := draw(c); got != "✍️ 0%" {
 		t.Errorf("reported zero rendered %q, want ✍️ 0%%", got)
+	}
+}
+
+// usedTokens back-compute int64(p/100*size), and int64(NaN) is minInt64 on
+// amd64. No guard there, so NaN drop segment like any unknown percentage.
+func TestContextDropsOutOnNaN(t *testing.T) {
+	c := ctx(t, fixtures.Sparse, "context")
+	nan := math.NaN()
+	c.In.Context.UsedPercentage = &nan
+
+	if res := Build(c); !res.Empty {
+		t.Errorf("NaN percentage gave %+v, want empty", res)
 	}
 }
 

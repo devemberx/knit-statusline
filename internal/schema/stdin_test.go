@@ -184,6 +184,17 @@ func TestContextPercentDerived(t *testing.T) {
 	}
 }
 
+// encoding/json reject bare NaN, so only hand-built Input reach this.
+// Unknown, not zero: NaN carry no honest percentage to print.
+func TestContextPercentUnknownOnNaN(t *testing.T) {
+	nan := math.NaN()
+	in := &Input{Context: &ContextWin{UsedPercentage: &nan}}
+
+	if got, ok := in.ContextPercent(); ok {
+		t.Errorf("pct = %v, ok = true; want ok = false", got)
+	}
+}
+
 // Future Claude Code release add fields. Decode ignore them, never fail, else
 // upgrade silently blank status line.
 func TestUnknownFieldsIgnored(t *testing.T) {
