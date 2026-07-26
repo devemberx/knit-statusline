@@ -37,8 +37,9 @@ drop, or restyle without touching code.
   a timeout and a cache.
 - 📦 **No runtime dependencies.** One static binary — no `jq`, no `curl`, no
   Node. Installing needs `npx`; rendering does not.
-- ⏱ **Fast.** One process per render — no shell pipeline, and the git call runs
-  under a timeout budget so a slow repository cannot stall the line.
+- ⏱ **Fast.** No shell pipeline — no `jq`, no `curl`. A git subprocess runs only
+  when the template asks for `{git}`, and under a timeout budget so a slow
+  repository cannot stall the line.
 - 🛟 **Never blanks your status line.** A failing segment is dropped and the row
   still draws; a broken config falls back with a marker naming the file.
 
@@ -76,7 +77,7 @@ npx @devemberx/knit-statusline install --preset minimal
 | `~/.claude/knit-statusline` | The binary is copied here |
 | `~/.claude/statusline.toml` | A starting config is written — an existing one is kept unless you pass `--force` |
 | `~/.claude/settings.json` | One `statusLine` key is merged in |
-| `~/.claude/settings.json.bak` | Backup of your pre-install settings, written once and never overwritten |
+| `~/.claude/settings.json.bak` | Backup of your settings as they were before the first install or uninstall — written once, never overwritten |
 
 Your hooks, permissions, plugins and every other setting are read, merged and
 written back untouched. If `statusLine` already pointed at another tool, the

@@ -243,7 +243,7 @@ exact digits.
 | `scope` | `tokens` | `"session"` or `"project"` | `"session"` |
 | `include_sidechain` | `tokens` | Count subagent transcripts too | `false` |
 | `command` | `type = "command"` | What to run | — |
-| `timeout_ms` | `type = "command"` | How long to wait | `1000` |
+| `timeout_ms` | `type = "command"`, `dir` | How long to wait — bounds the command, or the git call for `dir` | `1000` |
 | `cache_ms` | `type = "command"` | Reuse the previous output for this long | `0` |
 
 Set fallbacks for `separator`, `bar_width`, `warn`, `high` and `crit` under
@@ -275,7 +275,7 @@ entirely.
 | `~/.claude/statusline.toml` | Your configuration |
 | `<project>/.claude/statusline.toml` | Per-project override |
 | `~/.claude/settings.json` | Where the `statusLine` key points at the binary |
-| `~/.claude/settings.json.bak` | Backup of your pre-install settings, written once and never overwritten |
+| `~/.claude/settings.json.bak` | Backup of your settings as they were before the first install or uninstall — written once, never overwritten |
 | `~/.claude/knit-statusline` | The installed binary |
 | `~/.claude/statusline-cache/` | Transcript cursors and command output caches |
 
