@@ -158,8 +158,13 @@ func (in *Input) ContextPercent() (float64, bool) {
 	if in.Context == nil {
 		return 0, false
 	}
-	if in.Context.UsedPercentage != nil {
-		return clampPercent(*in.Context.UsedPercentage), true
+	if p := in.Context.UsedPercentage; p != nil {
+		// NaN clear p<0 and p>100 alike, so clampPercent hand it straight on,
+		// and int(NaN) is minInt64 on amd64. Unknown, not zero.
+		if math.IsNaN(*p) {
+			return 0, false
+		}
+		return clampPercent(*p), true
 	}
 	u := in.Context.CurrentUsage
 	if u == nil || in.Context.ContextWindowSize == nil || *in.Context.ContextWindowSize <= 0 {
@@ -173,12 +178,10 @@ func (in *Input) ContextPercent() (float64, bool) {
 }
 
 // clampPercent hold value in 0..100. context_window_size stale against usage
-// counts, or used_percentage over 100, else render past full bar. NaN compare
-// false against both bound, so it need naming: int(NaN) is
-// -9223372036854775808 on amd64, and ContextPercent report ok alongside it.
+// counts, or used_percentage over 100, else render past full bar.
 func clampPercent(p float64) float64 {
 	switch {
-	case math.IsNaN(p), p < 0:
+	case p < 0:
 		return 0
 	case p > 100:
 		return 100

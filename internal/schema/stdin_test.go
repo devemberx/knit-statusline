@@ -184,19 +184,14 @@ func TestContextPercentDerived(t *testing.T) {
 	}
 }
 
-// No decode reach this: encoding/json reject bare NaN and refuse a quoted one
-// into float64. Input is exported though, so preview and test build one direct,
-// and ContextPercent answer ok for whatever sit in that pointer.
-func TestContextPercentClampsNaN(t *testing.T) {
+// encoding/json reject bare NaN, so only hand-built Input reach this.
+// Unknown, not zero: NaN carry no honest percentage to print.
+func TestContextPercentUnknownOnNaN(t *testing.T) {
 	nan := math.NaN()
 	in := &Input{Context: &ContextWin{UsedPercentage: &nan}}
 
-	got, ok := in.ContextPercent()
-	if !ok {
-		t.Fatal("ok = false, want true; used_percentage is present")
-	}
-	if got != 0 {
-		t.Errorf("pct = %v, want 0", got)
+	if got, ok := in.ContextPercent(); ok {
+		t.Errorf("pct = %v, ok = true; want ok = false", got)
 	}
 }
 
