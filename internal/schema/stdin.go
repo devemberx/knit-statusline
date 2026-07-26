@@ -1,11 +1,11 @@
-// Package schema mirror the JSON document Claude Code write to the status line
+// Package schema mirror JSON document Claude Code write to status line
 // command's stdin.
 //
 // Every documented-optional field is a pointer here. Absent or null in normal
-// operation: rate_limits for non-subscribers, current_usage before the first
-// API call and again after /compact, used_percentage early in a session, effort
-// on models without the parameter. Segments must tell absent from zero, so the
-// distinction live in the type, not at each call site.
+// operation: rate_limits for non-subscribers, current_usage before first API
+// call and again after /compact, used_percentage early in a session, effort on
+// models carrying no such parameter. Segments must tell absent from zero, so
+// that distinction live in type, not at each call site.
 package schema
 
 import "encoding/json"
@@ -66,9 +66,9 @@ type Cost struct {
 	TotalLinesRemoved  *int64   `json:"total_lines_removed"`
 }
 
-// ContextWin is the live context window from the most recent API response. As
-// of Claude Code v2.1.132 TotalInputTokens and TotalOutputTokens report current
-// occupancy, not cumulative session totals -- those come from the transcript.
+// ContextWin is live context window from most recent API response. As of Claude
+// Code v2.1.132 TotalInputTokens and TotalOutputTokens report current occupancy,
+// not cumulative session totals -- those come from transcript.
 type ContextWin struct {
 	TotalInputTokens  *int64   `json:"total_input_tokens"`
 	TotalOutputTokens *int64   `json:"total_output_tokens"`
@@ -93,7 +93,7 @@ type Thinking struct {
 	Enabled bool `json:"enabled"`
 }
 
-// RateLimits reach Claude.ai subscribers only, and only after the first API
+// RateLimits reach Claude.ai subscribers only, and only after first API
 // response of a session. Each window go absent independently.
 type RateLimits struct {
 	FiveHour *Window `json:"five_hour"`
@@ -127,8 +127,8 @@ type Worktree struct {
 	OriginalBranch *string `json:"original_branch"`
 }
 
-// Parse decode the stdin document. Unknown fields ignored, so a newer Claude
-// Code release break no rendering.
+// Parse decode stdin document. Unknown fields ignored, so a newer Claude Code
+// release break no rendering.
 func Parse(b []byte) (*Input, error) {
 	var in Input
 	if err := json.Unmarshal(b, &in); err != nil {
@@ -138,7 +138,7 @@ func Parse(b []byte) (*Input, error) {
 }
 
 // Dir to display. Docs prefer workspace.current_dir, matching
-// workspace.project_dir. Top-level cwd hold the same value, so it fall back.
+// workspace.project_dir. Top-level cwd hold same value, so it fall back.
 func (in *Input) Dir() string {
 	if in.Workspace.CurrentDir != "" {
 		return in.Workspace.CurrentDir
@@ -149,8 +149,8 @@ func (in *Input) Dir() string {
 // ContextPercent report window utilisation, plus whether it is known at all.
 //
 // used_percentage go null early in a session, so derive from current_usage,
-// itself null before the first API call and after /compact. Neither available =
-// caller omit the segment, never print a misleading zero.
+// itself null before first API call and after /compact. Neither available =
+// caller omit segment, never print a misleading zero.
 func (in *Input) ContextPercent() (float64, bool) {
 	if in.Context == nil {
 		return 0, false

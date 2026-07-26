@@ -19,8 +19,8 @@ func load(t *testing.T, b []byte) *Input {
 }
 
 // Every fixture decode without error, empty document included. A status line
-// that panic on unexpected input leave the user a blank row and no way to tell
-// what went wrong.
+// that panic on unexpected input leave user a blank row and no way to tell what
+// went wrong.
 func TestParseFixtures(t *testing.T) {
 	for name, b := range map[string][]byte{
 		"full": fixtures.Full, "sparse": fixtures.Sparse, "empty": fixtures.Empty,
@@ -56,9 +56,9 @@ func TestFullFixtureFields(t *testing.T) {
 	}
 }
 
-// Sparse fixture stand in for a non-subscriber on the first render. Each
-// assertion match an absence the Claude Code docs call out, and each one is a
-// case the reference bash implementation mishandle.
+// Sparse fixture stand in for a non-subscriber on first render. Each assertion
+// match one absence Claude Code docs call out, and each is a case reference bash
+// implementation mishandle.
 func TestSparseFixtureAbsences(t *testing.T) {
 	in := load(t, fixtures.Sparse)
 
@@ -78,8 +78,8 @@ func TestSparseFixtureAbsences(t *testing.T) {
 		t.Error("current_usage should be null before the first API call")
 	}
 
-	// Key distinction: percentage unknown, not zero. 0% here claim an empty
-	// context where the truth is an unreported one.
+	// Key distinction: percentage unknown, not zero. 0% here claim empty context
+	// where truth is unreported one.
 	if _, ok := in.ContextPercent(); ok {
 		t.Error("ContextPercent() should report unknown when both sources are null")
 	}
