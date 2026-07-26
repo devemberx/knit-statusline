@@ -4,6 +4,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -155,12 +156,37 @@ func Load(home, projectDir string) *LoadResult {
 		if err != nil {
 			res.Errors = append(res.Errors, err)
 		} else if override != nil {
+			res.Errors = append(res.Errors, stripProjectCommands(override, path)...)
 			res.Config = Merge(res.Config, override)
 			res.Sources = append(res.Sources, path)
 		}
 	}
 
 	return res
+}
+
+// stripProjectCommands drop command= out of project layer, reporting each one.
+//
+// Project config is repository content, and command segment run its string
+// through a shell. Honouring it there mean cloning a repository and opening it
+// execute whatever that file say -- no prompt, first render. Trust boundary sit
+// at $HOME. Every other project setting still apply.
+func stripProjectCommands(c *Config, path string) []error {
+	var errs []error
+	for _, name := range slices.Sorted(maps.Keys(c.Segments)) {
+		seg := c.Segments[name]
+		if seg.Command == nil {
+			continue
+		}
+		seg.Command = nil
+		errs = append(errs, &Error{
+			File: path,
+			Msg: fmt.Sprintf(
+				"segment %q: command ignored, project config may not run shell commands; move it to %s",
+				name, filepath.Join("$HOME", ".claude", "statusline.toml")),
+		})
+	}
+	return errs
 }
 
 // nil, nil when file does not exist.

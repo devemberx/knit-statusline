@@ -2,7 +2,7 @@
 #
 # Recreates the layout of nilbuild/claude-statusline:
 #
-#   Opus │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
+#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
 #
 #   current ●●●●○○○○○○  42% ⟳ 3:00pm
 #   weekly  ●●○○○○○○○○  18% ⟳ jul 28, 3:00pm
@@ -30,7 +30,7 @@ segments = ["limit.7d"]
 # These two are spelled out because they show the two things worth knowing:
 # {field} interpolation, and a {field:>width} alignment spec.
 [segments."limit.5h"]
-template = "current {bar} {pct:>3}% ⟳ {reset}"
+template = "current {bar} {pct:>3}%{reset}"
 
 [segments."limit.7d"]
-template = "weekly  {bar} {pct:>3}% ⟳ {reset}"
+template = "weekly  {bar} {pct:>3}%{reset}"

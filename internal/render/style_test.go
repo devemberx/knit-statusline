@@ -99,12 +99,26 @@ func TestBarRoundsToNearestCell(t *testing.T) {
 	}
 }
 
-func TestBarColorsFilledBySeverityAndRemainderDim(t *testing.T) {
+// "\033[2m" set faint and carry no foreground of its own, so no reset may sit
+// between halves. Reset there leave empty cells default grey.
+func TestBarColorsFilledBySeverityAndRemainderSameHueDimmed(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	got := NewPalette().Bar(50, 2, Thresholds{Warn: 50, High: 70, Crit: 90})
-	want := string(Orange) + barFilled + reset + string(Dim) + barEmpty + reset
+	want := string(Orange) + barFilled + string(Dim) + barEmpty + reset
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+	if strings.Contains(strings.TrimSuffix(got, reset), reset) {
+		t.Errorf("reset between halves drop the hue: %q", got)
+	}
+}
+
+// Zero-value Thresholds grade nothing, so bar emit no escape, never bare reset.
+func TestBarWithoutThresholdsEmitsNoEscapes(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	got := NewPalette().Bar(50, 2, Thresholds{})
+	if strings.Contains(got, "\033") {
+		t.Errorf("escape leaked into an ungraded bar: %q", got)
 	}
 }
 

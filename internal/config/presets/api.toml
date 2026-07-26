@@ -1,0 +1,29 @@
+# knit-statusline -- api preset
+#
+# For API-key users. rate_limits reach Claude.ai subscribers only, so "limit.5h"
+# and "limit.7d" would render nothing at all on this plan. What you pay is
+# metered per token instead, so cost and cumulative counts take that row:
+#
+#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
+#   ↑62.1k ↓231k  cache ↑1.2M ↓32.4M │ +156 -23 │ $1.23
+#
+# The Claude Code version is left off too -- it says nothing about the session.
+# Add "version" back if you want it.
+
+[[lines]]
+segments = ["model", "context", "dir", "session", "effort"]
+
+[[lines]]
+segments = ["tokens", "lines", "cost"]
+
+# Cache reads run an order of magnitude larger than fresh input and are priced
+# differently, so {io} and {cache} stay apart rather than merging into one
+# "input" number. Both carry their own label, arrows and colour; a session that
+# touched no cache drops {cache} and the gap before it.
+#
+# {cache_hit} is the share of input served from cache, which is what the raw
+# cache_read figure is usually read for. Also available: {input} {output}
+# {cache_write} {cache_read} {total} {input_raw} {output_raw}.
+[segments.tokens]
+template = "{io}{cache}"
+scope = "session"

@@ -12,6 +12,7 @@
     "current_dir": "/home/dev/project/acme",
     "project_dir": "/home/dev/project/acme",
     "added_dirs": [],
+    "git_worktree": "feat-auth",
     "repo": {
       "host": "github.com",
       "owner": "acme",
@@ -62,5 +63,10 @@
   },
   "vim": {
     "mode": "NORMAL"
+  },
+  "pr": {
+    "number": 42,
+    "url": "https://github.com/acme/acme/pull/42",
+    "review_state": "approved"
   }
 }

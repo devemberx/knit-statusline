@@ -81,6 +81,48 @@ func TestPadMeasuresVisibleWidthNotEscapes(t *testing.T) {
 	}
 }
 
+// Bar and dir's {git} bake color into Text, and counting those escapes as width
+// make "{bar:>12}" pad by nothing at all.
+func TestPadSkipsEscapesBakedIntoText(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	p := NewPalette()
+	baked := p.Wrap("●●●●", Green) + p.Wrap("○○○○○○", Dim)
+
+	if len(baked) <= 10 {
+		t.Fatalf("bar carry no escape, test prove nothing: %q", baked)
+	}
+
+	got := p.Expand("{bar:>12}", Fields{"bar": Plain(baked)}, "")
+	if want := "  " + baked; got != want {
+		t.Errorf("got %q, want two leading spaces", got)
+	}
+	if visible := stripEscapes(got); len([]rune(visible)) != 12 {
+		t.Errorf("visible width = %d runes (%q), want 12", len([]rune(visible)), visible)
+	}
+}
+
+// Unrecognised escape must still advance scan, else visibleWidth stall on its
+// own ESC.
+func TestVisibleWidthTerminatesOnOddEscapes(t *testing.T) {
+	for _, tc := range []struct {
+		s    string
+		want int
+	}{
+		{"", 0},
+		{"abc", 3},
+		{"\033[31mab\033[0m", 2},
+		{"\033", 0},            // lone ESC at end
+		{"\033x", 1},           // ESC then non-CSI
+		{"\033[", 0},           // CSI with no final byte
+		{"\033[38;2;0;0;0", 0}, // parameters run off end
+		{"●●\033[2m○", 3},
+	} {
+		if got := visibleWidth(tc.s); got != tc.want {
+			t.Errorf("visibleWidth(%q) = %d, want %d", tc.s, got, tc.want)
+		}
+	}
+}
+
 // Base dress literal text only. Reference layout keep labels muted and let
 // numbers carry severity, so field color survive base.
 func TestExpandColorsLiteralWithBaseAndFieldWithItsOwn(t *testing.T) {

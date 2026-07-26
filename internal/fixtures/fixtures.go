@@ -4,13 +4,14 @@
 // run to check a config edit, so it must exercise the shapes the tests assert
 // on -- degraded one included, where a layout fine on complete data fall apart.
 //
-// Coverage track ported render path, not every schema field: agent, pr and
-// worktree shapes land with segment that render them.
+// Coverage track ported render path, not every schema field: agent and
+// top-level worktree shapes land with segment that render them.
 package fixtures
 
 import _ "embed"
 
-// Full carry subscriber rate limits, populated usage, effort, git repo, vim mode.
+// Full carry subscriber rate limits, populated usage, effort, git repo, vim
+// mode, worktree name, open pull request.
 //
 //go:embed full.json
 var Full []byte
