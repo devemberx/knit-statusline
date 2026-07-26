@@ -1,9 +1,6 @@
 version: "2"
 
-run:
-  # Pin the lint target. Inferring from go.mod drift the moment the toolchain
-  # bump, and a lint that change under you is worse than no lint.
-  go: "1.26"
+# run.go stay unset: lint target come from go.mod, one place the Go version live.
 
 formatters:
   enable:
@@ -57,15 +54,12 @@ linters:
         - name: use-errors-new
         - name: var-declaration
 
+    # G204, G301, G302, G304, G306 and G703 stay out: they excused code no
+    # package here has yet. Each return path-scoped under exclusions.rules with
+    # the package that earn it, never repo-wide.
     gosec:
       excludes:
         - G104  # unhandled error: same ground errcheck cover, disabled above
-        - G204  # subprocess from variable: the command segment run the user own command
-        - G301  # dir 0o750: ~/.claude and its cache are conventional 0o755
-        - G302  # file 0o600: the installed binary must stay executable
-        - G304  # file read from a variable path: reading transcripts is the job
-        - G306  # WriteFile 0o644: settings.json and statusline.toml are user-readable
-        - G703  # path traversal taint: every path here derive from $HOME, not input
 
   exclusions:
     # Explicit rules only. New upstream defaults never inherited silently.
