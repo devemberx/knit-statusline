@@ -3,7 +3,7 @@
 /knit-statusline
 /statusline
 
-# Binaries the release pipeline stage into npm platform packages
+# Release pipeline stage binaries into npm platform packages
 /npm/platforms/*/bin/*
 !/npm/platforms/*/bin/.gitkeep
 
@@ -12,8 +12,10 @@
 
 node_modules/
 
-# Claude Code: only shared hooks and their wiring tracked
+# Claude Code: shared hooks, settings.json and skills tracked, rest local
+# .claude/* hide dir itself, so unnegated subtree never reach git status
 .claude/*
 !.claude/hooks/
 !.claude/settings.json
+!.claude/skills/
 __pycache__/

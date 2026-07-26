@@ -4,27 +4,26 @@ on:
   push:
     tags: ["v*"]
 
-# Nothing at workflow level. Job inherit what it never asked for otherwise.
+# Job inherit what it never asked for otherwise.
 permissions: {}
 
-# Never cancel. Cancelled run leave some of six packages published and rest not,
-# and npm refuse to reuse version even after unpublish.
+# Cancelled run leave some of six packages published.
+# npm refuse to reuse version even after unpublish.
 concurrency:
   group: publish
   cancel-in-progress: false
 
 defaults:
   run:
-    # Actions default to `bash -e`, no pipefail. Failing publish inside pipe else
-    # read as success.
+    # Actions default `bash -e`, no pipefail.
     shell: bash
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Human gate between tag push and npm. Name must match environment on every
-    # trusted publisher at npmjs.com -- OIDC claim carry it, mismatch reject.
+    # Approval gate between tag push and npm.
+    # Name must match npm trusted publisher environment -- OIDC claim carry it.
     environment: release
     permissions:
       contents: write # cut GitHub Release
@@ -35,9 +34,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # checkout leave lightweight tag, so goreleaser .TagBody render commit
-      # message body instead of curated tag body. main need explicit refspec:
-      # checkout wire none for tag push.
+      # checkout leave lightweight tag, wire no refspec for main on tag push.
       - name: fetch annotated tag and main
         run: |
           git fetch --force --tags origin
@@ -50,6 +47,14 @@ jobs:
             echo "::error::${GITHUB_REF_NAME} points at a commit not reachable from origin/main"
             exit 1; }
 
+      # .TagBody fall back to commit message body on lightweight tag, so commit
+      # bullets ship as ## Highlights on tag already public and unmovable.
+      - name: tag is annotated
+        run: |
+          [ "$(git cat-file -t "${GITHUB_REF_NAME}")" = tag ] || {
+            echo "::error::${GITHUB_REF_NAME} is a lightweight tag"
+            exit 1; }
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -60,8 +65,8 @@ jobs:
           node-version: "24"
           registry-url: https://registry.npmjs.org
 
-      # Trusted publishing need npm >= 11.5.1. Major pinned: unpinned upgrade put
-      # every release at mercy of newest npm.
+      # Trusted publishing need npm >= 11.5.1.
+      # Major pinned: unpinned upgrade put every release at mercy of newest npm.
       - run: npm install -g npm@12
 
       - name: build and publish GitHub release
@@ -75,18 +80,12 @@ jobs:
       - name: stage npm packages
         run: node npm/scripts/prepare-packages.mjs "${GITHUB_REF_NAME}" dist
 
-      # Platform packages first, launcher last: launcher pin them exactly, so a
-      # resolvable launcher must not exist before its binaries do.
-      #
-      # Skip what already on registry. Six publishes in sequence, and failure
-      # partway leave some up -- plain rerun else die on first one that landed,
-      # since npm reject duplicate version forever, unpublish included.
-      #
+      # Platform packages first: launcher pin them exactly.
+      # Skip what already on registry: rerun after failure partway, and npm
+      # reject duplicate version forever.
       # Leading ./ load-bearing: npm read bare two-segment path as GitHub
-      # shorthand owner/repo and go looking for github.com/npm/knit-statusline.
-      #
-      # Prerelease need explicit dist-tag, and rightly -- 1.0.0-rc.1 under
-      # `latest` hand every plain `npm install` release candidate.
+      # shorthand owner/repo.
+      # Prerelease take explicit dist-tag: release candidate never on latest.
       - name: publish npm packages
         run: |
           for dir in npm/platforms/*/ npm/knit-statusline; do

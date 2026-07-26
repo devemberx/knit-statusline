@@ -1,23 +1,23 @@
 version: 2
 
 updates:
-  # Action pins go stale in silence -- nothing in CI notice a pin three releases
-  # behind. zizmor.yml demand hash-pin, and Dependabot bump the sha and its
-  # trailing version comment together.
+  # Action pins go stale in silence -- nothing in CI notice pin three releases
+  # behind.
+  # Dependabot bump sha and its trailing version comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    # A compromised release get yanked within days, and nothing here need the
-    # newest action the hour it land.
+    # Compromised release get yanked within days.
     cooldown:
       default-days: 7
-    # One PR a week for every action, not one per action.
+    # One PR a week for all actions, not one per action.
     groups:
       actions:
         patterns: ["*"]
-    # scope "deps" is what label-pr.yml map to the dependencies label.
+    # prefix ci + include scope give scope "deps", which label-pr.yml map to
+    # dependencies label.
     commit-message:
       prefix: ci
       include: scope

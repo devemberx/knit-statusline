@@ -1,14 +1,9 @@
-# Every third-party action pinned by commit hash, zizmor's strictest setting.
-#
+# hash-pin is zizmor strictest policy.
 # Tag is movable pointer: tj-actions March 2025 repointed every version tag at
-# commit that dumped CI secrets into build log, and hash-pinned consumers never
-# saw it. Dependabot bump tag names, not tag repointed under same name -- no
-# cover there.
-#
-# Earlier ref-pin traded that risk for readable `uses:` lines, on grounds ci.yml
-# run read-only and hold no secret. publish.yml end that: it hold npm publish
-# rights over OIDC and contents: write. Dependabot bump hash and its trailing
-# version comment together, so cost is one extra line per PR.
+# commit that dumped CI secrets, hash-pinned consumers unaffected.
+# Dependabot bump tag names, not tag repointed under same name -- no cover there.
+# Earlier ref-pin relaxation ended at publish.yml: it hold npm publish rights
+# over OIDC plus contents: write.
 rules:
   unpinned-uses:
     config:
