@@ -3,15 +3,15 @@
 
 Fires on: gh pr create|edit|comment, gh api .../pulls...
 
-Squash build the commit from PR title + ## Changes bullets, so rules mirror
+Squash build commit from PR title + ## Changes bullets, so rules mirror
 .githooks/commit-msg:
   1. Prose English. Closed ``` fences and `inline spans` exempt — pasted
      terminal output carry glyphs by design.
-  2. Every ## Type of Change checkbox from the template kept.
+  2. Every ## Type of Change checkbox from template kept.
   3. ## Changes: exactly 2 bullets, each <= 120 chars.
   4. Title "type(scope)!: summary", lowercase, no period, <= 50 chars.
 
-Fail closed: unreadable body, or a create with no body, is an error not a pass.
+Fail closed: unreadable body, or create with no body, is error not pass.
 
 Exit 0 allow, exit 2 block.
 """
@@ -45,10 +45,10 @@ EMOJI_RE = re.compile(
     "\U0000fe00-\U0000fe0f"
     "\U0000200d]"
 )
-# Closed pairs only: unclosed fence must not exempt the rest of the body.
+# Closed pairs only: unclosed fence must not exempt rest of body.
 FENCE_RE = re.compile(r"^```[\s\S]*?^```", re.MULTILINE)
 INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
-# GitHub render [X] the same as [x].
+# GitHub render [X] same as [x].
 CHECKBOX_RE = re.compile(r"^- \[[ xX]\] (.+)$", re.MULTILINE)
 TYPE_HEADER_RE = re.compile(r"^##\s+Type of Change\s*$", re.IGNORECASE | re.MULTILINE)
 CHANGES_HEADER_RE = re.compile(r"^##\s+Changes\s*$", re.IGNORECASE | re.MULTILINE)
@@ -67,7 +67,7 @@ PR_CREATE_RE = re.compile(r"\bgh\s+pr\s+create\b")
 PR_EDIT_RE = re.compile(r"\bgh\s+pr\s+edit\b")
 PR_COMMENT_RE = re.compile(r"\bgh\s+pr\s+comment\b")
 WEB_FLAG_RE = re.compile(r"(?<!\S)(?:--web|-w)(?!\S)")
-# Creation POST to /pulls with no trailing id, so a bare segment count too.
+# Creation POST to /pulls with no trailing id, so bare segment count too.
 API_PULLS_RE = re.compile(r"/pulls(?:/|\b)")
 # Sub-resources carry no PR title or body; /merge belong to validate_pr_merge.
 API_SUBRESOURCE_RE = re.compile(r"/pulls/\d+/\w+")
@@ -85,7 +85,7 @@ def check(cmd: str) -> list[str]:
     if kind is None:
         return []
 
-    # shlex failure lose every flag. Say so, else a passed --title read absent.
+    # shlex failure lose every flag. Say so, else passed --title read absent.
     parsed = argv_of(cmd) is not None
     found_body, body = extract_body(cmd, kind)
 
@@ -118,7 +118,7 @@ def check(cmd: str) -> list[str]:
 
 def classify(cmd: str) -> str | None:
     if PR_CREATE_RE.search(cmd):
-        # --web hand the body to the browser form, out of reach here.
+        # --web hand body to browser form, out of reach here.
         return None if WEB_FLAG_RE.search(cmd) else "create"
     if PR_EDIT_RE.search(cmd):
         return "edit"
@@ -158,7 +158,7 @@ def extract_title(cmd: str, kind: str) -> str | None:
     if argv is None:
         return None
     if kind == "api":
-        # gh api -t = --template; the title arrive as a title= field.
+        # gh api -t = --template; title arrive as title= field.
         return _api_field(argv, "title")[1]
     return flag_value(argv, {"--title", "-t"}, attached="-t")[1]
 
@@ -213,7 +213,7 @@ def title_errors(title: str) -> list[str]:
 
 
 def template_errors(body: str) -> list[str]:
-    """Checkboxes the body dropped from the template's Type of Change block.
+    """Checkboxes body dropped from template's Type of Change block.
 
     Only that block mandatory — every other template section is free prose.
     """

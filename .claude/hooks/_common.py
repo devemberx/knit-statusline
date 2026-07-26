@@ -1,4 +1,4 @@
-"""Command parsing shared by the gh validation hooks."""
+"""Command parsing shared by gh validation hooks."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from typing import Callable
 BULLET_LIMIT = 120
 REQUIRED_BULLETS = 2
 
-# argv_of None = no flag read at all. Without this the caller blame whichever
-# flag it looked for first.
+# argv_of None = no flag read at all. Without this, caller blame whichever flag
+# it looked for first.
 PARSE_ERROR = (
     "Command could not be parsed as shell words (unbalanced quote?), so no flag "
     "check can run. Put the body in a <<'EOF' heredoc, or remove the stray quote."
@@ -23,8 +23,8 @@ PARSE_ERROR = (
 
 GH_API_RE = re.compile(r"\bgh\s+api\b")
 
-# shlex know neither $() nor heredoc: it end the token at the first inner quote,
-# so a truncated body would pass. Slice the payload off the raw string.
+# shlex know neither $() nor heredoc: it end token at first inner quote, so
+# truncated body would pass. Slice payload off raw string.
 HEREDOC_RE = re.compile(
     r"<<(?P<dash>-)?\s*(?:'(?P<sq>[^']+)'|\"(?P<dq>[^\"]+)\"|(?P<bare>\w+))"
 )
@@ -76,7 +76,7 @@ def heredoc_spans(cmd: str) -> list[tuple[int, int, int, str]]:
 
 
 def strip_heredocs(cmd: str) -> str:
-    """Heredoc payloads removed, for subcommand matching. Prose quoting a gh
+    """Heredoc payloads removed, for subcommand matching. Prose quoting gh
     command would else classify as that command.
     """
     out: list[str] = []
@@ -107,8 +107,8 @@ def flag_value(
 ) -> tuple[bool, str | None]:
     """(found, value) for `--flag v`, `--flag=v`, `-f v` and `-fv`.
 
-    Value None when the flag end the command — shell error there, but the flag
-    was still asked for, so found stay True.
+    Value None when flag end command — shell error there, but flag was still
+    asked for, so found stay True.
     """
     for i, arg in enumerate(argv):
         if arg in names:
@@ -134,7 +134,7 @@ def read_file(path: str) -> str | None:
 
 
 def project_root() -> Path:
-    """Repo root. Hook inherit an arbitrary cwd."""
+    """Repo root. Hook inherit arbitrary cwd."""
     env = os.environ.get("CLAUDE_PROJECT_DIR")
     if env:
         return Path(env)
