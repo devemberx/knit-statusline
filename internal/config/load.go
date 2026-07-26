@@ -51,8 +51,14 @@ type Error struct {
 	Msg  string
 }
 
+// Error render located problem. Unlocated one print message alone:
+// filepath.Base("") give ".", so empty File otherwise leave row marked "⚠ ."
+// and text opening on bare colon.
 func (e *Error) Error() string {
-	if e.Line > 0 {
+	switch {
+	case e.File == "":
+		return e.Msg
+	case e.Line > 0:
 		return fmt.Sprintf("%s:%d: %s", e.File, e.Line, e.Msg)
 	}
 	return fmt.Sprintf("%s: %s", e.File, e.Msg)
@@ -60,6 +66,9 @@ func (e *Error) Error() string {
 
 // Short render for row itself: space scarce, file name implied.
 func (e *Error) Short() string {
+	if e.File == "" {
+		return "config"
+	}
 	base := filepath.Base(e.File)
 	if e.Line > 0 {
 		return fmt.Sprintf("%s:%d", base, e.Line)
@@ -110,14 +119,62 @@ func ProjectPath(projectDir string) string {
 	return filepath.Join(projectDir, ".claude", "statusline.toml")
 }
 
+// Layer is one contributor to config, with bytes it parsed from.
+//
+// Bytes retained so Validate locate problem in file that declared it, at no
+// second read -- render path run Validate every redraw. Builtin preset carry nil
+// Source: nothing on disk to point at.
+type Layer struct {
+	Path   string
+	Source []byte
+}
+
 // LoadResult report what Load produced, survived problems included.
 type LoadResult struct {
 	Config *Config
-	// Contributing files, in application order.
-	Sources []string
+	// Contributors, in application order.
+	Layers []Layer
 	// Problems that forced fallback. Rendering continue; row show marker and
 	// doctor print these in full.
 	Errors []error
+}
+
+// Sources name every contributor, in application order.
+func (r *LoadResult) Sources() []string {
+	out := make([]string, 0, len(r.Layers))
+	for _, l := range r.Layers {
+		out = append(out, l.Path)
+	}
+	return out
+}
+
+// Origin locate token across every layer that fed config.
+//
+// Merge lose which layer declared what. Two sweeps, headers over every layer
+// before mentions touch any: layer order alone hand blame to override naming
+// segment on its segments = [...] row, over base block that configured it. Both
+// files name same segments, so wrong one send user to edit file holding no
+// mistake. Within one sweep, reverse application order -- override edited last.
+//
+// No layer name token: key came from builtin preset, or neither sweep match.
+// Last real file then carry report, line omitted rather than invented. fallback
+// serve config assembled from builtin preset alone.
+func (r *LoadResult) Origin(fallback string) Origin {
+	return func(tok string) (string, int) {
+		for _, find := range []func([]byte, string) int{headerLine, mentionLine} {
+			for i := len(r.Layers) - 1; i >= 0; i-- {
+				if n := find(r.Layers[i].Source, tok); n > 0 {
+					return r.Layers[i].Path, n
+				}
+			}
+		}
+		for i := len(r.Layers) - 1; i >= 0; i-- {
+			if r.Layers[i].Source != nil {
+				return r.Layers[i].Path, 0
+			}
+		}
+		return fallback, 0
+	}
 }
 
 // Load read user config, then apply project override on top.
@@ -130,12 +187,12 @@ func Load(home, projectDir string) *LoadResult {
 	res := &LoadResult{}
 
 	if home != "" {
-		base, err := loadFile(UserPath(home))
+		base, raw, err := loadFile(UserPath(home))
 		if err != nil {
 			res.Errors = append(res.Errors, err)
 		} else if base != nil {
 			res.Config = base
-			res.Sources = append(res.Sources, UserPath(home))
+			res.Layers = append(res.Layers, Layer{Path: UserPath(home), Source: raw})
 		}
 	}
 
@@ -147,18 +204,18 @@ func Load(home, projectDir string) *LoadResult {
 			preset = &Config{Segments: map[string]*Segment{}}
 		}
 		res.Config = preset
-		res.Sources = append(res.Sources, "builtin:"+DefaultPreset)
+		res.Layers = append(res.Layers, Layer{Path: "builtin:" + DefaultPreset})
 	}
 
 	if projectDir != "" {
 		path := ProjectPath(projectDir)
-		override, err := loadFile(path)
+		override, raw, err := loadFile(path)
 		if err != nil {
 			res.Errors = append(res.Errors, err)
 		} else if override != nil {
 			res.Errors = append(res.Errors, stripProjectCommands(override, path)...)
 			res.Config = Merge(res.Config, override)
-			res.Sources = append(res.Sources, path)
+			res.Layers = append(res.Layers, Layer{Path: path, Source: raw})
 		}
 	}
 
@@ -179,6 +236,7 @@ func stripProjectCommands(c *Config, path string) []error {
 			continue
 		}
 		seg.Command = nil
+		seg.commandStripped = true
 		errs = append(errs, &Error{
 			File: path,
 			Msg: fmt.Sprintf(
@@ -189,16 +247,21 @@ func stripProjectCommands(c *Config, path string) []error {
 	return errs
 }
 
-// nil, nil when file does not exist.
-func loadFile(path string) (*Config, error) {
+// loadFile return parsed config plus bytes it came from, so caller locate
+// problem later with no second read. All nil when file does not exist.
+func loadFile(path string) (*Config, []byte, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, &Error{File: path, Msg: err.Error()}
+		return nil, nil, &Error{File: path, Msg: err.Error()}
 	}
-	return parse(b, path)
+	c, err := parse(b, path)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, b, nil
 }
 
 // Merge apply override on top of base, mutating neither.
@@ -287,5 +350,9 @@ func mergeSegment(dst, src *Segment) {
 	}
 	if src.CacheMS != nil {
 		dst.CacheMS = src.CacheMS
+	}
+	// Sticky: base declaring command legitimately does not un-strip project one.
+	if src.commandStripped {
+		dst.commandStripped = true
 	}
 }

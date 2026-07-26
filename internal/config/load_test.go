@@ -327,8 +327,8 @@ func TestLoadFallsBackToPresetWhenNothingExists(t *testing.T) {
 	if res.Config == nil || len(res.Config.Lines) == 0 {
 		t.Fatal("Load must always yield a usable config")
 	}
-	if len(res.Sources) != 1 || !strings.HasPrefix(res.Sources[0], "builtin:") {
-		t.Errorf("sources = %v, want the built-in preset", res.Sources)
+	if len(res.Sources()) != 1 || !strings.HasPrefix(res.Sources()[0], "builtin:") {
+		t.Errorf("sources = %v, want the built-in preset", res.Sources())
 	}
 	if len(res.Errors) != 0 {
 		t.Errorf("a missing config is not an error: %v", res.Errors)
@@ -344,8 +344,8 @@ func TestLoadSkipsUserLayerWithoutHome(t *testing.T) {
 	t.Chdir(dir)
 
 	res := Load("", "")
-	if len(res.Sources) != 1 || !strings.HasPrefix(res.Sources[0], "builtin:") {
-		t.Errorf("sources = %v, want the built-in preset only", res.Sources)
+	if len(res.Sources()) != 1 || !strings.HasPrefix(res.Sources()[0], "builtin:") {
+		t.Errorf("sources = %v, want the built-in preset only", res.Sources())
 	}
 	if res.Config.Lines[0].Segments[0] == "nothing_from_cwd" {
 		t.Error("Load read a config relative to the working directory")
@@ -361,8 +361,8 @@ func TestLoadAppliesProjectOverride(t *testing.T) {
 	if len(res.Config.Lines) != 1 || len(res.Config.Lines[0].Segments) != 1 {
 		t.Errorf("project override not applied: %+v", res.Config.Lines)
 	}
-	if len(res.Sources) != 2 {
-		t.Errorf("sources = %v, want both files", res.Sources)
+	if len(res.Sources()) != 2 {
+		t.Errorf("sources = %v, want both files", res.Sources())
 	}
 }
 

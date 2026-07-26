@@ -12,8 +12,6 @@ import (
 	"github.com/devemberx/knit-statusline/internal/schema"
 )
 
-// parse decode one inline document, so a test state shape it exercise.
-// Shared with main_test.go.
 func parse(t *testing.T, doc string) *schema.Input {
 	t.Helper()
 	in, err := schema.Parse([]byte(doc))
@@ -21,19 +19,6 @@ func parse(t *testing.T, doc string) *schema.Input {
 		t.Fatalf("parse: %v", err)
 	}
 	return in
-}
-
-// chdir move process into dir for one test, so workingDir() report it.
-func chdir(t *testing.T, dir string) {
-	t.Helper()
-	prev, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(prev) })
 }
 
 func writeProjectConfig(t *testing.T, project, body string) {
@@ -47,8 +32,6 @@ func writeProjectConfig(t *testing.T, project, body string) {
 	}
 }
 
-// preview render sample data, so a config edit get checked with no Claude Code
-// restart.
 func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 	isolate(t)
 	t.Setenv("NO_COLOR", "1")
@@ -93,25 +76,69 @@ func TestPreviewDrawsANamedPreset(t *testing.T) {
 	}
 }
 
-// Unknown preset must name what exist, so user need not go hunting.
-func TestPreviewRejectsUnknownPreset(t *testing.T) {
-	isolate(t)
-	var out, errOut bytes.Buffer
-
-	if code := runPreview([]string{"--preset", "nope"}, &out, &errOut); code != 1 {
-		t.Errorf("exit = %d, want 1", code)
-	}
-	if !strings.Contains(out.String(), "available:") {
-		t.Errorf("error should list presets: %q", out.String())
-	}
-}
-
+// Bad flag must say which. Exit 2 with no output leave user at prompt guessing.
 func TestPreviewRejectsUnknownFlag(t *testing.T) {
 	isolate(t)
 	var out, errOut bytes.Buffer
 
 	if code := runPreview([]string{"--nope"}, &out, &errOut); code != 2 {
 		t.Errorf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errOut.String(), "nope") {
+		t.Errorf("stderr should name the bad flag: %q", errOut.String())
+	}
+	if out.Len() != 0 {
+		t.Errorf("stdout should stay clean: %q", out.String())
+	}
+}
+
+// -h is no error: flag package hand it back as flag.ErrHelp.
+func TestSubcommandHelpFlagExitsZero(t *testing.T) {
+	isolate(t)
+	var out, errOut bytes.Buffer
+
+	if code := runPreview([]string{"-h"}, &out, &errOut); code != 0 {
+		t.Errorf("exit = %d, want 0", code)
+	}
+	if !strings.Contains(out.String(), "Usage:") {
+		t.Errorf("-h printed no usage: %q", out.String())
+	}
+}
+
+// Errors belong on stderr, so stdout piped to file hold rendered row alone.
+// Unknown preset name what exist too, so user need not go hunting.
+func TestPreviewErrorsGoToStderr(t *testing.T) {
+	isolate(t)
+	var out, errOut bytes.Buffer
+
+	if code := runPreview([]string{"--preset", "nope"}, &out, &errOut); code != 1 {
+		t.Errorf("exit = %d, want 1", code)
+	}
+	if !strings.Contains(errOut.String(), "available:") {
+		t.Errorf("stderr should list presets: %q", errOut.String())
+	}
+	if out.Len() != 0 {
+		t.Errorf("stdout should stay clean: %q", out.String())
+	}
+}
+
+// preview exist to check config edit, so it must not be quietest of three.
+// Mistyped segment name cost its slot; render row carry marker, doctor carry
+// prose, preview said nothing at all.
+func TestPreviewReportsConfigProblems(t *testing.T) {
+	home := isolate(t)
+	t.Setenv("NO_COLOR", "1")
+	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
+
+	var out, errOut bytes.Buffer
+	if code := runPreview(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d", code)
+	}
+	if !strings.Contains(errOut.String(), "unknown segment") {
+		t.Errorf("preview stayed silent about the typo: %q", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Opus") {
+		t.Errorf("row should still draw:\n%s", out.String())
 	}
 }
 
@@ -124,7 +151,7 @@ func TestPreviewAppliesTheProjectOverride(t *testing.T) {
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n")
-	chdir(t, project)
+	t.Chdir(project)
 
 	var out, errOut bytes.Buffer
 	if code := runPreview(nil, &out, &errOut); code != 0 {
@@ -139,13 +166,11 @@ func TestPreviewAppliesTheProjectOverride(t *testing.T) {
 	}
 }
 
-// doctor is where whatever need explaining get explained, since row hold marker
-// alone.
 func TestDoctorReportsPathsAndSegments(t *testing.T) {
 	isolate(t)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 
-	if code := runDoctor(nil, &out); code != 0 {
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
 	got := out.String()
@@ -168,8 +193,8 @@ func TestDoctorReportsPathsAndSegments(t *testing.T) {
 
 func TestDoctorMarksAbsentFiles(t *testing.T) {
 	isolate(t)
-	var out bytes.Buffer
-	runDoctor(nil, &out)
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
 
 	if !strings.Contains(out.String(), "(not present)") {
 		t.Errorf("a fresh home should report missing files:\n%s", out.String())
@@ -188,8 +213,8 @@ segments = ["model", "no-such-segment"]
 template = "{nope}"
 `)
 
-	var out bytes.Buffer
-	if code := runDoctor(nil, &out); code != 0 {
+	var out, errOut bytes.Buffer
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
 	got := out.String()
@@ -211,10 +236,10 @@ func TestDoctorSeesTheProjectOverride(t *testing.T) {
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
-	chdir(t, project)
+	t.Chdir(project)
 
-	var out bytes.Buffer
-	runDoctor(nil, &out)
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
 
 	got := out.String()
 	if !strings.Contains(got, config.ProjectPath(project)) {
@@ -225,37 +250,85 @@ func TestDoctorSeesTheProjectOverride(t *testing.T) {
 	}
 }
 
-// Line numbers come from last real file that fed config, so a problem point at
-// something openable. Builtin preset carry no path and never qualify.
-func TestLastFileSourcePrefersTheOverride(t *testing.T) {
+// Problem must name file that declared it. Blaming last-merged layer instead
+// sent user to open project override and read its innocent row 2, because both
+// files name segment "model".
+func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
 	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
+
 	project := t.TempDir()
-	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"version\"]\n")
+	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n")
+	t.Chdir(project)
 
-	res := config.Load(home, project)
-	path, source := lastFileSource(res)
-	if path != config.ProjectPath(project) {
-		t.Errorf("path = %q, want the override", path)
-	}
-	if !strings.Contains(string(source), "version") {
-		t.Errorf("source = %q, want the override's bytes", source)
-	}
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
 
-	// Nothing on disk leave only builtin preset, carrying no file to read.
-	bare := config.Load(t.TempDir(), "")
-	if path, source := lastFileSource(bare); path != "" || source != nil {
-		t.Errorf("builtin preset reported as a file: %q", path)
+	got := out.String()
+	if !strings.Contains(got, config.UserPath(home)+":4") {
+		t.Errorf("unknown field not located in the user config at line 4:\n%s", got)
+	}
+	if strings.Contains(got, config.ProjectPath(project)+":") {
+		t.Errorf("clean project override blamed for the user config's mistake:\n%s", got)
 	}
 }
 
-// install and uninstall round trip through isolated home, so no test touch
-// real Claude Code settings.
+// Override own mistake stay its own, line included.
+func TestDoctorLocatesTheOverridesOwnMistake(t *testing.T) {
+	home := isolate(t)
+	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+
+	project := t.TempDir()
+	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
+	t.Chdir(project)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	if got := out.String(); !strings.Contains(got, config.ProjectPath(project)+":4") {
+		t.Errorf("override's own unknown field not located in it:\n%s", got)
+	}
+}
+
+// Builtin preset carry no file, so nothing on disk leave fallback path bare of
+// line number rather than pointing at row of file nobody wrote.
+func TestDoctorOnBuiltinPresetNamesNoLine(t *testing.T) {
+	home := isolate(t)
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	if got := out.String(); strings.Contains(got, config.UserPath(home)+":") {
+		t.Errorf("absent config reported with a line number:\n%s", got)
+	}
+}
+
+// Project layer may not run shell commands. Strip already reported, so
+// "type command but no command" beside it read as second, invented mistake.
+func TestDoctorReportsAStrippedCommandOnce(t *testing.T) {
+	home := isolate(t)
+	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+
+	project := t.TempDir()
+	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"clock\"]\n\n[segments.clock]\ntype = \"command\"\ncommand = \"date\"\n")
+	t.Chdir(project)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, "command ignored") {
+		t.Errorf("strip went unreported:\n%s", got)
+	}
+	if strings.Contains(got, "but no command") {
+		t.Errorf("strip reported twice, second time as the user's mistake:\n%s", got)
+	}
+}
+
 func TestInstallUninstallRoundTrip(t *testing.T) {
 	home := isolate(t)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 
-	if code := runInstall(nil, &out); code != 0 {
+	if code := runInstall(nil, &out, &errOut); code != 0 {
 		t.Fatalf("install exit = %d: %s", code, out.String())
 	}
 	for _, want := range []string{"installed", "configured", "wrote", "Restart Claude Code"} {
@@ -268,7 +341,7 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 	}
 
 	out.Reset()
-	if code := runUninstall(nil, &out); code != 0 {
+	if code := runUninstall(nil, &out, &errOut); code != 0 {
 		t.Fatalf("uninstall exit = %d: %s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "removed the status line") {
@@ -281,8 +354,8 @@ func TestInstallKeepsAnExistingConfig(t *testing.T) {
 	home := isolate(t)
 	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
 
-	var out bytes.Buffer
-	if code := runInstall(nil, &out); code != 0 {
+	var out, errOut bytes.Buffer
+	if code := runInstall(nil, &out, &errOut); code != 0 {
 		t.Fatalf("exit = %d: %s", code, out.String())
 	}
 	if !strings.Contains(out.String(), "--force") {
@@ -292,22 +365,26 @@ func TestInstallKeepsAnExistingConfig(t *testing.T) {
 
 func TestInstallRejectsUnknownPreset(t *testing.T) {
 	isolate(t)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 
-	if code := runInstall([]string{"--preset", "nope"}, &out); code != 1 {
+	if code := runInstall([]string{"--preset", "nope"}, &out, &errOut); code != 1 {
 		t.Errorf("exit = %d, want 1", code)
 	}
-	if !strings.Contains(out.String(), "available:") {
-		t.Errorf("error should list presets: %q", out.String())
+	if !strings.Contains(errOut.String(), "available:") {
+		t.Errorf("stderr should list presets: %q", errOut.String())
+	}
+	// Nothing installed, so nothing to report on stdout.
+	if out.Len() != 0 {
+		t.Errorf("stdout should stay clean: %q", out.String())
 	}
 }
 
 // Uninstalling what was never installed is no failure.
 func TestUninstallOnACleanHome(t *testing.T) {
 	isolate(t)
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 
-	if code := runUninstall(nil, &out); code != 0 {
+	if code := runUninstall(nil, &out, &errOut); code != 0 {
 		t.Errorf("exit = %d, want 0", code)
 	}
 	if !strings.Contains(out.String(), "no status line was configured") {

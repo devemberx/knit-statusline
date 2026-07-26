@@ -55,6 +55,9 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
   run orders of magnitude over fresh input and price differently.
 - New segment field must be listed in `Def.Fields`, else `doctor` and config
   validation cannot see it and user get a silently blank segment.
+- Config problem name file that declared it. `Load` keep bytes per layer and
+  `Origin` search them, table headers before mentions. Guessing one file blame
+  whichever layer merged last, pointing at its innocent rows.
 - Subprocess need both a context deadline and `cmd.WaitDelay`. Context kill
   direct child alone; grandchild holding stdout keep `Output()` reading past it.
 - Caches disposable: temp file then rename — two renders may overlap. Corrupt or

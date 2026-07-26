@@ -13,7 +13,6 @@ import (
 
 // isolate point homeDir() at a scratch directory, so no test read or write real
 // ~/.claude. USERPROFILE set too: os.UserHomeDir read that one on Windows.
-// Shared with commands_test.go.
 func isolate(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
@@ -22,8 +21,6 @@ func isolate(t *testing.T) string {
 	return home
 }
 
-// writeUserConfig lay down ~/.claude/statusline.toml inside isolated home.
-// Shared with commands_test.go.
 func writeUserConfig(t *testing.T, home, body string) {
 	t.Helper()
 	path := config.UserPath(home)

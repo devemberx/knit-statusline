@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/devemberx/knit-statusline/internal/config"
@@ -36,13 +37,13 @@ func main() {
 func dispatch(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "install":
-		return runInstall(args[1:], stdout)
+		return runInstall(args[1:], stdout, stderr)
 	case "uninstall":
-		return runUninstall(args[1:], stdout)
+		return runUninstall(args[1:], stdout, stderr)
 	case "preview":
 		return runPreview(args[1:], stdout, stderr)
 	case "doctor":
-		return runDoctor(args[1:], stdout)
+		return runDoctor(args[1:], stdout, stderr)
 	case "version", "--version", "-v":
 		fmt.Fprintln(stdout, "knit-statusline "+version)
 		return 0
@@ -67,7 +68,7 @@ Usage:
   knit-statusline doctor          report config problems and available segments
 
 Install flags:
-  --preset NAME    starting layout: %v (default %q)
+  --preset NAME    starting layout: %s (default %q)
   --force          replace an existing statusline.toml
 
 Preview flags:
@@ -76,7 +77,7 @@ Preview flags:
 
 Configuration lives in ~/.claude/statusline.toml, with an optional
 per-project override at <project>/.claude/statusline.toml.
-`, version, config.PresetNames(), config.DefaultPreset)
+`, version, strings.Join(config.PresetNames(), ", "), config.DefaultPreset)
 }
 
 // Hot path: Claude Code run it on every status update.
@@ -126,20 +127,20 @@ func renderFromStdin(stdin io.Reader, stdout io.Writer) {
 
 // marker name file needing attention, or empty.
 //
-// Two kinds of problem reach here. Parse failure already dropped a layer, and
-// Load recorded it. Semantic error -- segment name this build lack, template
-// field that does not exist -- cost only its own segment, so unmarked that
-// segment vanish and user get no hint which file to open.
+// Semantic error -- segment name this build lack, template field that does not
+// exist -- cost only its own segment, so unmarked that segment vanish and user
+// get no hint which file to open. Parse failure already dropped a layer and Load
+// recorded it, so those come first.
 //
-// Validate run with nil source: re-reading config off disk on every render buy
-// only a line number, and lineOf return 0 without it, so text carry file name
-// alone. Both config files are named statusline.toml anyway; doctor is where
-// line numbers and full prose live.
+// Load hand over bytes it read, so locating problem cost no second read on path
+// that run every redraw. Short() trim to "statusline.toml:7"; doctor hold full
+// prose.
 func marker(res *config.LoadResult, home string) string {
 	if len(res.Errors) > 0 {
 		return short(res.Errors[0])
 	}
-	if errs := config.Validate(res.Config, nil, config.UserPath(home), segment.Known); len(errs) > 0 {
+	origin := res.Origin(config.UserPath(home))
+	if errs := config.Validate(res.Config, origin, segment.Known); len(errs) > 0 {
 		return short(errs[0])
 	}
 	return ""

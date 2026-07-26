@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,41 +19,57 @@ import (
 )
 
 // Subcommands only. Render path exit non-zero never.
-func fail(w io.Writer, err error) int {
-	fmt.Fprintln(w, "error:", err)
+//
+// stderr, so stdout carry rendered row alone and survive pipe.
+func fail(stderr io.Writer, err error) int {
+	fmt.Fprintln(stderr, "error:", err)
 	return 1
 }
 
-// flags parse args with usage suppressed, so a bad flag report through our own
-// exit code rather than printing twice.
-func flags(name string, args []string, bind func(*flag.FlagSet)) (*flag.FlagSet, error) {
+// flags parse args with flag package's own output suppressed, so message and
+// exit code both come from here instead of arriving twice.
+func flags(name string, args []string, bind func(*flag.FlagSet)) error {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	bind(fs)
-	return fs, fs.Parse(args)
+	return fs.Parse(args)
 }
 
-func runInstall(args []string, stdout io.Writer) int {
+// badFlag report unparseable args. Silent exit 2 leave user at prompt with no
+// idea which flag was wrong.
+//
+// -h reach here as flag.ErrHelp. Asking for help is no error.
+func badFlag(stdout, stderr io.Writer, err error) int {
+	if errors.Is(err, flag.ErrHelp) {
+		usage(stdout)
+		return 0
+	}
+	fmt.Fprintln(stderr, "error:", err)
+	fmt.Fprintln(stderr, "run `knit-statusline help` for usage")
+	return 2
+}
+
+func runInstall(args []string, stdout, stderr io.Writer) int {
 	var preset *string
 	var force *bool
-	_, err := flags("install", args, func(fs *flag.FlagSet) {
+	err := flags("install", args, func(fs *flag.FlagSet) {
 		preset = fs.String("preset", config.DefaultPreset, "starting layout")
 		force = fs.Bool("force", false, "replace an existing statusline.toml")
 	})
 	if err != nil {
-		return 2
+		return badFlag(stdout, stderr, err)
 	}
 
 	binary, err := os.Executable()
 	if err != nil {
-		return fail(stdout, fmt.Errorf("locating this binary: %w", err))
+		return fail(stderr, fmt.Errorf("locating this binary: %w", err))
 	}
 
 	res, err := install.Install(install.Options{
 		Home: homeDir(), Binary: binary, Preset: *preset, Force: *force,
 	})
 	if err != nil {
-		return fail(stdout, err)
+		return fail(stderr, err)
 	}
 
 	if res.ReplacedCommand != "" && res.ReplacedCommand != res.InstalledBinary {
@@ -73,14 +90,14 @@ func runInstall(args []string, stdout io.Writer) int {
 	return 0
 }
 
-func runUninstall(args []string, stdout io.Writer) int {
-	if _, err := flags("uninstall", args, func(*flag.FlagSet) {}); err != nil {
-		return 2
+func runUninstall(args []string, stdout, stderr io.Writer) int {
+	if err := flags("uninstall", args, func(*flag.FlagSet) {}); err != nil {
+		return badFlag(stdout, stderr, err)
 	}
 
 	res, err := install.Uninstall(homeDir())
 	if err != nil {
-		return fail(stdout, err)
+		return fail(stderr, err)
 	}
 	if res.ReplacedCommand == "" {
 		fmt.Fprintf(stdout, "no status line was configured in %s\n", res.SettingsPath)
@@ -99,17 +116,17 @@ func runUninstall(args []string, stdout io.Writer) int {
 func runPreview(args []string, stdout, stderr io.Writer) int {
 	var preset *string
 	var sparse *bool
-	_, err := flags("preview", args, func(fs *flag.FlagSet) {
+	err := flags("preview", args, func(fs *flag.FlagSet) {
 		preset = fs.String("preset", "", "preview a built-in preset instead of your config")
 		sparse = fs.Bool("sparse", false, "render the degraded case: no rate limits, no usage yet")
 	})
 	if err != nil {
-		return 2
+		return badFlag(stdout, stderr, err)
 	}
 
 	cfg, label, err := previewConfig(*preset, stderr)
 	if err != nil {
-		return fail(stdout, err)
+		return fail(stderr, err)
 	}
 
 	doc := fixtures.Full
@@ -120,7 +137,7 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 	}
 	in, err := schema.Parse(doc)
 	if err != nil {
-		return fail(stdout, err)
+		return fail(stderr, err)
 	}
 
 	fmt.Fprintf(stdout, "config: %s\nsample: %s\n\n", label, kind)
@@ -140,27 +157,35 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 }
 
 // previewConfig resolve what to draw. Project override included, so preview show
-// what this directory render rather than user layer alone.
+// what this directory render, not user layer alone.
+//
+// Every problem go to stderr. Mistyped segment name otherwise cost its slot in
+// silence here while real row carry marker -- preview exist to catch that edit.
+// stdout hold rendered row alone, so it still pipe.
 func previewConfig(preset string, stderr io.Writer) (*config.Config, string, error) {
 	if preset != "" {
 		cfg, err := config.Preset(preset)
 		if err != nil {
-			return nil, "", fmt.Errorf("%w; available: %v", err, config.PresetNames())
+			return nil, "", fmt.Errorf("%w; available: %s", err, strings.Join(config.PresetNames(), ", "))
 		}
 		return cfg, "preset " + preset, nil
 	}
+
 	res := config.Load(homeDir(), workingDir())
-	if len(res.Errors) > 0 {
-		fmt.Fprintln(stderr, "warning:", res.Errors[0])
+	for _, err := range res.Errors {
+		fmt.Fprintln(stderr, "warning:", err)
 	}
-	return res.Config, strings.Join(res.Sources, " + "), nil
+	for _, err := range config.Validate(res.Config, res.Origin(config.UserPath(homeDir())), segment.Known) {
+		fmt.Fprintln(stderr, "warning:", err)
+	}
+	return res.Config, strings.Join(res.Sources(), " + "), nil
 }
 
 // Real diagnostics live here. Row hold marker alone, so whatever need explaining
 // get explained in this command.
-func runDoctor(args []string, stdout io.Writer) int {
-	if _, err := flags("doctor", args, func(*flag.FlagSet) {}); err != nil {
-		return 2
+func runDoctor(args []string, stdout, stderr io.Writer) int {
+	if err := flags("doctor", args, func(*flag.FlagSet) {}); err != nil {
+		return badFlag(stdout, stderr, err)
 	}
 
 	home := homeDir()
@@ -179,7 +204,7 @@ func runDoctor(args []string, stdout io.Writer) int {
 
 	res := config.Load(home, project)
 	fmt.Fprintln(stdout, "Configuration")
-	fmt.Fprintf(stdout, "  sources    %s\n", strings.Join(res.Sources, " + "))
+	fmt.Fprintf(stdout, "  sources    %s\n", strings.Join(res.Sources(), " + "))
 	fmt.Fprintf(stdout, "  rows       %d\n", len(res.Config.Lines))
 
 	problems := len(res.Errors)
@@ -187,11 +212,10 @@ func runDoctor(args []string, stdout io.Writer) int {
 		fmt.Fprintf(stdout, "  ERROR      %v\n", err)
 	}
 
-	path, source := lastFileSource(res)
-	if path == "" {
-		path = config.UserPath(home)
-	}
-	for _, e := range config.Validate(res.Config, source, path, segment.Known) {
+	// Origin search every layer, so problem name file that declared it. Load
+	// already hold those bytes. Guessing one file blame whichever layer merged
+	// last, at its innocent rows.
+	for _, e := range config.Validate(res.Config, res.Origin(config.UserPath(home)), segment.Known) {
 		fmt.Fprintf(stdout, "  ERROR      %v\n", e)
 		problems++
 	}
@@ -209,23 +233,6 @@ func runDoctor(args []string, stdout io.Writer) int {
 	// Reporting problems is job. Finding some is no command failure, so exit
 	// stay zero and text carry verdict.
 	return 0
-}
-
-// lastFileSource return bytes of last real file that fed config, for lineOf to
-// locate against. Merge lost which layer declared what, and project override is
-// layer a user edit most, so it win when both exist. Builtin preset carry no
-// path, so it never qualify.
-func lastFileSource(res *config.LoadResult) (string, []byte) {
-	for i := len(res.Sources) - 1; i >= 0; i-- {
-		path := res.Sources[i]
-		if strings.HasPrefix(path, "builtin:") {
-			continue
-		}
-		if b, err := os.ReadFile(path); err == nil {
-			return path, b
-		}
-	}
-	return "", nil
 }
 
 func existsNote(path string) string {
