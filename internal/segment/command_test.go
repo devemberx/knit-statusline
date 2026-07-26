@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -43,10 +44,10 @@ func TestBuildCommandRendersOutput(t *testing.T) {
 
 // Multi-line result break row, so only first line reach template.
 func TestBuildCommandKeepsFirstLineOnly(t *testing.T) {
-	c := commandCtx(t, "printf 'one\\ntwo\\n'")
 	if runtime.GOOS == "windows" {
 		t.Skip("printf is no cmd builtin")
 	}
+	c := commandCtx(t, "printf 'one\\ntwo\\n'")
 	if got := draw(c); got != "one" {
 		t.Errorf("rendered %q, want one", got)
 	}
@@ -86,8 +87,65 @@ func TestBuildCommandHonoursTimeout(t *testing.T) {
 	if !res.Empty {
 		t.Errorf("timed-out command returned %+v, want empty", res)
 	}
-	if took > 5*time.Second {
+	// 50ms budget plus pipeDrain 100ms. Ceiling sit over that for loaded CI
+	// runner, under 30s to catch bug returning.
+	if took > 2*time.Second {
 		t.Errorf("Build took %v despite a 50ms timeout", took)
+	}
+}
+
+// Unbounded read let `cat /dev/urandom` fill memory well inside one budget.
+func TestBuildCommandCapsOutputSize(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("yes is no cmd builtin")
+	}
+	c := commandCtx(t, "yes ABCDEFGH")
+	c.Cfg.TimeoutMS = 500
+
+	// First line survive cap: bytes past it drop, result does not.
+	if got := draw(c); got != "ABCDEFGH" {
+		t.Errorf("rendered %q, want ABCDEFGH", got)
+	}
+}
+
+// Control characters repaint or retitle whatever Claude Code already drew.
+func TestBuildCommandStripsControlCharacters(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("printf is no cmd builtin")
+	}
+	c := commandCtx(t, `printf '\033[2Jstaging\033[0m\r'`)
+
+	if got := draw(c); got != "[2Jstaging[0m" {
+		t.Errorf("rendered %q, want escapes stripped", got)
+	}
+}
+
+// Editing command move its key and strand old file.
+func TestCommandCacheSweepsStaleEntries(t *testing.T) {
+	c := commandCtx(t, echoOf("first"))
+	c.Cfg.CacheMS = 60_000
+	draw(c)
+
+	stale := filepath.Join(c.CacheDir, "cmd-deadbeefdeadbeef.json")
+	if err := os.WriteFile(stale, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Age measured against c.Now, which fixtures pin far from wall clock.
+	old := c.Now.Add(-commandCacheTTL - time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second write trigger sweep. Command text differ, so cache miss.
+	next := c
+	next.Cfg.Command = echoOf("second")
+	draw(next)
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale entry survived the sweep: %v", err)
+	}
+	if _, err := os.Stat(commandCachePath(c)); err != nil {
+		t.Errorf("live entry swept away: %v", err)
 	}
 }
 
@@ -205,8 +263,34 @@ func TestCommandCachePathSeparatesSegments(t *testing.T) {
 	}
 }
 
-// Windows ship no sh. Hardcoding it drop this segment there in silence, which is
-// worst failure shape: no output and no error either.
+// exec keep writing after cap, so limitWriter must keep refusing.
+func TestLimitWriterStopsAtCap(t *testing.T) {
+	var buf strings.Builder
+	l := &limitWriter{w: &buf, left: 4}
+
+	if n, err := l.Write([]byte("ab")); n != 2 || err != nil {
+		t.Errorf("first write = %d, %v; want 2, nil", n, err)
+	}
+	if l.full {
+		t.Error("full set before cap reached")
+	}
+
+	// Straddle cap: two bytes land, rest drop.
+	if n, err := l.Write([]byte("cdef")); n != 2 || !errors.Is(err, errCommandOutputFull) {
+		t.Errorf("straddling write = %d, %v; want 2, errCommandOutputFull", n, err)
+	}
+	if n, err := l.Write([]byte("gh")); n != 0 || !errors.Is(err, errCommandOutputFull) {
+		t.Errorf("write past cap = %d, %v; want 0, errCommandOutputFull", n, err)
+	}
+	if !l.full {
+		t.Error("full not set after cap reached")
+	}
+	if got := buf.String(); got != "abcd" {
+		t.Errorf("buffered %q, want abcd", got)
+	}
+}
+
+// Windows ship no sh. Hardcoding it drop segment there in silence.
 func TestShellPicksInterpreterPerPlatform(t *testing.T) {
 	name, args := shell("echo hi")
 	if runtime.GOOS == "windows" {

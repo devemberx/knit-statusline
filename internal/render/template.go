@@ -6,9 +6,9 @@ import (
 	"unicode/utf8"
 )
 
-// Field is one interpolatable value. Color sit beside text, never baked in, so
-// alignment measure visible width: padding computed over string carrying escape
-// codes come out wrong by however long those codes run.
+// Field is one interpolatable value. Color sit beside text where one color
+// cover whole field. Fields needing two colors at once -- Bar, dir's {git} --
+// bake escapes into Text and rely on pad skipping them.
 type Field struct {
 	Text  string
 	Color Color
@@ -81,8 +81,6 @@ func splitSpec(inner string) (name, spec string) {
 
 // pad apply alignment spec: ">N" right, "<N" left, bare "N" right -- what
 // whoever write {pct:3} mean for a number.
-//
-// Width counted in runes, so a bar of ● and ○ pad as it look.
 func pad(s, spec string) string {
 	if spec == "" {
 		return s
@@ -98,7 +96,7 @@ func pad(s, spec string) string {
 	if err != nil || width <= 0 {
 		return s
 	}
-	gap := width - utf8.RuneCountInString(s)
+	gap := width - visibleWidth(s)
 	if gap <= 0 {
 		return s
 	}
@@ -106,4 +104,39 @@ func pad(s, spec string) string {
 		return s + strings.Repeat(" ", gap)
 	}
 	return strings.Repeat(" ", gap) + s
+}
+
+// visibleWidth count printed runes, skipping escape sequences. Bar and dir's
+// {git} bake color into Text, and counting those escapes as width make
+// {bar:>12} pad by nothing at all.
+func visibleWidth(s string) int {
+	n := 0
+	for i := 0; i < len(s); {
+		if s[i] == 0x1b {
+			i += escapeLen(s[i:])
+			continue
+		}
+		_, size := utf8.DecodeRuneInString(s[i:])
+		i += size
+		n++
+	}
+	return n
+}
+
+// escapeLen measure escape sequence at start of s, 1 for lone ESC.
+//
+// Palette emit "\033[...m" alone, but unrecognised sequence must still advance,
+// else scan stall on its own ESC forever.
+func escapeLen(s string) int {
+	if len(s) < 2 || s[1] != '[' {
+		return 1
+	}
+	// CSI run over parameter and intermediate bytes, then one final byte in
+	// 0x40..0x7e closing it.
+	for i := 2; i < len(s); i++ {
+		if s[i] >= 0x40 && s[i] <= 0x7e {
+			return i + 1
+		}
+	}
+	return len(s)
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/devemberx/knit-statusline/internal/fixtures"
+	"github.com/devemberx/knit-statusline/internal/render"
 )
 
 // repo build throwaway repository. Identity passed per command: CI runner carry
@@ -170,6 +171,25 @@ func TestBuildDirCarriesWorktreeName(t *testing.T) {
 	res := Build(ctx(t, fixtures.Full, "dir"))
 	if got := res.Fields["worktree"].Text; got != "feat-auth" {
 		t.Errorf("worktree = %q, want feat-auth", got)
+	}
+}
+
+// {git} bake three colors into one field. Every other test here run NoColor and
+// never reach that path.
+func TestBuildDirGitFieldPadsByVisibleWidth(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	c := ctx(t, fixtures.Full, "dir")
+	c.In.Workspace.CurrentDir = repo(t)
+	c.Palette = render.NewPalette()
+	c.Cfg.Template = "{git:>10}|"
+
+	got := draw(c)
+	if !strings.Contains(got, "\033[") {
+		t.Fatalf("palette emitted no escape, test prove nothing: %q", got)
+	}
+	// " (main)" is 7 visible runes, so 3 spaces reach 10.
+	if want := "   \033"; !strings.HasPrefix(got, want) {
+		t.Errorf("rendered %q, want 3 leading spaces", got)
 	}
 }
 

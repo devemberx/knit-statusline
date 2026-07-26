@@ -82,8 +82,8 @@ const (
 // Bar render progress bar, clamping out-of-range percentage instead of drawing
 // negative or oversized one.
 //
-// Filled part carry severity color, remainder dimmed: bar read at glance even
-// in crowded row.
+// Filled part carry severity color, remainder same hue dimmed: bar read at
+// glance even in crowded row.
 //
 // Cell count round to nearest cell, never truncate. Truncation put 9.6% on
 // screen as "10%" against empty bar, which read as nothing used at all. Bar hold
@@ -103,7 +103,15 @@ func (p Palette) Bar(pct float64, width int, t Thresholds) string {
 	}
 
 	filled := int(math.Round(pct * float64(width) / 100))
+	on := strings.Repeat(barFilled, filled)
+	off := strings.Repeat(barEmpty, width-filled)
 
-	return p.Wrap(strings.Repeat(barFilled, filled), t.Color(pct)) +
-		p.Wrap(strings.Repeat(barEmpty, width-filled), Dim)
+	c := t.Color(pct)
+	if !p.enabled || c == "" {
+		return on + off
+	}
+	// Dim layer over severity color instead of replacing it: "\033[2m" set faint
+	// and carry no foreground of its own. Reset between halves drop hue and
+	// leave empty cells default grey, untied to their own bar.
+	return string(c) + on + string(Dim) + off + reset
 }

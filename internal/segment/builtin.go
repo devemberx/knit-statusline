@@ -18,14 +18,12 @@ func init() {
 				return empty
 			}
 			// display_name carry family alone -- "Opus" read same across every
-			// Opus release, so row name a model it cannot pin. name join version
-			// in here, where absent half is one branch; template joining them
-			// leave stray space instead.
+			// Opus release, so row name a model it cannot pin.
 			family, version := c.In.Model.DisplayName, modelVersion(c.In.Model.ID)
 			return Result{
 				Base: render.Blue,
 				Fields: render.Fields{
-					"name":    render.Colored(strings.TrimSpace(family+" "+version), render.Blue),
+					"name":    render.Colored(joinModelName(family, version), render.Blue),
 					"family":  render.Colored(family, render.Blue),
 					"version": render.Colored(version, render.Blue),
 					"id":      render.Colored(c.In.Model.ID, render.Blue),
@@ -50,7 +48,7 @@ func init() {
 			d := time.Duration(*c.In.Cost.TotalDurationMS) * time.Millisecond
 			f := render.Fields{
 				"duration": render.Colored(duration(d), render.White),
-				"id":       render.Plain(c.In.SessionID),
+				"id":       render.Colored(c.In.SessionID, render.Dim),
 			}
 			if c.In.SessionName != nil {
 				f["name"] = render.Colored(*c.In.SessionName, render.White)
@@ -80,14 +78,14 @@ func init() {
 	})
 
 	register("limit.5h", Def{
-		Fields:          []string{"pct", "bar", "reset"},
-		DefaultTemplate: "current {bar} {pct:>3}% ⟳ {reset}",
+		Fields:          []string{"pct", "bar", "reset", "reset_time"},
+		DefaultTemplate: "current {bar} {pct:>3}%{reset}",
 		Build:           limitBuilder(fiveHour),
 	})
 
 	register("limit.7d", Def{
-		Fields:          []string{"pct", "bar", "reset"},
-		DefaultTemplate: "weekly {bar} {pct:>3}% ⟳ {reset}",
+		Fields:          []string{"pct", "bar", "reset", "reset_time"},
+		DefaultTemplate: "weekly {bar} {pct:>3}%{reset}",
 		Build:           limitBuilder(sevenDay),
 	})
 
@@ -196,7 +194,7 @@ func init() {
 				f["state"] = render.Colored(*c.In.PR.ReviewState, render.Dim)
 			}
 			if c.In.PR.URL != nil {
-				f["url"] = render.Plain(*c.In.PR.URL)
+				f["url"] = render.Colored(*c.In.PR.URL, render.Dim)
 			}
 			return Result{Base: render.Dim, Fields: f}
 		},
@@ -230,6 +228,20 @@ func init() {
 	})
 }
 
+// joinModelName put version beside family, absent half leaving no stray space.
+//
+// "display_name carry family alone" is upstream behaviour, not guarantee. Send
+// "Haiku 4.5" with id claude-haiku-4-5 and plain join print "Haiku 4.5 4.5".
+func joinModelName(family, version string) string {
+	if version == "" {
+		return family
+	}
+	if strings.HasSuffix(family, " "+version) || family == version {
+		return family
+	}
+	return strings.TrimSpace(family + " " + version)
+}
+
 func buildContext(c Context) Result {
 	// Unknown is not zero. Before first API call and after /compact, Claude Code
 	// report no usage at all. 0% there claim empty context where truth is
@@ -247,9 +259,21 @@ func buildContext(c Context) Result {
 	}
 	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
 		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)
-		f["used"] = render.Colored(count(int64(p/100*float64(*cw.ContextWindowSize))), render.White)
+		f["used"] = render.Colored(count(usedTokens(c)), render.White)
 	}
 	return Result{Base: render.Dim, Fields: f}
+}
+
+// current_usage hold counted tokens, so prefer it. Back-computing from
+// percentage rounded to whole points miss by up to 1k on 200k window. Same
+// three counters ContextPercent sum, output left out alongside.
+func usedTokens(c Context) int64 {
+	cw := c.In.Context
+	if u := cw.CurrentUsage; u != nil {
+		return u.InputTokens + u.CacheCreationTokens + u.CacheReadTokens
+	}
+	p, _ := c.In.ContextPercent()
+	return int64(p / 100 * float64(*cw.ContextWindowSize))
 }
 
 func effortStyle(level string) (string, render.Color) {
@@ -293,13 +317,18 @@ func limitBuilder(w window) func(Context) Result {
 		t := c.Thresholds()
 		p := win.UsedPercentage
 		f := render.Fields{
-			"pct": render.Colored(pct(p), t.Color(p)),
-			"bar": render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
+			"pct":        render.Colored(pct(p), t.Color(p)),
+			"bar":        render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
+			"reset":      render.Plain(""),
+			"reset_time": render.Plain(""),
 		}
+		// Icon sit inside field, same shape as dir's {git}. Template writing
+		// "⟳ {reset_time}" leave "⟳ " pointing at nothing when reset absent.
 		if win.ResetsAt != nil {
-			f["reset"] = render.Colored(format(time.Unix(*win.ResetsAt, 0)), render.White)
-		} else {
-			f["reset"] = render.Plain("")
+			at := format(time.Unix(*win.ResetsAt, 0))
+			f["reset_time"] = render.Colored(at, render.White)
+			f["reset"] = render.Plain(
+				c.Palette.Wrap(" ⟳ ", render.Dim) + c.Palette.Wrap(at, render.White))
 		}
 		return Result{Base: render.White, Fields: f}
 	}

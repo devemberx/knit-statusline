@@ -5,11 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
+	"unicode"
 
 	"github.com/devemberx/knit-statusline/internal/render"
 )
@@ -24,12 +28,11 @@ func init() {
 
 // buildCommand run user-supplied shell command.
 //
-// Extension point: anything builtins miss -- kubectl context, deploy status,
-// ticket id -- land here with no new release.
+// Extension point: kubectl context, deploy status, ticket id -- anything
+// builtins miss land here with no new release.
 //
-// Two guards. Timeout, because status line re-run constantly and hung command
-// take whole row down. Cache, because without one expensive command run on every
-// keystroke-driven redraw.
+// Timeout because status line re-run constantly and hung command take whole row
+// down. Cache because expensive command otherwise run every redraw.
 func buildCommand(c Context) Result {
 	if c.Cfg.Command == "" {
 		return empty
@@ -45,22 +48,24 @@ func buildCommand(c Context) Result {
 	name, args := shell(c.Cfg.Command)
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = c.In.Dir()
-	// Cancelled context kill direct child alone. Grandchild that inherited
-	// stdout hold pipe open, and Output() read to EOF, so deadline pass
-	// unenforced -- `sh -c "sleep 30"` block whole 30s under a 50ms budget.
-	// WaitDelay close pipes and give up shortly after cancellation.
+	// Cancelled context kill direct child alone. Grandchild inherit stdout and
+	// hold pipe open, so read run to EOF past deadline -- `sh -c "sleep 30"`
+	// block whole 30s under 50ms budget. WaitDelay close pipes after cancel.
 	cmd.WaitDelay = pipeDrain
-	raw, err := cmd.Output()
-	if err != nil {
+
+	// Timeout cap how long command run, never how much it print. `cat
+	// /dev/urandom` fill memory well inside 1s.
+	var buf strings.Builder
+	lw := &limitWriter{w: &buf, left: maxCommandBytes}
+	cmd.Stdout = lw
+	// Cap reached is success: exec close pipe, command die of SIGPIPE, Run
+	// report that exit instead of write error.
+	if err := cmd.Run(); err != nil && !lw.full {
 		// Failed or timed-out command drop its own segment, rest of row intact.
 		return empty
 	}
 
-	// First line only. Multi-line result break row.
-	out := strings.TrimSpace(string(raw))
-	if i := strings.IndexByte(out, '\n'); i >= 0 {
-		out = out[:i]
-	}
+	out := sanitize(firstLine(buf.String()))
 	if out == "" {
 		return empty
 	}
@@ -69,9 +74,55 @@ func buildCommand(c Context) Result {
 	return commandResult(out)
 }
 
-// shell name interpreter for one command line. Windows ship no sh, so hardcoding
-// it drop this segment there in silence -- worst failure shape, since user see
-// no output and no error either.
+// Everything past first line drop anyway, and 4 KiB far past one terminal row.
+const maxCommandBytes = 4 << 10
+
+var errCommandOutputFull = errors.New("command output limit reached")
+
+// full mark cap reached, since caller read that as success and exec surface it
+// as SIGPIPE exit.
+type limitWriter struct {
+	w    io.Writer
+	left int
+	full bool
+}
+
+func (l *limitWriter) Write(p []byte) (int, error) {
+	if l.left <= 0 {
+		l.full = true
+		return 0, errCommandOutputFull
+	}
+	if len(p) > l.left {
+		n, _ := l.w.Write(p[:l.left])
+		l.left = 0
+		l.full = true
+		return n, errCommandOutputFull
+	}
+	n, err := l.w.Write(p)
+	l.left -= n
+	return n, err
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
+}
+
+// sanitize drop control characters. Output reach terminal unescaped, where
+// "\x1b[2J" clear screen, "\x1b]0;...\a" retitle window, "\r" overwrite drawn row.
+func sanitize(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == 0x1b || unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// Windows ship no sh. Hardcoding it drop segment there in silence -- no output,
+// no error, worst failure shape.
 func shell(command string) (string, []string) {
 	if runtime.GOOS == "windows" {
 		return "cmd", []string{"/c", command}
@@ -131,9 +182,8 @@ func writeCommandCache(c Context, out string) {
 		return
 	}
 
-	// Temp file then rename. Claude Code start render before previous one
-	// finish, so two processes write here at once and reader must never see
-	// half-written file.
+	// Temp then rename. Claude Code start render before previous finish, so two
+	// process write here at once and reader must never see half-written file.
 	tmp, err := os.CreateTemp(c.CacheDir, ".cmd-*.tmp")
 	if err != nil {
 		return
@@ -148,5 +198,35 @@ func writeCommandCache(c Context, out string) {
 	if err := tmp.Close(); err != nil {
 		return
 	}
-	_ = os.Rename(name, commandCachePath(c))
+	if err := os.Rename(name, commandCachePath(c)); err != nil {
+		return
+	}
+	sweepCommandCache(c)
+}
+
+// Entry go stale two ways: editing command move its key, dropping segment
+// strand its file. Neither delete anything.
+const commandCacheTTL = 7 * 24 * time.Hour
+
+// sweepCommandCache delete cmd-*.json untouched for commandCacheTTL.
+//
+// Run after write, so cached render pay nothing. Live entry get mtime refreshed
+// by that same write. Errors ignored -- cache disposable.
+func sweepCommandCache(c Context) {
+	entries, err := os.ReadDir(c.CacheDir)
+	if err != nil {
+		return
+	}
+	cutoff := c.Now.Add(-commandCacheTTL)
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, "cmd-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(c.CacheDir, name))
+	}
 }

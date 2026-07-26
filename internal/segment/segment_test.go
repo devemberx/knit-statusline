@@ -141,10 +141,19 @@ func TestRegisterRejectsDuplicate(t *testing.T) {
 	register("model", Def{})
 }
 
+// registerTemp add segment for one test alone. Registry is package global, so
+// test segment left behind join every later test walking Names(), and which
+// tests those are depend on -shuffle ordering.
+func registerTemp(t *testing.T, name string, d Def) {
+	t.Helper()
+	register(name, d)
+	t.Cleanup(func() { delete(registry, name) })
+}
+
 // Build contain panic. Segments run subprocesses, file reads and user commands;
 // one bad segment must cost its own slot, never whole row.
 func TestBuildRecoversFromPanic(t *testing.T) {
-	register("panics-on-purpose", Def{
+	registerTemp(t, "panics-on-purpose", Def{
 		Fields:          []string{"x"},
 		DefaultTemplate: "{x}",
 		Build:           func(Context) Result { panic("boom") },

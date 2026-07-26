@@ -110,6 +110,23 @@ func TestModelNameJoinsFamilyAndVersion(t *testing.T) {
 	}
 }
 
+// display_name carrying a version make plain join print "Opus 4.8 4.8".
+func TestModelNameNeverRepeatsVersion(t *testing.T) {
+	for _, tc := range []struct{ family, version, want string }{
+		{"Opus", "4.8", "Opus 4.8"},
+		{"Opus 4.8", "4.8", "Opus 4.8"},
+		{"4.8", "4.8", "4.8"},
+		{"Opus", "", "Opus"},
+		{"", "4.8", "4.8"},
+		{"Opus 4.8", "4.1", "Opus 4.8 4.1"}, // genuine disagreement still show
+	} {
+		if got := joinModelName(tc.family, tc.version); got != tc.want {
+			t.Errorf("joinModelName(%q, %q) = %q, want %q",
+				tc.family, tc.version, got, tc.want)
+		}
+	}
+}
+
 // Context percentage unknown is not zero. Before first API call and after
 // /compact Claude Code report no usage at all, and 0% there claim empty context
 // where truth is unreported one.
@@ -126,12 +143,27 @@ func TestContextDistinguishesUnknownFromZero(t *testing.T) {
 	}
 }
 
+// {used} count current_usage rather than back-computing from a percentage
+// already rounded to whole points. Fixture sum 8500+5000+70700 = 84.2k, where
+// 42% of a 200k window would report a flat 84k.
 func TestContextDerivesSizeAndUsed(t *testing.T) {
 	c := ctx(t, fixtures.Full, "context")
 	c.Cfg.Template = "{used}/{size} {remaining}"
 
-	if got := draw(c); got != "84k/200k 58" {
-		t.Errorf("rendered %q, want 84k/200k 58", got)
+	if got := draw(c); got != "84.2k/200k 58" {
+		t.Errorf("rendered %q, want 84.2k/200k 58", got)
+	}
+}
+
+// current_usage absent leave nothing to count, so {used} fall back rather than
+// drop.
+func TestContextUsedFallsBackToPercentage(t *testing.T) {
+	c := ctx(t, fixtures.Full, "context")
+	c.In.Context.CurrentUsage = nil
+	c.Cfg.Template = "{used}"
+
+	if got := draw(c); got != "84k" {
+		t.Errorf("rendered %q, want 84k", got)
 	}
 }
 
@@ -184,8 +216,8 @@ func TestLimitWindowsAreIndependent(t *testing.T) {
 // Weekly window reset days out, so bare clock time read ambiguous. Windows
 // differ in that alone.
 func TestLimitWindowsFormatResetDifferently(t *testing.T) {
-	five := Build(ctx(t, fixtures.Full, "limit.5h")).Fields["reset"].Text
-	seven := Build(ctx(t, fixtures.Full, "limit.7d")).Fields["reset"].Text
+	five := Build(ctx(t, fixtures.Full, "limit.5h")).Fields["reset_time"].Text
+	seven := Build(ctx(t, fixtures.Full, "limit.7d")).Fields["reset_time"].Text
 
 	if strings.Contains(five, ",") {
 		t.Errorf("five hour reset = %q, want bare clock time", five)
@@ -195,13 +227,37 @@ func TestLimitWindowsFormatResetDifferently(t *testing.T) {
 	}
 }
 
-// Absent reset must render nothing, never epoch zero dressed as a time.
-func TestLimitWithoutResetRendersBlank(t *testing.T) {
+// {reset} carry its own ⟳, so absent reset leave no icon pointing at nothing.
+func TestLimitWithoutResetLeavesNoDanglingIcon(t *testing.T) {
 	c := ctx(t, fixtures.Full, "limit.5h")
 	c.In.RateLimits.FiveHour.ResetsAt = nil
 
-	if got := Build(c).Fields["reset"].Text; got != "" {
-		t.Errorf("reset = %q, want empty", got)
+	got := draw(c)
+	if strings.Contains(got, "⟳") {
+		t.Errorf("rendered %q, want no reset icon", got)
+	}
+	if got != "current ●●●●○○○○○○  42%" {
+		t.Errorf("rendered %q", got)
+	}
+
+	res := Build(c)
+	if res.Fields["reset"].Text != "" || res.Fields["reset_time"].Text != "" {
+		t.Errorf("reset = %q, reset_time = %q; want both empty",
+			res.Fields["reset"].Text, res.Fields["reset_time"].Text)
+	}
+}
+
+// Present reset read exactly as before icon moved. Local zone decide time, so
+// expectation build from field itself.
+func TestLimitDefaultTemplateShowsReset(t *testing.T) {
+	c := ctx(t, fixtures.Full, "limit.5h")
+	at := Build(c).Fields["reset_time"].Text
+	if at == "" {
+		t.Fatal("fixture carry no reset time")
+	}
+
+	if got, want := draw(c), "current ●●●●○○○○○○  42% ⟳ "+at; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
 	}
 }
 

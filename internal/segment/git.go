@@ -2,6 +2,7 @@ package segment
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -63,13 +64,12 @@ func wantsGit(tmpl string) bool {
 
 // gitStatus return current branch plus dirty marker.
 //
-// Every call share one budget. status --porcelain walk whole working tree, so on
-// large repository it run seconds; unbounded, render hang and Claude Code print
-// nothing, which read same as crash. Expired budget drop git fields alone and
-// leave rest of row standing.
+// Every call share one budget. status --porcelain walk whole working tree and
+// run seconds on large repository; unbounded, render hang and Claude Code print
+// nothing, which read same as crash.
 //
-// --no-optional-locks stop status check writing index. Matters: this run several
-// times a second beside user's own git commands.
+// --no-optional-locks stop status writing index. This run several times a
+// second beside user's own git commands.
 func gitStatus(dir string, budget time.Duration) (branch, dirty string, ok bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
@@ -92,11 +92,26 @@ func gitStatus(dir string, budget time.Duration) (branch, dirty string, ok bool)
 	return branch, dirty, true
 }
 
+// gitHardening disarm config that turn read into exec.
+//
+// Repository config is repository content: clone one and core.fsmonitor name
+// program `git status` run. This shell out unprompted in whatever directory
+// Claude Code open. core.pager and core.hooksPath have no output to give here.
+var gitHardening = []string{
+	"-c", "core.fsmonitor=false",
+	"-c", "core.pager=cat",
+	"-c", "core.hooksPath=/dev/null",
+}
+
 func gitRun(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	argv := append([]string{"-C", dir}, gitHardening...)
+	cmd := exec.CommandContext(ctx, "git", append(argv, args...)...)
 	// Git spawn helpers -- credential, hooks, pager -- that inherit stdout and
 	// outlive it. Without WaitDelay, Output() read to EOF past cancellation.
 	cmd.WaitDelay = pipeDrain
+	// Credential helper block waiting on terminal that is not there. Nothing
+	// here reach network.
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.Output()
 	if err != nil {
 		return "", err

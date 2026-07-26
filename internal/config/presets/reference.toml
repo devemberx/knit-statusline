@@ -30,7 +30,7 @@ segments = ["limit.7d"]
 # These two are spelled out because they show the two things worth knowing:
 # {field} interpolation, and a {field:>width} alignment spec.
 [segments."limit.5h"]
-template = "current {bar} {pct:>3}% ⟳ {reset}"
+template = "current {bar} {pct:>3}%{reset}"
 
 [segments."limit.7d"]
-template = "weekly  {bar} {pct:>3}% ⟳ {reset}"
+template = "weekly  {bar} {pct:>3}%{reset}"
