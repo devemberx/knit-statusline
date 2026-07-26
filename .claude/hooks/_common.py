@@ -1,8 +1,4 @@
-"""Shared command parsing for the gh validation hooks.
-
-Both validators read the same `gh` command string, so heredoc slicing, flag
-lookup and bullet counting live here rather than drifting apart in two files.
-"""
+"""Command parsing shared by the gh validation hooks."""
 
 from __future__ import annotations
 
@@ -18,8 +14,8 @@ from typing import Callable
 BULLET_LIMIT = 120
 REQUIRED_BULLETS = 2
 
-# argv_of returning None mean no flag was read at all. Report that, else the
-# caller blame the flag it happened to look for first.
+# argv_of None = no flag read at all. Without this the caller blame whichever
+# flag it looked for first.
 PARSE_ERROR = (
     "Command could not be parsed as shell words (unbalanced quote?), so no flag "
     "check can run. Put the body in a <<'EOF' heredoc, or remove the stray quote."
@@ -27,8 +23,8 @@ PARSE_ERROR = (
 
 GH_API_RE = re.compile(r"\bgh\s+api\b")
 
-# shlex know neither $() nor heredoc: it end the token at the first inner
-# quote, so a truncated body would pass. Slice the payload off the raw string.
+# shlex know neither $() nor heredoc: it end the token at the first inner quote,
+# so a truncated body would pass. Slice the payload off the raw string.
 HEREDOC_RE = re.compile(
     r"<<(?P<dash>-)?\s*(?:'(?P<sq>[^']+)'|\"(?P<dq>[^\"]+)\"|(?P<bare>\w+))"
 )
@@ -36,7 +32,7 @@ BODY_CAT_RE = re.compile(r"(?<!\S)(?:--body|-b)[=\s]+[\"']?\$\(\s*cat\s*\Z")
 
 
 def run(check: Callable[[str], list[str]], label: str) -> int:
-    """PreToolUse entry: feed the Bash command to `check`. 0 allow, 2 block."""
+    """PreToolUse entry. Exit 0 allow, 2 block."""
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError:
@@ -59,8 +55,8 @@ def run(check: Callable[[str], list[str]], label: str) -> int:
 def heredoc_spans(cmd: str) -> list[tuple[int, int, int, str]]:
     """(opener_start, payload_start, payload_end, payload) per closed heredoc.
 
-    Unclosed or newline-less heredocs are skipped: the shell would error on the
-    same command, so there is nothing sound to validate.
+    Unclosed or newline-less heredoc skipped: shell error on that command too,
+    nothing sound to validate.
     """
     spans: list[tuple[int, int, int, str]] = []
     for opener in HEREDOC_RE.finditer(cmd):
@@ -80,9 +76,8 @@ def heredoc_spans(cmd: str) -> list[tuple[int, int, int, str]]:
 
 
 def strip_heredocs(cmd: str) -> str:
-    """Command with heredoc payloads removed, for subcommand matching.
-
-    Prose quoting a gh command would otherwise classify as that command.
+    """Heredoc payloads removed, for subcommand matching. Prose quoting a gh
+    command would else classify as that command.
     """
     out: list[str] = []
     prev = 0
@@ -112,8 +107,8 @@ def flag_value(
 ) -> tuple[bool, str | None]:
     """(found, value) for `--flag v`, `--flag=v`, `-f v` and `-fv`.
 
-    Value is None when the flag ends the command; the shell would error, but
-    the flag was still asked for, so found stays True.
+    Value None when the flag end the command — shell error there, but the flag
+    was still asked for, so found stay True.
     """
     for i, arg in enumerate(argv):
         if arg in names:
@@ -139,7 +134,7 @@ def read_file(path: str) -> str | None:
 
 
 def project_root() -> Path:
-    """Repo root, independent of the cwd the hook happens to inherit."""
+    """Repo root. Hook inherit an arbitrary cwd."""
     env = os.environ.get("CLAUDE_PROJECT_DIR")
     if env:
         return Path(env)

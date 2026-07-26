@@ -3,16 +3,15 @@
 
 Fires on: gh pr create|edit|comment, gh api .../pulls...
 
-Squash merge builds the commit from PR title + ## Changes bullets, so rules
-mirror .githooks/commit-msg:
-  1. Prose in English. Closed code fences and inline spans are exempt: pasted
-     terminal output carry Unicode glyphs by design.
+Squash build the commit from PR title + ## Changes bullets, so rules mirror
+.githooks/commit-msg:
+  1. Prose English. Closed ``` fences and `inline spans` exempt — pasted
+     terminal output carry glyphs by design.
   2. Every ## Type of Change checkbox from the template kept.
   3. ## Changes: exactly 2 bullets, each <= 120 chars.
-  4. Title: "type(scope)!: summary", lowercase, no period, <= 50 chars.
+  4. Title "type(scope)!: summary", lowercase, no period, <= 50 chars.
 
-Checks fail closed. A body that cannot be read, or a create that supplies no
-body at all, is an error rather than a silent pass.
+Fail closed: unreadable body, or a create with no body, is an error not a pass.
 
 Exit 0 allow, exit 2 block.
 """
@@ -46,7 +45,7 @@ EMOJI_RE = re.compile(
     "\U0000fe00-\U0000fe0f"
     "\U0000200d]"
 )
-# Closed pairs only: an unclosed fence must not exempt the rest of the body.
+# Closed pairs only: unclosed fence must not exempt the rest of the body.
 FENCE_RE = re.compile(r"^```[\s\S]*?^```", re.MULTILINE)
 INLINE_CODE_RE = re.compile(r"`[^`\n]*`")
 # GitHub render [X] the same as [x].
@@ -57,7 +56,7 @@ NEXT_SECTION_RE = re.compile(r"^##\s", re.MULTILINE)
 TEMPLATE_PATH = ".github/PULL_REQUEST_TEMPLATE.md"
 
 # Same rule as .githooks/commit-msg: type allowlist, scope free-form kebab,
-# trailing "!" mark breaking. A scope allowlist here would diverge silent.
+# trailing "!" breaking. Scope allowlist here would diverge silent.
 TITLE_TYPES = ("feat", "fix", "docs", "refactor", "perf", "test", "ci", "chore")
 TITLE_RE = re.compile(
     rf"^(?:{'|'.join(TITLE_TYPES)})(?:\([a-z][a-z0-9-]*\))?!?: [a-z]"
@@ -68,7 +67,7 @@ PR_CREATE_RE = re.compile(r"\bgh\s+pr\s+create\b")
 PR_EDIT_RE = re.compile(r"\bgh\s+pr\s+edit\b")
 PR_COMMENT_RE = re.compile(r"\bgh\s+pr\s+comment\b")
 WEB_FLAG_RE = re.compile(r"(?<!\S)(?:--web|-w)(?!\S)")
-# Creation POSTs to /pulls with no trailing id, so a bare segment counts too.
+# Creation POST to /pulls with no trailing id, so a bare segment count too.
 API_PULLS_RE = re.compile(r"/pulls(?:/|\b)")
 # Sub-resources carry no PR title or body; /merge belong to validate_pr_merge.
 API_SUBRESOURCE_RE = re.compile(r"/pulls/\d+/\w+")
@@ -86,7 +85,7 @@ def check(cmd: str) -> list[str]:
     if kind is None:
         return []
 
-    # shlex failure lose every flag. Say so, else a passed --title read as absent.
+    # shlex failure lose every flag. Say so, else a passed --title read absent.
     parsed = argv_of(cmd) is not None
     found_body, body = extract_body(cmd, kind)
 
@@ -119,7 +118,7 @@ def check(cmd: str) -> list[str]:
 
 def classify(cmd: str) -> str | None:
     if PR_CREATE_RE.search(cmd):
-        # --web hand the body to the browser form, out of reach of this hook.
+        # --web hand the body to the browser form, out of reach here.
         return None if WEB_FLAG_RE.search(cmd) else "create"
     if PR_EDIT_RE.search(cmd):
         return "edit"
@@ -216,8 +215,7 @@ def title_errors(title: str) -> list[str]:
 def template_errors(body: str) -> list[str]:
     """Checkboxes the body dropped from the template's Type of Change block.
 
-    Only that block is mandatory: the template tells the author to delete
-    status line checklist lines that do not apply.
+    Only that block mandatory — every other template section is free prose.
     """
     template = read_file(str(project_root() / TEMPLATE_PATH))
     if template is None:

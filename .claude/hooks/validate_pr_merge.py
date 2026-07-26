@@ -3,15 +3,15 @@
 
 Fires on: gh pr merge, gh api .../pulls/<n>/merge
 
-Rules follow CONTRIBUTING.md "Review and merge" plus .githooks/commit-msg:
+Rules from .github/CONTRIBUTING.md "Review and merge" plus .githooks/commit-msg:
   1. Squash only; --merge / --rebase rejected.
-  2. No --subject / -t; the PR title is the squash subject verbatim.
+  2. No --subject / -t; PR title is the squash subject verbatim.
   3. Explicit body: exactly 2 bullets, each <= 120 chars.
-  4. Body carries Co-Authored-By: Claude ... <noreply@anthropic.com>, per
-     CLAUDE.md, so an agent-driven merge is attributable in git history.
+  4. Body carry Co-Authored-By: Claude ... <noreply@anthropic.com>, so an
+     agent-driven merge stay attributable in git history.
 
-The API route is refused outright rather than re-validated: it takes a
-merge_method field instead of flags, and nothing needs to merge that way.
+API route refused outright, not re-validated: it take a merge_method field
+instead of flags, and nothing need to merge that way.
 
 Exit 0 allow, exit 2 block.
 """
@@ -56,8 +56,7 @@ def check(cmd: str) -> list[str]:
     if not PR_MERGE_RE.search(stripped):
         return []
 
-    # Fail closed: an unparseable command would else carry --merge past every
-    # check below.
+    # Fail closed: unparseable command would else carry --merge past every check.
     argv = argv_of(cmd)
     if argv is None:
         return [PARSE_ERROR]
