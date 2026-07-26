@@ -7,8 +7,8 @@ import (
 )
 
 // Field is one interpolatable value. Color sit beside text, never baked in, so
-// alignment measure visible width: padding computed over a string carrying
-// escape codes come out wrong by however long those codes run.
+// alignment measure visible width: padding computed over string carrying escape
+// codes come out wrong by however long those codes run.
 type Field struct {
 	Text  string
 	Color Color
@@ -21,12 +21,16 @@ func Colored(s string, c Color) Field { return Field{Text: s, Color: c} }
 // Fields is value set a segment expose to its template.
 type Fields map[string]Field
 
-// Expand substitute {name} and {name:spec} placeholders in tmpl.
+// Expand substitute {name} and {name:spec} placeholder in tmpl.
 //
 // Literal text take base, each field keep its own: reference layout keep labels
 // muted and let only numbers carry severity. Unknown placeholder expand to
 // nothing -- Validate report those up front, so one reaching here mean config
-// changed underneath, and dropping it beat printing a raw brace.
+// changed underneath, and dropping it beat printing raw brace.
+//
+// Brace never escape: "{{n}}" read inner as name "{n", drop it, leave stray
+// "}". Test pin that, design did not pick it -- escape syntax need config
+// support first.
 func (p Palette) Expand(tmpl string, fields Fields, base Color) string {
 	var b strings.Builder
 	var literal strings.Builder

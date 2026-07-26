@@ -2,6 +2,7 @@
 package render
 
 import (
+	"math"
 	"os"
 	"strings"
 )
@@ -25,11 +26,12 @@ const (
 	reset = "\033[0m"
 )
 
-// Palette apply or suppress color for a whole render.
+// Palette apply or suppress color across one render.
 type Palette struct{ enabled bool }
 
-// NewPalette honour NO_COLOR: any non-empty value disable color, so piping
-// status line somewhere give clean text.
+// NewPalette honour NO_COLOR per no-color.org: any non-empty value disable
+// color, empty value leave it on. Nothing detect pipe -- Claude Code capture
+// this output either way.
 func NewPalette() Palette {
 	return Palette{enabled: os.Getenv("NO_COLOR") == ""}
 }
@@ -38,7 +40,7 @@ func NewPalette() Palette {
 func NoColor() Palette { return Palette{enabled: false} }
 
 // Wrap apply c to s. Empty color or disabled palette return s unchanged, never
-// a bare reset.
+// bare reset.
 func (p Palette) Wrap(s string, c Color) string {
 	if !p.enabled || c == "" || s == "" {
 		return s
@@ -46,13 +48,20 @@ func (p Palette) Wrap(s string, c Color) string {
 	return string(c) + s + reset
 }
 
-// Thresholds map a percentage to a severity color.
+// Thresholds map percentage to severity color.
 type Thresholds struct{ Warn, High, Crit int }
 
-// Color grade a percentage: green under warn, then orange, yellow, red at or
-// over crit. Same escalation as reference statusline, so one glance at bar tell
+// Color grade percentage: green under Warn, then orange, yellow, red at or over
+// Crit. Same escalation as reference statusline, so one glance at bar tell
 // whether anything need attention.
+//
+// Zero value grade nothing, matching empty Color meaning elsewhere. Every field
+// zero otherwise send 0% down Crit branch, so caller who forget to wire config
+// paint whole row red.
 func (t Thresholds) Color(pct float64) Color {
+	if t == (Thresholds{}) {
+		return ""
+	}
 	switch {
 	case pct >= float64(t.Crit):
 		return Red
@@ -70,30 +79,30 @@ const (
 	barEmpty  = "○"
 )
 
-// Bar render a progress bar, clamping out-of-range percentages instead of
-// drawing a negative or oversized one.
+// Bar render progress bar, clamping out-of-range percentage instead of drawing
+// negative or oversized one.
 //
-// Filled part carry severity color, remainder dimmed: bar read at a glance even
-// in a crowded row.
+// Filled part carry severity color, remainder dimmed: bar read at glance even
+// in crowded row.
 //
-// Cell count round, never truncate. Bar print beside a percentage rounded same
-// way, and truncation put 9.6% on screen as "10%" against empty bar -- which
-// read as nothing used at all.
+// Cell count round to nearest cell, never truncate. Truncation put 9.6% on
+// screen as "10%" against empty bar, which read as nothing used at all. Bar hold
+// width steps against 100 for percentage, so two still disagree below half cell.
+//
+// NaN clamp to 0. It pass both range test, and int(NaN) is platform-defined --
+// minInt64 on amd64 -- which reach strings.Repeat as negative count and panic.
 func (p Palette) Bar(pct float64, width int, t Thresholds) string {
 	if width <= 0 {
 		return ""
 	}
 	switch {
-	case pct < 0:
+	case math.IsNaN(pct), pct < 0:
 		pct = 0
 	case pct > 100:
 		pct = 100
 	}
 
-	filled := int(pct*float64(width)/100 + 0.5)
-	if filled > width {
-		filled = width
-	}
+	filled := int(math.Round(pct * float64(width) / 100))
 
 	return p.Wrap(strings.Repeat(barFilled, filled), t.Color(pct)) +
 		p.Wrap(strings.Repeat(barEmpty, width-filled), Dim)
