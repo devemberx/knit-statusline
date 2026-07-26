@@ -156,12 +156,28 @@ func (in *Input) ContextPercent() (float64, bool) {
 		return 0, false
 	}
 	if in.Context.UsedPercentage != nil {
-		return *in.Context.UsedPercentage, true
+		return clampPercent(*in.Context.UsedPercentage), true
 	}
 	u := in.Context.CurrentUsage
 	if u == nil || in.Context.ContextWindowSize == nil || *in.Context.ContextWindowSize <= 0 {
 		return 0, false
 	}
+	// OutputTokens left out on purpose: absent from total_input_tokens too, and
+	// Claude Code's own used_percentage match this input-only sum.
 	used := u.InputTokens + u.CacheCreationTokens + u.CacheReadTokens
-	return float64(used) * 100 / float64(*in.Context.ContextWindowSize), true
+	pct := float64(used) * 100 / float64(*in.Context.ContextWindowSize)
+	return clampPercent(pct), true
+}
+
+// clampPercent hold value in 0..100. context_window_size stale against usage
+// counts, or used_percentage over 100, else render past full bar.
+func clampPercent(p float64) float64 {
+	switch {
+	case p < 0:
+		return 0
+	case p > 100:
+		return 100
+	default:
+		return p
+	}
 }

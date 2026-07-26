@@ -1,6 +1,9 @@
 package schema
 
 import (
+	"bytes"
+	"encoding/json"
+	"math"
 	"testing"
 
 	"github.com/devemberx/knit-statusline/internal/fixtures"
@@ -99,8 +102,90 @@ func TestParseRejectsInvalidJSON(t *testing.T) {
 	}
 }
 
-// A future Claude Code release add fields. Decode ignore them, never fail, else
-// an upgrade silently blank the status line.
+// Fixtures are only written spec of this contract. Strict decode fail as soon
+// as one carry key no struct field map, so ported field cannot go missing in
+// silence.
+func TestFixturesHaveNoUnmappedFields(t *testing.T) {
+	for name, b := range map[string][]byte{
+		"full": fixtures.Full, "sparse": fixtures.Sparse, "empty": fixtures.Empty,
+	} {
+		dec := json.NewDecoder(bytes.NewReader(b))
+		dec.DisallowUnknownFields()
+		var in Input
+		if err := dec.Decode(&in); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// Empty fixture leave both dir sources blank, so it never separate branches.
+func TestDirFallsBackToCWD(t *testing.T) {
+	in := load(t, []byte(`{"cwd":"/home/dev/project/acme"}`))
+	if in.Dir() != "/home/dev/project/acme" {
+		t.Errorf("Dir() = %q, want /home/dev/project/acme", in.Dir())
+	}
+}
+
+// used_percentage null with current_usage populated is how every session start,
+// and hold only arithmetic in this package. No fixture reach it: full short
+// circuit on used_percentage, sparse and empty stop at nil guard.
+func TestContextPercentDerived(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		doc  string
+		want float64
+		ok   bool
+	}{
+		{
+			// 8500 + 5000 + 70700 = 84200 of 200000. output_tokens stay out.
+			name: "input plus cache tokens over window size",
+			doc:  `{"context_window":{"context_window_size":200000,"used_percentage":null,"current_usage":{"input_tokens":8500,"output_tokens":1200,"cache_creation_input_tokens":5000,"cache_read_input_tokens":70700}}}`,
+			want: 42.1,
+			ok:   true,
+		},
+		{
+			name: "usage past window size clamp at 100",
+			doc:  `{"context_window":{"context_window_size":200000,"current_usage":{"input_tokens":300000}}}`,
+			want: 100,
+			ok:   true,
+		},
+		{
+			name: "used_percentage past 100 clamp too",
+			doc:  `{"context_window":{"context_window_size":200000,"used_percentage":142}}`,
+			want: 100,
+			ok:   true,
+		},
+		{
+			name: "used_percentage win over current_usage",
+			doc:  `{"context_window":{"context_window_size":200000,"used_percentage":10,"current_usage":{"input_tokens":84200}}}`,
+			want: 10,
+			ok:   true,
+		},
+		{
+			// Divide by zero yield +Inf, printed straight into row.
+			name: "window size zero is unknown",
+			doc:  `{"context_window":{"context_window_size":0,"current_usage":{"input_tokens":8500}}}`,
+		},
+		{
+			name: "window size absent is unknown",
+			doc:  `{"context_window":{"current_usage":{"input_tokens":8500}}}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := load(t, []byte(tc.doc)).ContextPercent()
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			diff := got - tc.want
+			if math.Abs(diff) > 1e-9 {
+				t.Errorf("pct = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Future Claude Code release add fields. Decode ignore them, never fail, else
+// upgrade silently blank status line.
 func TestUnknownFieldsIgnored(t *testing.T) {
 	in, err := Parse([]byte(`{"model":{"display_name":"Opus"},"brand_new_field":{"nested":1}}`))
 	if err != nil {

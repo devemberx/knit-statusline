@@ -3,6 +3,9 @@
 // Same files serve the tests and preview. Deliberate: preview is what a user
 // run to check a config edit, so it must exercise the shapes the tests assert
 // on -- degraded one included, where a layout fine on complete data fall apart.
+//
+// Coverage track ported render path, not every schema field: agent, pr and
+// worktree shapes land with segment that render them.
 package fixtures
 
 import _ "embed"
@@ -14,7 +17,7 @@ var Full []byte
 
 // Sparse is the degraded case: non-subscriber, first render, before any API
 // response. No rate_limits, current_usage null, used_percentage null, no
-// effort, no repo.
+// effort, no repo, no vim, no session_name.
 //
 //go:embed sparse.json
 var Sparse []byte
