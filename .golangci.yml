@@ -114,6 +114,13 @@ linters:
         linters:
           - gosec
 
+      # G304 file-inclusion taint: doctor re-read files config.Load already
+      # named, so path come from $HOME or workspace.project_dir, never stdin.
+      - path: cmd/statusline/commands\.go
+        text: G304
+        linters:
+          - gosec
+
       # Shadowing err and ok is Go house style, not a defect.
       - text: '^shadow: declaration of "(err|ok)" shadows declaration'
         linters:
