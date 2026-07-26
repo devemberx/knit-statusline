@@ -4,8 +4,8 @@ project_name: knit-statusline
 
 before:
   hooks:
-    # -diff report instead of rewriting: goreleaser abort on a dirty tree, so a
-    # tidying hook turn a stale go.sum into a failed release mid-publish.
+    # -diff report instead of rewrite: goreleaser abort on dirty tree, so tidying
+    # hook turn stale go.sum into failed release mid-publish.
     - go mod tidy -diff
     # -race match ci.yml. Weaker check here gate nothing: tag already public.
     - go test -race ./...
@@ -14,17 +14,16 @@ builds:
   - id: knit-statusline
     main: ./cmd/statusline
     binary: knit-statusline
-    # CGO off: every target cross-compile from one machine, and binary carry no
-    # runtime dep. Shell version this replace need jq and curl, and a status
-    # line failing on a machine without them fail invisibly.
+    # CGO off: every target cross-compile from one machine, binary carry no
+    # runtime dep. Shell predecessor need jq and curl, and missing one fail
+    # invisibly inside status line.
     env:
       - CGO_ENABLED=0
     flags:
       - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}}
-    # Build time otherwise embedded, so one commit build to two different
-    # binaries and nobody reproduce a published checksum.
+    # Build time otherwise embedded: one commit build to two different binaries.
     mod_timestamp: "{{ .CommitTimestamp }}"
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
@@ -39,22 +38,29 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
-    # Version in name: without it two releases ship byte-different files under
-    # one name, and checksums.txt line name no release it belong to.
+    # Version in name: two releases otherwise ship byte-different files under one
+    # name, and checksums.txt line name no release.
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     # Archive = go-install-free path: license and config reference travel with
-    # the binary.
+    # binary.
+    #
+    # mtime pinned per file. Binary carry build mod_timestamp, but these three
+    # take checkout time into archive header, so fresh clone of one commit
+    # produce different checksums.txt.
     files:
-      - LICENSE
-      - README.md
-      - docs/CONFIGURATION.md
+      - src: LICENSE
+        info: &archive_mtime
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info: *archive_mtime
+      - src: docs/CONFIGURATION.md
+        info: *archive_mtime
 
 checksum:
   name_template: checksums.txt
 
-# github-native hand grouping to .github/release.yml. No filters: old exclude
-# list dropped docs, test and chore commits; release.yml file them under
-# Maintenance instead.
+# github-native hand grouping to .github/release.yml. No filters: release.yml
+# file docs, test and chore commits under Maintenance.
 changelog:
   use: github-native
 
@@ -63,16 +69,15 @@ release:
   # packages.
   draft: true
   prerelease: auto
-  # Draft window is retry path: publish.yml skip npm versions already on
-  # registry, so a rerun reach goreleaser again. GitHub allow many drafts on one
-  # tag and match none of them by tag, so second run otherwise stack a draft and
-  # `gh release edit <tag>` pick between them. Re-uploaded assets 422 alike.
+  # Rerun reach goreleaser again: publish.yml skip npm versions already on
+  # registry. GitHub allow many drafts on one tag and match none by tag, so
+  # second run otherwise stack draft and `gh release edit <tag>` pick between
+  # them. Re-uploaded asset 422 alike.
   replace_existing_draft: true
   replace_existing_artifacts: true
   # Highlights live in annotated tag message, so repository keep no per-release
-  # notes file. .TagBody = git %(contents:body): message minus subject and the
-  # blank line after. Empty on a tag carrying only the dated marker, and then
-  # release ship the generated change list alone.
+  # notes file. .TagBody = git %(contents:body): message minus subject and blank
+  # line after. Empty on tag carrying only dated marker.
   header: |
     {{- with .TagBody -}}
     ## Highlights

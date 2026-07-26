@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Branch-naming rule from .github/CONTRIBUTING.md:
-#   <type>/<short-kebab-summary>, type in feat|fix|perf|refactor|test|docs|chore|ci
-# Refuse direct push to main, worktree-* and other non-conforming refs.
+# Branch-naming rule from .github/CONTRIBUTING.md. Refuse push to main and to
+# ref names outside <type>/<short-kebab-summary>.
 # Activate per clone: git config core.hooksPath .githooks
 
 set -e
@@ -10,11 +9,15 @@ allowed='^(feat|fix|perf|refactor|test|docs|chore|ci)/[a-z0-9]+(-[a-z0-9]+)*$'
 bypass='^(dependabot|renovate)/'  # bot branch skip local convention
 
 fail=0
-while read -r local_ref local_sha _remote_ref _remote_sha; do
+# Name checked is remote_ref, never local: `git push origin HEAD:main` carry
+# local_ref HEAD and `git push origin feat/x:main` carry conforming one, so both
+# reach main past a local-name check.
+while read -r _local_ref local_sha remote_ref _remote_sha; do
     # Deletion push = all-zero sha, no branch name to check.
     case "$local_sha" in *[!0]*) ;; *) continue ;; esac
-    case "$local_ref" in refs/heads/*) ;; *) continue ;; esac
-    branch="${local_ref#refs/heads/}"
+    # Tag push land here too, and release tags carry no branch rule.
+    case "$remote_ref" in refs/heads/*) ;; *) continue ;; esac
+    branch="${remote_ref#refs/heads/}"
 
     if [ "$branch" = "main" ]; then
         printf 'pre-push: direct push to main not allowed; open a PR from a branch.\n' >&2
@@ -23,7 +26,7 @@ while read -r local_ref local_sha _remote_ref _remote_sha; do
     fi
     printf '%s' "$branch" | grep -qE "$bypass" && continue
     if ! printf '%s' "$branch" | grep -qE "$allowed"; then
-        printf "pre-push: branch '%s' violates <type>/<short-kebab-summary>.\n" "$branch" >&2
+        printf "pre-push: '%s' violates <type>/<short-kebab-summary>.\n" "$branch" >&2
         printf '  allowed types: feat fix perf refactor test docs chore ci\n' >&2
         printf '  e.g. feat/token-tracking, fix/render-empty-segments\n' >&2
         fail=1

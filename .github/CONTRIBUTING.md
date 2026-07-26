@@ -73,8 +73,9 @@ you a rewrite.
    | `ci/`       | GitHub Actions / release pipeline          | `ci/hostile-input-check`     |
 
    One topic per branch; split unrelated work apart. `.githooks/pre-push` checks the
-   name and refuses a direct push to `main`, if you enabled the hooks below. Its type
-   list is the table above plus `perf`, and the two have to stay in step.
+   name your push would create on the remote and refuses `main` whatever refspec you
+   reach it by, if you enabled the hooks above. Its type list is the table above, and
+   the two have to stay in step.
 
 2. **Make your change.** Follow [CLAUDE.md](../CLAUDE.md) for comment style: caveman
    phrasing, why rather than what, one fact per line.

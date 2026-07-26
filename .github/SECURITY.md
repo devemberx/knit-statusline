@@ -30,10 +30,15 @@ Worth knowing before you file, because most of the surface is smaller than it
 looks:
 
 - It reads one JSON object on stdin, from Claude Code.
-- It reads transcript files under `~/.claude/projects/` and writes a disposable
-  cache under `~/.claude/statusline-cache/`.
-- `install` and `uninstall` merge into `~/.claude/settings.json` and copy the
-  binary to `~/.claude/`. Both back the file up first.
+- It reads the transcript file that object names — Claude Code puts those under
+  `~/.claude/projects/` — and writes a disposable cache under
+  `~/.claude/statusline-cache/`.
+- `install` copies the binary to `~/.claude/` and merges a `statusLine` key into
+  `~/.claude/settings.json`. `uninstall` removes the binary, and removes that key
+  only while it still points at our copy.
+- Before either writes `settings.json` it copies the file to `settings.json.bak`.
+  An existing `.bak` is left alone, so it keeps the file as it stood before the
+  first install rather than tracking the newest edit.
 - **It makes no network requests.** Ever. Not for updates, not for telemetry.
 
 ## Not vulnerabilities

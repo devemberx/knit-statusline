@@ -250,12 +250,14 @@ for pkg in @devemberx/knit-statusline \
   printf '%s ' "$pkg"; npm view "${pkg}@${NEW_VERSION}" version 2>/dev/null || echo "(absent)"
 done
 
-# 2. Delete draft release. GoReleaser refuse to recreate existing one.
-gh release delete "v${NEW_VERSION}" --yes
-
-# 3. Rerun. Publish step skip every package already on registry.
+# 2. Rerun. replace_existing_draft in .goreleaser.yaml drop stale draft, and
+#    publish step skip every package already on registry.
 gh run rerun <run-id> --failed
 ```
+
+Do not delete the draft by hand first. `replace_existing_draft` owns that, and a manual
+`gh release delete` on a tag with several stacked drafts removes whichever one GitHub
+answers with.
 
 The release only flips public after all six succeed, so a half-finished run never fronts
 packages that do not exist.
