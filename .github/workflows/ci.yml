@@ -16,28 +16,48 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: "1.26"
+  # Without this, a go.mod toolchain line newer than what setup-go installed
+  # make the go command download a third version and test that one instead --
+  # the pin then prove nothing. local fail loudly instead.
+  # https://github.com/actions/setup-go/issues/491
+  GOTOOLCHAIN: local
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Real runners, not just cross-compilation: path handling, file modes
+        # and terminal behaviour diverge per OS, and this program live in
+        # $HOME/.claude on all three.
+        include:
+          - {os: ubuntu-latest, race: "-race"}
+          - {os: macos-latest, race: "-race"}
+          # Race detector need a C toolchain on Windows and catch nothing the
+          # other two miss -- it is OS-independent.
+          - {os: windows-latest, race: ""}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          # go.mod is the one place the version live. An env copy here drift.
+          go-version-file: go.mod
           # No external module yet, so no go.sum. setup-go fail outright when
           # cache is on and the file is missing. Flip on with the first require.
           cache: false
 
-      - run: go test -race ./...
+      - run: go test ${{ matrix.race }} ./...
 
       # Rendered times formatted in the viewer's local zone, so an assertion
       # written against one zone pass only there. A second zone catch that
       # before it reach a contributor in a different one.
+      # bash because the windows runner default to pwsh, where VAR=x cmd is a
+      # syntax error.
       - name: tests under a second timezone
+        shell: bash
         run: TZ=Asia/Seoul go test -count=1 ./...
 
       # Binary-level checks -- hostile stdin, install/uninstall round trip, npm
@@ -51,13 +71,21 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: false
 
       # gofmt and go vet both run from in here. .golangci.yml hold the full set.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
+
+      # A require added by hand, or a dropped one left behind, show up as a
+      # dirty tree here rather than as a mystery build failure later.
+      - name: go.mod stays tidy
+        run: |
+          go mod tidy
+          test -z "$(git status --porcelain --untracked-files=all)" || {
+            echo "go mod tidy changed the tree:"; git status --short; exit 1; }
 
   build:
     runs-on: ubuntu-latest
@@ -78,7 +106,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: false
 
       # vet under each GOOS too: build-tag guarded code compile nowhere else.
@@ -100,7 +128,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version-file: go.mod
           cache: false
 
       # Reachability based: a CVE in a module we require but never call not
