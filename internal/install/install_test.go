@@ -11,9 +11,8 @@ import (
 	"github.com/devemberx/knit-statusline/internal/config"
 )
 
-// fakeBinary stand in for running executable. Install copy it, so it need to be
-// a real file rather than a made-up path.
-// Shared with settings_test.go.
+// fakeBinary stand in for running executable. Install copy it, so path must be
+// real file.
 func fakeBinary(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "knit-statusline")
@@ -23,7 +22,6 @@ func fakeBinary(t *testing.T) string {
 	return path
 }
 
-// Shared with settings_test.go.
 func writeSettings(t *testing.T, home, body string) string {
 	t.Helper()
 	path := SettingsPath(home)
@@ -36,7 +34,6 @@ func writeSettings(t *testing.T, home, body string) string {
 	return path
 }
 
-// Shared with settings_test.go.
 func readSettingsMap(t *testing.T, home string) map[string]any {
 	t.Helper()
 	b, err := os.ReadFile(SettingsPath(home))
@@ -70,10 +67,8 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 		t.Errorf("statusLine type = %v", sl["type"])
 	}
 
-	// Recorded command must be installed copy, not wherever binary happened to
-	// be running from. Installing via npx run out of a package cache npm may
-	// prune, and pointing at that leave user with a status line that silently
-	// stop working.
+	// Recorded command must be installed copy, not npx package cache npm may
+	// prune out from under it.
 	if sl["command"] != BinaryPath(home) {
 		t.Errorf("statusLine command = %v, want the installed copy %s", sl["command"], BinaryPath(home))
 	}
@@ -132,8 +127,7 @@ func TestInstallIsIdempotentFromItsOwnLocation(t *testing.T) {
 	}
 }
 
-// Upgrade replace installed copy. Windows refuse rename onto existing file, so
-// unlink-first miss surface here.
+// Upgrade write over existing dst, which is rename replaceFile handle.
 func TestInstallReplacesAnOlderCopy(t *testing.T) {
 	home := t.TempDir()
 	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
@@ -176,8 +170,8 @@ func TestUninstallRemovesTheInstalledBinary(t *testing.T) {
 	}
 }
 
-// Single most damaging thing this command could do is drop user's hooks,
-// permissions or enabled plugins while adding one key.
+// Worst damage here is dropping user's hooks, permissions or enabled plugins
+// while adding one key.
 func TestInstallPreservesUnrelatedSettings(t *testing.T) {
 	home := t.TempDir()
 	writeSettings(t, home, `{
@@ -328,13 +322,19 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 
 func TestUninstallRemovesOnlyTheStatusLine(t *testing.T) {
 	home := t.TempDir()
-	writeSettings(t, home, `{"model":"opus","statusLine":{"type":"command","command":"/opt/x"}}`)
+	// Uninstall touch statusLine only when command is our own installed copy,
+	// so seed exactly that. Marshal keep Windows backslashes escaped.
+	ours, err := json.Marshal(BinaryPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSettings(t, home, `{"model":"opus","statusLine":{"type":"command","command":`+string(ours)+`}}`)
 
 	res, err := Uninstall(home)
 	if err != nil {
 		t.Fatalf("Uninstall: %v", err)
 	}
-	if res.ReplacedCommand != "/opt/x" {
+	if res.ReplacedCommand != BinaryPath(home) {
 		t.Errorf("ReplacedCommand = %q", res.ReplacedCommand)
 	}
 
@@ -372,7 +372,154 @@ func TestUninstallOnACleanSystemIsNotAnError(t *testing.T) {
 	}
 }
 
-// Round trip must leave file exactly as it was found.
+// User who switched status line tools by hand still own that tool's config.
+func TestUninstallLeavesAForeignStatusLine(t *testing.T) {
+	home := t.TempDir()
+	writeSettings(t, home, `{"statusLine":{"type":"command","command":"/opt/other-tool"}}`)
+
+	res, err := Uninstall(home)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if res.RemovedStatusLine {
+		t.Error("RemovedStatusLine should be false for another tool's command")
+	}
+	if res.ReplacedCommand != "/opt/other-tool" {
+		t.Errorf("ReplacedCommand = %q, want the foreign command reported", res.ReplacedCommand)
+	}
+	if res.BackupPath != "" {
+		t.Errorf("BackupPath = %q, want no write at all", res.BackupPath)
+	}
+
+	sl, ok := readSettingsMap(t, home)["statusLine"].(map[string]any)
+	if !ok {
+		t.Fatal("another tool's statusLine was removed")
+	}
+	if sl["type"] != "command" || sl["command"] != "/opt/other-tool" {
+		t.Errorf("statusLine = %+v, want it unchanged", sl)
+	}
+}
+
+func TestUninstallReportsRemovingOurOwnStatusLine(t *testing.T) {
+	home := t.TempDir()
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Uninstall(home)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if !res.RemovedStatusLine {
+		t.Error("RemovedStatusLine should be true once our own key is dropped")
+	}
+	if _, ok := readSettingsMap(t, home)["statusLine"]; ok {
+		t.Error("statusLine was not removed")
+	}
+}
+
+// Hand-deleting key out of settings must not strand binary in ~/.claude.
+func TestUninstallRemovesTheBinaryWithoutAStatusLineKey(t *testing.T) {
+	home := t.TempDir()
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+	settings := readSettingsMap(t, home)
+	delete(settings, "statusLine")
+	edited, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeSettings(t, home, string(edited))
+
+	res, err := Uninstall(home)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if res.RemovedStatusLine {
+		t.Error("RemovedStatusLine should be false when no key is present")
+	}
+	if _, err := os.Stat(BinaryPath(home)); !os.IsNotExist(err) {
+		t.Errorf("installed binary should be removed, stat error = %v", err)
+	}
+}
+
+// Empty home resolve every path against cwd, so install would drop a .claude
+// into whatever directory it ran from.
+func TestInstallRejectsAnEmptyHome(t *testing.T) {
+	binary := fakeBinary(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if _, err := Install(Options{Binary: binary}); err == nil {
+		t.Fatal("expected an error")
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("working directory written to: %v", entries)
+	}
+}
+
+// Uninstall reach os.Remove, so empty home hunt a .claude under cwd.
+func TestUninstallRejectsAnEmptyHome(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoy := BinaryPath(dir)
+	if err := os.WriteFile(decoy, []byte("not ours\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Uninstall(""); err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, err := os.Stat(decoy); err != nil {
+		t.Errorf("cwd .claude touched: %v", err)
+	}
+}
+
+// Self-copy guard compare src against dst, so both side need absolutising.
+func TestCopyBinaryRelativeSelfCopyIsANoOp(t *testing.T) {
+	t.Chdir(t.TempDir())
+	body := "#!/bin/sh\nexit 0\n"
+	if err := os.WriteFile("knit-statusline", []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat("knit-statusline")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyBinary(filepath.Join(wd, "knit-statusline"), "knit-statusline"); err != nil {
+		t.Fatalf("copyBinary: %v", err)
+	}
+
+	after, err := os.Stat("knit-statusline")
+	if err != nil {
+		t.Fatalf("binary gone: %v", err)
+	}
+	if !os.SameFile(before, after) {
+		t.Error("self copy replaced the file instead of doing nothing")
+	}
+	got, err := os.ReadFile("knit-statusline")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Errorf("binary = %q, want it untouched", got)
+	}
+}
+
 func TestInstallUninstallRoundTrip(t *testing.T) {
 	home := t.TempDir()
 	writeSettings(t, home, `{"model":"opus","permissions":{"allow":[]}}`)

@@ -3,6 +3,7 @@ package install
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -93,7 +94,6 @@ func TestWriteJSONIsAtomicAndLeavesNoTemp(t *testing.T) {
 		t.Errorf("model = %v", got)
 	}
 
-	// Second write replace first. Windows refuse rename onto existing file.
 	if err := writeJSON(path, map[string]any{"model": "sonnet"}); err != nil {
 		t.Fatalf("overwrite: %v", err)
 	}
@@ -161,5 +161,126 @@ func TestBackupFileSkipsMissingOriginal(t *testing.T) {
 	}
 	if backup != "" {
 		t.Errorf("backup path = %q, want empty", backup)
+	}
+}
+
+// settings.json env block hold ANTHROPIC_API_KEY, so 0o600 original must not
+// copy to world-readable .bak.
+func TestBackupFileKeepsOriginalMode(t *testing.T) {
+	home := t.TempDir()
+	path := writeSettings(t, home, `{"env":{"ANTHROPIC_API_KEY":"sk-secret"}}`)
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	backup, err := backupFile(path)
+	if err != nil {
+		t.Fatalf("backupFile: %v", err)
+	}
+	info, err := os.Stat(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows carry no POSIX mode bits -- Go report 0o666 for every regular file.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("backup mode = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// Second install back up already-modified settings.json. Only first .bak hold
+// pre-knit original, so it stay.
+func TestBackupFileKeepsFirstBackup(t *testing.T) {
+	home := t.TempDir()
+	original := `{"model":"opus"}`
+	path := writeSettings(t, home, original)
+
+	first, err := backupFile(path)
+	if err != nil {
+		t.Fatalf("first backup: %v", err)
+	}
+
+	writeSettings(t, home, `{"model":"sonnet"}`)
+	second, err := backupFile(path)
+	if err != nil {
+		t.Fatalf("second backup: %v", err)
+	}
+	if second != first {
+		t.Errorf("backup path = %q, want %q", second, first)
+	}
+
+	b, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != original {
+		t.Errorf("backup = %q, want the pre-install original %q", b, original)
+	}
+}
+
+// Temp file start 0o600, so write must hand back whatever mode user chose.
+func TestWriteJSONKeepsExistingFileMode(t *testing.T) {
+	home := t.TempDir()
+	path := writeSettings(t, home, `{"model":"opus"}`)
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeJSON(path, map[string]any{"model": "sonnet"}); err != nil {
+		t.Fatalf("writeJSON: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows carry no POSIX mode bits -- Go report 0o666 for every regular file.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o644 {
+		t.Errorf("settings mode = %v, want 0644", info.Mode().Perm())
+	}
+}
+
+// No original mode to copy. settings.json env block hold ANTHROPIC_API_KEY, so
+// file we create stay owner-only.
+func TestWriteJSONCreatesOwnerOnlyFile(t *testing.T) {
+	home := t.TempDir()
+	path := SettingsPath(home)
+
+	if err := writeJSON(path, map[string]any{"model": "opus"}); err != nil {
+		t.Fatalf("writeJSON: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Windows carry no POSIX mode bits -- Go report 0o666 for every regular file.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Errorf("settings mode = %v, want 0600", info.Mode().Perm())
+	}
+}
+
+// Rename alone replace existing destination, so no remove step leave settings
+// gone mid-write.
+func TestReplaceFileOverwritesDestination(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "settings.json")
+	if err := os.WriteFile(dst, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tmp := filepath.Join(dir, ".settings-x.tmp")
+	if err := os.WriteFile(tmp, []byte("new"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := replaceFile(tmp, dst); err != nil {
+		t.Fatalf("replaceFile: %v", err)
+	}
+	b, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != "new" {
+		t.Errorf("destination = %q, want %q", b, "new")
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("source still present after rename: %v", err)
 	}
 }

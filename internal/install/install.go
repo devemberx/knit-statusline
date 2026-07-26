@@ -1,9 +1,8 @@
 // Package install wire knit-statusline into Claude Code settings.
 //
-// Plugin cannot configure main status line -- plugin settings.json take only
-// agent and subagentStatusLine -- so user's own ~/.claude/settings.json is only
-// path in. That file also hold their hooks, permissions and enabled plugins, so
-// every write here merge, never replace.
+// Plugin settings.json take only agent and subagentStatusLine, so user's own
+// ~/.claude/settings.json is only way to set main status line. Same file hold
+// their hooks and permissions, so every write merge, never replace.
 package install
 
 import (
@@ -16,11 +15,9 @@ import (
 	"github.com/devemberx/knit-statusline/internal/config"
 )
 
-// BinaryPath name installed copy.
-//
-// Windows need .exe: CreateProcess refuse to run extensionless file, and Claude
-// Code print nothing when its status line command fail, so user meet a blank row
-// with no error naming what went wrong.
+// BinaryPath name installed copy. Windows need .exe: CreateProcess refuse
+// extensionless file, and Claude Code print nothing when status line command
+// fail.
 func BinaryPath(home string) string {
 	name := "knit-statusline"
 	if runtime.GOOS == "windows" {
@@ -29,8 +26,8 @@ func BinaryPath(home string) string {
 	return filepath.Join(home, ".claude", name)
 }
 
-// Result report what install or uninstall did, so command tell user instead of
-// claiming success generically.
+// Result report what ran, so command layer name specifics instead of claiming
+// success generically.
 type Result struct {
 	SettingsPath string
 	BackupPath   string
@@ -40,6 +37,8 @@ type Result struct {
 	InstalledBinary string
 	// Previous statusLine command, when one was set.
 	ReplacedCommand string
+	// statusLine key removed. False when configured command belong to another tool.
+	RemovedStatusLine bool
 }
 
 type Options struct {
@@ -51,13 +50,17 @@ type Options struct {
 	Force bool
 }
 
-// Install copy this binary beside user's Claude Code settings, point status line
-// at copy, lay down starting config.
+// Install copy this binary beside user's settings, point statusLine at copy,
+// lay down starting config.
 //
-// Copy is not incidental. npx run binary out of a package cache npm prune at
-// will, and status line whose command vanish render empty row explaining
-// nothing. Copy under ~/.claude survive a cleared cache.
+// Copy because npx run binary out of a package cache npm prune at will, and
+// vanished command render empty row explaining nothing.
 func Install(opts Options) (*Result, error) {
+	// Empty home resolve every path against cwd, dropping a .claude into
+	// whatever directory this ran from.
+	if opts.Home == "" {
+		return nil, errors.New("no home directory")
+	}
 	if opts.Preset == "" {
 		opts.Preset = config.DefaultPreset
 	}
@@ -82,8 +85,9 @@ func Install(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("installing the binary: %w", err)
 	}
 
-	// Back up before touching anything. File hold user's hooks and permissions,
-	// so a bad write here cost far more than a status line.
+	// settings.json hold user's hooks and permissions, so keep a copy before
+	// merging. Binary land first on purpose: reverse order point statusLine at
+	// a binary that may never arrive.
 	backup, err := backupFile(res.SettingsPath)
 	if err != nil {
 		return nil, err
@@ -114,12 +118,15 @@ func Install(opts Options) (*Result, error) {
 	return res, nil
 }
 
-// Uninstall drop statusLine key and installed binary, every other setting
-// untouched.
-//
-// statusline.toml stay: it is user's config. Removing it turn reinstall into
-// fresh start instead of resumption.
+// Uninstall drop our statusLine key and installed binary, every other setting
+// untouched. statusline.toml stay: user's own config, and removing it turn
+// reinstall into fresh start instead of resumption.
 func Uninstall(home string) (*Result, error) {
+	// Empty home resolve every path against cwd, so os.Remove below would hunt a
+	// .claude in whatever directory this ran from.
+	if home == "" {
+		return nil, errors.New("no home directory")
+	}
 	res := &Result{
 		SettingsPath:    SettingsPath(home),
 		ConfigPath:      config.UserPath(home),
@@ -131,39 +138,44 @@ func Uninstall(home string) (*Result, error) {
 		return nil, err
 	}
 	res.ReplacedCommand = statusLineCommand(settings)
-	if _, ok := settings["statusLine"]; !ok {
-		return res, nil
+
+	// Only key we installed is ours to delete. User who switched status line
+	// tools by hand keep that tool's config, and missing key match nothing.
+	if res.ReplacedCommand == res.InstalledBinary {
+		backup, err := backupFile(res.SettingsPath)
+		if err != nil {
+			return nil, err
+		}
+		res.BackupPath = backup
+
+		delete(settings, "statusLine")
+		if err := writeJSON(res.SettingsPath, settings); err != nil {
+			return nil, err
+		}
+		res.RemovedStatusLine = true
 	}
 
-	backup, err := backupFile(res.SettingsPath)
-	if err != nil {
-		return nil, err
-	}
-	res.BackupPath = backup
-
-	delete(settings, "statusLine")
-	if err := writeJSON(res.SettingsPath, settings); err != nil {
-		return nil, err
-	}
-
-	// Remove copy this tool made. May be binary running right now; fine on Unix,
-	// process keep its open file. Failure not worth reporting once setting
-	// already gone.
+	// Copy is ours whatever statusLine now point at, so remove it even when key
+	// was hand-deleted. May be binary running right now; fine on Unix, process
+	// keep its open file. Failure leave nothing to undo.
 	_ = os.Remove(res.InstalledBinary)
 	return res, nil
 }
 
-// copyBinary place running executable at dst.
-//
-// Temp file then rename: dst may be binary a running Claude Code is about to
-// invoke. In-place write hand that invocation a half-written file; rename swap
-// it whole. Copy onto itself no-op -- what reinstall from ~/.claude do.
+// copyBinary place running executable at dst. Temp file then replace: dst may
+// be binary a running Claude Code is about to invoke, and in-place write hand
+// that invocation half-written file.
 func copyBinary(src, dst string) error {
 	if src == "" {
 		return errors.New("no source binary")
 	}
+	// Both side absolutised, else guard miss whenever one path is relative.
+	// Reinstall from ~/.claude reach here with src and dst naming same file.
 	if abs, err := filepath.Abs(src); err == nil {
 		src = abs
+	}
+	if abs, err := filepath.Abs(dst); err == nil {
+		dst = abs
 	}
 	if src == dst {
 		return nil
@@ -194,10 +206,5 @@ func copyBinary(src, dst string) error {
 	if err := os.Chmod(name, 0o755); err != nil {
 		return err
 	}
-	// Windows refuse rename onto existing file, where Unix replace silently.
-	// Reinstall hit this every time.
-	if err := os.Remove(dst); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return os.Rename(name, dst)
+	return replaceFile(name, dst)
 }

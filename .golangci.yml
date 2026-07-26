@@ -106,11 +106,11 @@ linters:
         linters:
           - gosec
 
-      # G304 read of settings.json, G301 ~/.claude at 0o755, G306 backup stay as
-      # readable as file it copy, G703 backup path derive from that same $HOME
-      # path rather than from any input.
+      # G304 read of settings.json, G301 ~/.claude at 0o755, G703 backup path
+      # derive from that same $HOME path rather than from any input. No G306:
+      # backup inherit mode of file it copy, never a literal.
       - path: internal/install/settings\.go
-        text: G304|G301|G306|G703
+        text: G304|G301|G703
         linters:
           - gosec
 
