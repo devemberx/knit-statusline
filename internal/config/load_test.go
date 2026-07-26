@@ -157,11 +157,12 @@ cache_ms = 5000
 	}
 }
 
+// ToSlash so one expectation read on every runner: Windows join with "\".
 func TestPathsSitUnderDotClaude(t *testing.T) {
-	if got := UserPath("/home/u"); got != "/home/u/.claude/statusline.toml" {
+	if got := filepath.ToSlash(UserPath("/home/u")); got != "/home/u/.claude/statusline.toml" {
 		t.Errorf("UserPath = %q", got)
 	}
-	if got := ProjectPath("/w/acme"); got != "/w/acme/.claude/statusline.toml" {
+	if got := filepath.ToSlash(ProjectPath("/w/acme")); got != "/w/acme/.claude/statusline.toml" {
 		t.Errorf("ProjectPath = %q", got)
 	}
 }
