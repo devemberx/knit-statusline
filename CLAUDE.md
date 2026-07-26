@@ -1,12 +1,11 @@
 # CLAUDE.md
 
 Status line for Claude Code. Migration in progress — `LICENSE`, `.githooks/`,
-`.github/PULL_REQUEST_TEMPLATE.md` and `.claude/hooks/` here so far; the rest
-move over from `bare-statusline`.
+`.github/` and `.claude/hooks/` here so far; the rest move over from
+`bare-statusline`.
 
-Contribution rules — branch names, commit format, PR and merge — belong in
-`.github/CONTRIBUTING.md`, not ported yet. Hook headers cite it. Not repeated
-here.
+Contribution rules — branch names, commit format, PR and merge — live in
+[.github/CONTRIBUTING.md](.github/CONTRIBUTING.md). Not repeated here.
 
 ## Comments
 
