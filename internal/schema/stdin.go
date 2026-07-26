@@ -8,7 +8,10 @@
 // that distinction live in type, not at each call site.
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"math"
+)
 
 type Input struct {
 	CWD            string  `json:"cwd"`
@@ -170,10 +173,12 @@ func (in *Input) ContextPercent() (float64, bool) {
 }
 
 // clampPercent hold value in 0..100. context_window_size stale against usage
-// counts, or used_percentage over 100, else render past full bar.
+// counts, or used_percentage over 100, else render past full bar. NaN compare
+// false against both bound, so it need naming: int(NaN) is
+// -9223372036854775808 on amd64, and ContextPercent report ok alongside it.
 func clampPercent(p float64) float64 {
 	switch {
-	case p < 0:
+	case math.IsNaN(p), p < 0:
 		return 0
 	case p > 100:
 		return 100
