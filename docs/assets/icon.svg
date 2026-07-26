@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="knit-statusline">
+  <defs>
+    <!-- userSpaceOnUse so gradient keeps running past ball rim. Coords = old objectBoundingBox stops over circle bbox 8,19..34,45. -->
+    <linearGradient id="yarn" gradientUnits="userSpaceOnUse" x1="10.6" y1="19" x2="31.4" y2="45">
+      <stop offset="0" stop-color="#0099FF"/>
+      <stop offset="1" stop-color="#56B6C2"/>
+    </linearGradient>
+    <clipPath id="ball">
+      <circle cx="21" cy="32" r="13"/>
+    </clipPath>
+  </defs>
+
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="#12151C"/>
+  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#FFFFFF" stroke-opacity="0.08"/>
+
+  <circle cx="21" cy="32" r="13" fill="url(#yarn)"/>
+  <g clip-path="url(#ball)" fill="none" stroke="#EAF7FF" stroke-opacity="0.5" stroke-width="1.9" stroke-linecap="round">
+    <ellipse cx="21" cy="32" rx="13" ry="5.5" transform="rotate(34 21 32)"/>
+    <ellipse cx="21" cy="32" rx="13" ry="5.5" transform="rotate(-34 21 32)"/>
+    <ellipse cx="21" cy="32" rx="13" ry="5.5" transform="rotate(90 21 32)"/>
+  </g>
+
+  <!-- Loose end = ball strand continuing out. Repaints yarn gradient, then same #EAF7FF 0.5 overlay inner strands use, so rim seam matches by construction. Path crosses rim at gradient offset 0.60, not 1.0 - hardcoded hex got that wrong. -->
+  <g fill="none" stroke-width="1.9" stroke-linecap="round">
+    <path d="M32.4 26.9 C 37.3 25.1, 36.2 33.7, 41.4 32" stroke="url(#yarn)"/>
+    <path d="M32.4 26.9 C 37.3 25.1, 36.2 33.7, 41.4 32" stroke="#EAF7FF" stroke-opacity="0.5"/>
+  </g>
+
+  <circle cx="45" cy="32" r="3.3" fill="#00AF50"/>
+  <circle cx="52.2" cy="32" r="3.3" fill="#FFB055"/>
+  <circle cx="59" cy="32" r="2.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.3" stroke-width="1.7"/>
+</svg>
