@@ -132,6 +132,10 @@ five-target cross-compile matrix, `govulncheck`, and a `zizmor` audit of the
 workflows. The `gate` job aggregates them into one required check. Say in **Testing**
 what you checked beyond that.
 
+Release-note labels are stamped from the PR title, and re-stamped every time the title
+is edited — so do not apply `feature`, `bug`, `breaking` or the rest by hand; the next
+edit drops them. `skip-changelog` is never touched, apply that one manually.
+
 ### Review and merge
 
 - At least one approving review is required; resolve review threads before merge.

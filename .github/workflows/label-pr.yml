@@ -1,9 +1,10 @@
 name: label pr
 
 # Stamp a release-note label from the PR title's conventional-commit type.
-# .github/release.yml group the notes by those labels.
-# pull_request_target for fork access; title arrive via env, so no PR code runs.
-# Nothing is checked out, so the fork's tree never execute against this token.
+# release.yml group the notes by those labels.
+# pull_request_target for fork write access. Nothing checked out, and the title
+# reach the script as an env var, never spliced in by ${{ }} -- so no fork code
+# and no fork text execute against this token.
 on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, edited, reopened]

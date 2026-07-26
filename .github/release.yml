@@ -1,6 +1,8 @@
 # Group GitHub's generated release notes. GoReleaser delegate here via
 # changelog.use: github-native. label-pr.yml stamp the labels from PR titles.
 changelog:
+  # label-pr.yml never stamp skip-changelog. Maintainer-applied, so it survive
+  # a retitle.
   exclude:
     labels:
       - skip-changelog
@@ -23,7 +25,7 @@ changelog:
     - title: 📝 Documentation
       labels:
         - documentation
-    - title: ":dependabot: Dependencies"
+    - title: ⬆ Dependencies
       labels:
         - dependencies
     - title: 🧰 Maintenance

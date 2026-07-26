@@ -1,16 +1,15 @@
 version: 2
 
 updates:
-  # Pinned action SHAs go stale in silence -- nothing in CI notice that a pin
-  # sit three releases behind. Dependabot bump the sha and its trailing
-  # version comment together.
+  # Action tags go stale in silence -- nothing in CI notice a pin three releases
+  # behind. zizmor.yml pin by tag, so this bump tag names, never a repoint.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
-    # Wait a week before adopting a release. A compromised version get yanked
-    # within days, and nothing here need the newest action the hour it land.
+    # A compromised release get yanked within days, and nothing here need the
+    # newest action the hour it land.
     cooldown:
       default-days: 7
     # One PR a week for every action, not one per action.
