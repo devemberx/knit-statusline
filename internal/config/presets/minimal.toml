@@ -4,7 +4,12 @@
 #
 #   Opus 4.8 │ ✍️ 42% │ acme
 #
-# Add "git" for the branch, or "session" for elapsed time.
+# Add "session" for elapsed time.
 
 [[lines]]
 segments = ["model", "context", "dir"]
+
+# The default template for "dir" is "{name}{git}", and {git} costs a git
+# subprocess on every render. Delete this block to get " (main*)" back.
+[segments.dir]
+template = "{name}"

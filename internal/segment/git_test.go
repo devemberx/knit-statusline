@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/render"
 )
@@ -63,6 +64,25 @@ func TestWantsGit(t *testing.T) {
 		if got := wantsGit(tc.tmpl); got != tc.want {
 			t.Errorf("wantsGit(%q) = %v, want %v", tc.tmpl, got, tc.want)
 		}
+	}
+}
+
+// Minimal preset's own comment promise no subprocess, and dir default template
+// carry {git}. Render test catch none of it: fixture directory is no repository,
+// so git fail and output read same either way. Only template witness it.
+func TestMinimalPresetTemplateWantsNoGit(t *testing.T) {
+	cfg, err := config.Preset("minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, ok := Lookup("dir")
+	if !ok {
+		t.Fatal("dir unregistered")
+	}
+
+	tmpl := cfg.Resolve("dir", def.DefaultTemplate).Template
+	if wantsGit(tmpl) {
+		t.Errorf("minimal dir template %q shell out to git", tmpl)
 	}
 }
 
