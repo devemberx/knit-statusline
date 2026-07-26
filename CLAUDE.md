@@ -3,9 +3,9 @@
 Go status line for Claude Code. Read one JSON object on stdin, print one row.
 Single static binary, no runtime deps, no network.
 
-Migration in progress — every Go package lands, `cmd/statusline` included, and the
-release pipeline (`.goreleaser.yaml`, `npm/`, `publish.yml`) with it. `SECURITY.md`
-and `.githooks/pre-push` still move over from `bare-statusline`.
+Migration from `bare-statusline` done — every Go package, `cmd/statusline`, the
+release pipeline (`.goreleaser.yaml`, `npm/`, `publish.yml`), `SECURITY.md` and
+`.githooks/pre-push` all land here.
 
 ## Releasing
 
