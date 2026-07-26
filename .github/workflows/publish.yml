@@ -1,0 +1,108 @@
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+
+# Nothing at workflow level. Job inherit what it never asked for otherwise.
+permissions: {}
+
+# Never cancel. Cancelled run leave some of six packages published and rest not,
+# and npm refuse to reuse version even after unpublish.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+defaults:
+  run:
+    # Actions default to `bash -e`, no pipefail. Failing publish inside pipe else
+    # read as success.
+    shell: bash
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Human gate between tag push and npm. Name must match environment on every
+    # trusted publisher at npmjs.com -- OIDC claim carry it, mismatch reject.
+    environment: release
+    permissions:
+      contents: write # cut GitHub Release
+      id-token: write # npm trusted publishing over OIDC
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # checkout leave lightweight tag, so goreleaser .TagBody render commit
+      # message body instead of curated tag body. main need explicit refspec:
+      # checkout wire none for tag push.
+      - name: fetch annotated tag and main
+        run: |
+          git fetch --force --tags origin
+          git fetch origin +refs/heads/main:refs/remotes/origin/main
+
+      # Tag on side branch build commit nobody reviewed.
+      - name: tag sits on main
+        run: |
+          git merge-base --is-ancestor "${GITHUB_SHA}" origin/main || {
+            echo "::error::${GITHUB_REF_NAME} points at a commit not reachable from origin/main"
+            exit 1; }
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing need npm >= 11.5.1. Major pinned: unpinned upgrade put
+      # every release at mercy of newest npm.
+      - run: npm install -g npm@12
+
+      - name: build and publish GitHub release
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: stage npm packages
+        run: node npm/scripts/prepare-packages.mjs "${GITHUB_REF_NAME}" dist
+
+      # Platform packages first, launcher last: launcher pin them exactly, so a
+      # resolvable launcher must not exist before its binaries do.
+      #
+      # Skip what already on registry. Six publishes in sequence, and failure
+      # partway leave some up -- plain rerun else die on first one that landed,
+      # since npm reject duplicate version forever, unpublish included.
+      #
+      # Leading ./ load-bearing: npm read bare two-segment path as GitHub
+      # shorthand owner/repo and go looking for github.com/npm/knit-statusline.
+      #
+      # Prerelease need explicit dist-tag, and rightly -- 1.0.0-rc.1 under
+      # `latest` hand every plain `npm install` release candidate.
+      - name: publish npm packages
+        run: |
+          for dir in npm/platforms/*/ npm/knit-statusline; do
+            dir="./${dir%/}"
+            read -r name version < <(node -p \
+              "const j=JSON.parse(require('node:fs').readFileSync('$dir/package.json','utf8')); j.name+' '+j.version")
+            case "$version" in *-*) tag=next ;; *) tag=latest ;; esac
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "skip $name@$version: already on registry"
+              continue
+            fi
+            echo "publish $name@$version --tag $tag"
+            npm publish "$dir" --access public --tag "$tag"
+          done
+
+      - name: publish the GitHub release
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

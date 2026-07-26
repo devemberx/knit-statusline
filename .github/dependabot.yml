@@ -1,8 +1,9 @@
 version: 2
 
 updates:
-  # Action tags go stale in silence -- nothing in CI notice a pin three releases
-  # behind. zizmor.yml pin by tag, so this bump tag names, never a repoint.
+  # Action pins go stale in silence -- nothing in CI notice a pin three releases
+  # behind. zizmor.yml demand hash-pin, and Dependabot bump the sha and its
+  # trailing version comment together.
   - package-ecosystem: github-actions
     directory: /
     schedule:
