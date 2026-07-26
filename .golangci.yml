@@ -84,6 +84,14 @@ linters:
         linters:
           - gosec
 
+      # G204 subprocess taint: command segment run user's own command by design,
+      # git run fixed argv against workspace dir. G301 dir mode: command cache
+      # sit under $HOME/.claude at conventional 0o755.
+      - path: internal/segment/
+        text: G204|G301
+        linters:
+          - gosec
+
       # Shadowing err and ok is Go house style, not a defect.
       - text: '^shadow: declaration of "(err|ok)" shadows declaration'
         linters:
