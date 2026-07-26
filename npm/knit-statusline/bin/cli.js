@@ -1,17 +1,14 @@
 #!/usr/bin/env node
 "use strict";
 
-// Thin launcher for the knit-statusline binary.
-//
-// Only `npx @devemberx/knit-statusline` comes through here. That install
-// copies the binary to ~/.claude and points settings.json at it, so renders
-// run the binary directly -- Node's startup cost several times a second is
-// most of why this project is not JavaScript.
+// Thin launcher: only `npx @devemberx/knit-statusline` come through here. That
+// install copy the binary to ~/.claude and point settings.json at it, so render
+// run the binary direct -- Node startup cost several times a second is most of
+// why this project is not JavaScript.
 
 const { spawnSync } = require("node:child_process");
 
-// npm installs exactly one of these, selected by the "os" and "cpu" fields in
-// each platform package.
+// npm install exactly one, picked by "os" and "cpu" in each platform package.
 const PACKAGE_BY_TARGET = {
   "darwin-arm64": "@devemberx/knit-statusline-darwin-arm64",
   "darwin-x64": "@devemberx/knit-statusline-darwin-x64",
@@ -42,8 +39,8 @@ function resolveBinary() {
   try {
     return require.resolve(`${pkg}/bin/${exe}`);
   } catch {
-    // Optional dependencies fail quietly, so an absent package usually means
-    // the install ran with --no-optional or behind a restricted registry.
+    // Optional dependency fail quiet, so absent package mean --no-optional or a
+    // registry that mirror nothing.
     fail(
       `the ${pkg} package is missing.\n` +
         `It is an optional dependency, so it is skipped by --no-optional and by\n` +
@@ -53,10 +50,9 @@ function resolveBinary() {
   }
 }
 
-// A bare `npx @devemberx/knit-statusline` means install -- nobody types it to
-// render, and with no argument the binary waits on a stdin that never closes.
-// A piped stdin is left alone, so a settings.json wired to npx still renders
-// rather than reinstalling on every update.
+// Bare `npx @devemberx/knit-statusline` mean install: nobody type it to render,
+// and with no argument the binary wait on a stdin that never close. Piped stdin
+// left alone, so settings.json wired to npx render instead of reinstalling.
 const args = process.argv.slice(2);
 if (args.length === 0 && process.stdin.isTTY) {
   args.push("install");

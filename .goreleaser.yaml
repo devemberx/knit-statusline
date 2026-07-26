@@ -4,17 +4,18 @@ project_name: knit-statusline
 
 before:
   hooks:
-    - go mod tidy
+    # -diff report instead of rewriting: goreleaser abort on a dirty tree, so a
+    # tidying hook turn a stale go.sum into a failed release mid-publish.
+    - go mod tidy -diff
     - go test ./...
 
 builds:
   - id: knit-statusline
     main: ./cmd/statusline
     binary: knit-statusline
-    # No cgo, so every target cross-compile from one machine and the binaries
-    # carry no runtime dependency at all -- which is the point: the shell
-    # implementation this replaces need jq and curl, and a status line that fail
-    # on a machine without them fail invisibly.
+    # CGO off: every target cross-compile from one machine, and binary carry no
+    # runtime dep. Shell version this replace need jq and curl, and a status
+    # line failing on a machine without them fail invisibly.
     env:
       - CGO_ENABLED=0
     flags:
@@ -24,7 +25,7 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
-      # Claude Code does not ship for Windows on ARM.
+      # Claude Code ship no Windows arm64 build.
       - goos: windows
         goarch: arm64
 
@@ -35,8 +36,8 @@ archives:
       - goos: windows
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
-    # Archive is the go-install-free path: whoever unpack it get the license and
-    # the config reference, not a bare binary.
+    # Archive = go-install-free path: license and config reference travel with
+    # the binary.
     files:
       - LICENSE
       - README.md
@@ -45,21 +46,20 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# github-native delegate to GitHub's generator, so .github/release.yml decide
-# grouping. No filters on purpose: old exclude list dropped docs, test and chore
-# commits outright; release.yml file them under Maintenance instead.
+# github-native hand grouping to .github/release.yml. No filters: old exclude
+# list dropped docs, test and chore commits; release.yml file them under
+# Maintenance instead.
 changelog:
   use: github-native
 
 release:
-  # Created as draft. publish.yml flip it public only after every npm publish
-  # succeed, so a failed publish never front nonexistent packages.
+  # Draft until every npm publish succeed, else release front nonexistent
+  # packages.
   draft: true
   prerelease: auto
-  # Curated highlights live in the annotated tag's message, so the repository
-  # never accumulate a per-release notes file. .TagBody is git's
-  # %(contents:body): the message minus its subject line and the blank line
-  # after it. Stay empty when the tag carry only the dated marker -- then the
+  # Highlights live in annotated tag message, so repository keep no per-release
+  # notes file. .TagBody = git %(contents:body): message minus subject and the
+  # blank line after. Empty on a tag carrying only the dated marker, and then
   # release ship the generated change list alone.
   header: |
     {{- with .TagBody -}}

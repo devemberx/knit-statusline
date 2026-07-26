@@ -3,18 +3,17 @@
 /knit-statusline
 /statusline
 
-# Binaries staged into the npm platform packages by the release pipeline
+# Binaries the release pipeline stage into npm platform packages
 /npm/platforms/*/bin/*
 !/npm/platforms/*/bin/.gitkeep
 
-# README copied into the launcher package at stage time
+# README copied into launcher package at stage time
 /npm/knit-statusline/README.md
 
 node_modules/
 
-# Claude Code: only the shared hooks, skills and their wiring are tracked
+# Claude Code: only shared hooks and their wiring tracked
 .claude/*
 !.claude/hooks/
-!.claude/skills/
 !.claude/settings.json
 __pycache__/

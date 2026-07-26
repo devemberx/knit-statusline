@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "description": "knit-statusline binary for win32-x64",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/devemberx/knit-statusline.git"
