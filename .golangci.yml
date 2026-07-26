@@ -98,6 +98,22 @@ linters:
         linters:
           - gosec
 
+      # G304 read of running executable, G301 ~/.claude at conventional 0o755,
+      # G306 statusline.toml user-readable, G302 installed binary must stay
+      # executable. Every path derive from $HOME, never from stdin.
+      - path: internal/install/install\.go
+        text: G304|G301|G306|G302
+        linters:
+          - gosec
+
+      # G304 read of settings.json, G301 ~/.claude at 0o755, G703 backup path
+      # derive from that same $HOME path rather than from any input. No G306:
+      # backup inherit mode of file it copy, never a literal.
+      - path: internal/install/settings\.go
+        text: G304|G301|G703
+        linters:
+          - gosec
+
       # Shadowing err and ok is Go house style, not a defect.
       - text: '^shadow: declaration of "(err|ok)" shadows declaration'
         linters:
