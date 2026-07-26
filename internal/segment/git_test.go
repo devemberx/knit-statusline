@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/render"
 )
 
-// repo build throwaway repository. Identity passed per command: CI runner carry
-// no global git config, and commit fail outright without one.
+// Identity passed per command: CI runner carry no global git config.
+// Commit fail outright without identity.
 func repo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -46,8 +47,8 @@ func gitAt(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// Git cost subprocess, so template decide whether to pay. Minimal preset render
-// "{name}" and must shell out never.
+// Git cost subprocess, so template decide whether to pay.
+// Minimal preset render "{name}", never shell out.
 func TestWantsGit(t *testing.T) {
 	for _, tc := range []struct {
 		tmpl string
@@ -58,11 +59,31 @@ func TestWantsGit(t *testing.T) {
 		{"{name} ({branch})", true},
 		{"{branch}{dirty}", true},
 		{"{path}", false},
-		{"{project}", false}, // no git token inside, whatever its letters spell
+		{"{project}", false}, // no git token, whatever letters spell
 	} {
 		if got := wantsGit(tc.tmpl); got != tc.want {
 			t.Errorf("wantsGit(%q) = %v, want %v", tc.tmpl, got, tc.want)
 		}
+	}
+}
+
+// Minimal preset comment promise no subprocess.
+// dir default template carry {git}.
+// Render test blind: fixture directory no repository, git fail and output read
+// same either way. Only template witness call.
+func TestMinimalPresetTemplateWantsNoGit(t *testing.T) {
+	cfg, err := config.Preset("minimal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	def, ok := Lookup("dir")
+	if !ok {
+		t.Fatal("dir unregistered")
+	}
+
+	tmpl := cfg.Resolve("dir", def.DefaultTemplate).Template
+	if wantsGit(tmpl) {
+		t.Errorf("minimal dir template %q shell out to git", tmpl)
 	}
 }
 
@@ -88,7 +109,7 @@ func TestGitStatusReportsBranchAndDirtiness(t *testing.T) {
 	}
 }
 
-// Detached HEAD still deserve identity, so short sha stand in for branch name.
+// Detached HEAD carry no branch name, so short sha stand in.
 func TestGitStatusNamesDetachedHead(t *testing.T) {
 	dir := repo(t)
 	sha := gitAt(t, dir, "rev-parse", "--short", "HEAD")
@@ -111,9 +132,9 @@ func TestGitStatusFailsOutsideRepository(t *testing.T) {
 	}
 }
 
-// status --porcelain walk whole working tree, so on large repository it run
-// seconds. Unbounded, render hang and Claude Code print nothing -- which read
-// same as crash. Expired budget must drop git fields and return, not block.
+// status --porcelain walk whole working tree: seconds on large repository.
+// Unbounded, render hang and Claude Code print nothing -- read same as crash.
+// Expired budget drop git fields and return, not block.
 func TestGitStatusHonoursBudget(t *testing.T) {
 	dir := repo(t)
 
@@ -129,8 +150,8 @@ func TestGitStatusHonoursBudget(t *testing.T) {
 	}
 }
 
-// No repository = empty {git}, where separate {branch} and {dirty} leave "()"
-// standing for a repository that is not there.
+// No repository = empty {git}.
+// Separate {branch} and {dirty} leave "()" standing for repository not there.
 func TestBuildDirLeavesNoEmptyParens(t *testing.T) {
 	c := ctx(t, fixtures.Full, "dir")
 	c.In.Workspace.CurrentDir = t.TempDir()
@@ -154,8 +175,8 @@ func TestBuildDirRendersBranchInsideRepository(t *testing.T) {
 	}
 }
 
-// Template naming no git field must not shell out at all. Absent branch field
-// stand in for that: it populate only after gitStatus run.
+// Template naming no git field must not shell out.
+// Absent branch field prove it: branch populate only after gitStatus run.
 func TestBuildDirSkipsGitWhenTemplateDoesNotAsk(t *testing.T) {
 	c := ctx(t, fixtures.Full, "dir")
 	c.In.Workspace.CurrentDir = repo(t)
@@ -174,8 +195,8 @@ func TestBuildDirCarriesWorktreeName(t *testing.T) {
 	}
 }
 
-// {git} bake three colors into one field. Every other test here run NoColor and
-// never reach that path.
+// {git} bake three colors into one field.
+// Every other test run NoColor, never reach that path.
 func TestBuildDirGitFieldPadsByVisibleWidth(t *testing.T) {
 	t.Setenv("NO_COLOR", "")
 	c := ctx(t, fixtures.Full, "dir")
@@ -187,7 +208,7 @@ func TestBuildDirGitFieldPadsByVisibleWidth(t *testing.T) {
 	if !strings.Contains(got, "\033[") {
 		t.Fatalf("palette emitted no escape, test prove nothing: %q", got)
 	}
-	// " (main)" is 7 visible runes, so 3 spaces reach 10.
+	// " (main)" 7 visible runes, so 3 spaces reach 10.
 	if want := "   \033"; !strings.HasPrefix(got, want) {
 		t.Errorf("rendered %q, want 3 leading spaces", got)
 	}

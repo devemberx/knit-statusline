@@ -77,6 +77,17 @@ func TestReferencePresetOnFullData(t *testing.T) {
 	}
 }
 
+// Row preset's own header comment promise. Pinned here so comment and render
+// cannot drift apart.
+func TestMinimalPresetOnFullData(t *testing.T) {
+	got := drawPreset(t, "minimal", fixtures.Full)
+	want := "Opus 4.8 │ ✍️ 42% │ acme"
+
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 // Case reference bash implementation get wrong. Nothing available, so nothing
 // invented: no "0%" context, no empty rate limit bars, no blank rows left by
 // vanished segments.

@@ -1,10 +1,15 @@
 # knit-statusline -- minimal preset
 #
-# One row, nothing that needs a subprocess or a file read:
+# One row, no subprocess, no file read:
 #
 #   Opus 4.8 │ ✍️ 42% │ acme
 #
-# Add "git" for the branch, or "session" for elapsed time.
+# Add "session" for elapsed time.
 
 [[lines]]
 segments = ["model", "context", "dir"]
+
+# "dir" default template "{name}{git}" pay git subprocess every render.
+# Delete block to restore " (main*)".
+[segments.dir]
+template = "{name}"

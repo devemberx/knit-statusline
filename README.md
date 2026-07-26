@@ -18,7 +18,7 @@
 Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
-weekly  ●○○○○○○○○○  18% ⟳ jul 27, 5:00pm
+weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm
 ```
 
 That is the default layout. Nothing above is hardcoded: each row is a `[[lines]]`
@@ -37,7 +37,9 @@ drop, or restyle without touching code.
   a timeout and a cache.
 - 📦 **No runtime dependencies.** One static binary — no `jq`, no `curl`, no
   Node. Installing needs `npx`; rendering does not.
-- ⏱ **Fast.** A warm render measures ~6ms, git call and transcript scan included.
+- ⏱ **Fast.** No shell pipeline — no `jq`, no `curl`. A git subprocess runs only
+  when the template asks for `{git}`, and under a timeout budget so a slow
+  repository cannot stall the line.
 - 🛟 **Never blanks your status line.** A failing segment is dropped and the row
   still draws; a broken config falls back with a marker naming the file.
 
@@ -48,7 +50,7 @@ drop, or restyle without touching code.
 | Needed | Why |
 | --- | --- |
 | [Claude Code](https://claude.com/claude-code) | What draws the status line. The installer merges one `statusLine` key into its `~/.claude/settings.json` |
-| [Node](https://nodejs.org) 16 or newer | For `npx` alone — the status line is a single static binary and needs no runtime |
+| [Node](https://nodejs.org) 16+ | For `npx` alone — the status line is a single static binary and needs no runtime |
 
 No minimum Claude Code version: a segment whose stdin field your version does not
 send is dropped, so an older release renders a shorter line rather than an error.
@@ -75,7 +77,7 @@ npx @devemberx/knit-statusline install --preset minimal
 | `~/.claude/knit-statusline` | The binary is copied here |
 | `~/.claude/statusline.toml` | A starting config is written — an existing one is kept unless you pass `--force` |
 | `~/.claude/settings.json` | One `statusLine` key is merged in |
-| `~/.claude/settings.json.bak` | Backup, taken before the merge |
+| `~/.claude/settings.json.bak` | Backup of your settings as they were before the first install or uninstall — written once, never overwritten |
 
 Your hooks, permissions, plugins and every other setting are read, merged and
 written back untouched. If `statusLine` already pointed at another tool, the
