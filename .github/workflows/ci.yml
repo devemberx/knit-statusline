@@ -54,8 +54,27 @@ jobs:
         shell: bash
         run: TZ=Asia/Seoul go test -count=1 ./...
 
-      # Binary-level checks -- hostile stdin, install/uninstall round trip, npm
-      # launcher parse -- land with cmd/statusline and npm/.
+      # Render path survive whatever arrive on stdin, and never print nothing:
+      # empty row indistinguishable from crash. Package tests drive the same
+      # cases in-process; this run real binary, so a build that only fail when
+      # linked get caught too. npm launcher parse land with npm/.
+      # Explicit -o suppress .exe Go add on windows, and extension-less PE exec
+      # unreliably from Git Bash. mktemp -d give POSIX path; $RUNNER_TEMP is
+      # D:\a\_temp, unsafe as bash command word.
+      - name: survives hostile input
+        shell: bash
+        run: |
+          bin="$(mktemp -d)/knit-statusline"
+          if [ "$RUNNER_OS" = Windows ]; then bin="$bin.exe"; fi
+          go build -o "$bin" ./cmd/statusline
+          for input in '' '{}' 'null' '[]' 'not json' '{"model":' '{"context_window":{"current_usage":null}}'; do
+            if ! out=$(printf '%s' "$input" | NO_COLOR=1 "$bin"); then
+              echo "non-zero exit on input: $input"; exit 1
+            fi
+            if [ -z "$out" ]; then
+              echo "empty output on input: $input"; exit 1
+            fi
+          done
 
   lint:
     runs-on: ubuntu-latest
@@ -105,8 +124,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # vet per GOOS: build-tag guarded code compile nowhere else. ./... not the
-      # command path -- no main package yet.
+      # vet per GOOS: build-tag guarded code compile nowhere else. ./... cover
+      # cmd/statusline too, so release targets get their linker check here.
       - name: cross build
         env:
           CGO_ENABLED: "0"

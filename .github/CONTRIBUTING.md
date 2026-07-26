@@ -8,9 +8,9 @@ the change → open a pull request.** Comment style and the rules for the code i
 live in [CLAUDE.md](../CLAUDE.md).
 
 > **Migration in progress.** The program moves over from `bare-statusline` piece by
-> piece. Landed so far: the harness (`LICENSE`, `.githooks/`, this guide, the pull
-> request template, the Claude Code hooks), the CI pipeline, and `internal/schema`
-> with `internal/fixtures`. There is no command yet, so nothing runs end to end.
+> piece. Every Go package has landed, `cmd/statusline` included, so the binary builds
+> and runs end to end. Still to come: release plumbing (`.goreleaser.yaml`, `npm/`,
+> the publish workflow), `SECURITY.md`, and the `pre-push` hook.
 
 ---
 
@@ -35,8 +35,8 @@ GitHub's security advisory form, **not** a public issue.
 ### Prerequisites
 
 - `git` and **Go 1.26** — the version in `go.mod`, which is where CI reads it from
-  too. `go test ./...` is the whole suite for now; there is no binary to build until
-  `cmd/statusline` lands.
+  too. `go test ./...` is the whole suite, and `go build ./cmd/statusline` gives you
+  a binary to try `preview` and `doctor` against.
 
 ### Get the code
 

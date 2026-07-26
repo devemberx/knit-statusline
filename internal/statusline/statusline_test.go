@@ -117,7 +117,7 @@ func TestEveryPresetValidates(t *testing.T) {
 		if err != nil {
 			t.Fatalf("preset source %s: %v", name, err)
 		}
-		for _, e := range config.Validate(cfg, src, "preset:"+name, segment.Known) {
+		for _, e := range config.Validate(cfg, config.FileOrigin("preset:"+name, src), segment.Known) {
 			t.Errorf("%s: %v", name, e)
 		}
 	}

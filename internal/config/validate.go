@@ -10,15 +10,33 @@ import (
 // KnownFunc report whether kind exist, plus fields its template may use.
 type KnownFunc func(kind string) (fields []string, ok bool)
 
+// Origin locate file and row that declared token. Row 0 = unknown, so error
+// print without one rather than invent it.
+type Origin func(tok string) (file string, line int)
+
+// FileOrigin locate token inside one file's bytes.
+func FileOrigin(file string, source []byte) Origin {
+	return func(tok string) (string, int) { return file, lineOf(source, tok) }
+}
+
+// problem build error located through origin.
+func problem(origin Origin, tok, msg string) *Error {
+	if origin == nil {
+		return &Error{Msg: msg}
+	}
+	file, line := origin(tok)
+	return &Error{File: file, Line: line, Msg: msg}
+}
+
 // Validate check config against registered segments.
 //
 // Report every problem, not first: one doctor pass show whole list. Segment map
 // walked sorted, else two runs print findings in different order and read as
 // disagreeing about config that never changed.
 //
-// source and file locate what this pass raise. Keys dropped at decode already
-// carry their own, so merged config still name right file for each.
-func Validate(c *Config, source []byte, file string, known KnownFunc) []error {
+// origin locate what this pass raise. Keys dropped at decode already carry their
+// own, so merged config still name right file for each.
+func Validate(c *Config, origin Origin, known KnownFunc) []error {
 	var errs []error
 
 	for _, e := range c.unknown {
@@ -29,11 +47,8 @@ func Validate(c *Config, source []byte, file string, known KnownFunc) []error {
 		for _, name := range line.Segments {
 			kind := c.Segments[name].Kind(name)
 			if _, ok := known(kind); !ok {
-				errs = append(errs, &Error{
-					File: file,
-					Line: lineOf(source, name),
-					Msg:  fmt.Sprintf("line %d references unknown segment %q", i+1, name),
-				})
+				errs = append(errs, problem(origin, name,
+					fmt.Sprintf("line %d references unknown segment %q", i+1, name)))
 			}
 		}
 	}
@@ -43,43 +58,31 @@ func Validate(c *Config, source []byte, file string, known KnownFunc) []error {
 		kind := seg.Kind(name)
 		fields, ok := known(kind)
 		if !ok {
-			errs = append(errs, &Error{
-				File: file,
-				Line: lineOf(source, name),
-				Msg:  fmt.Sprintf("segment %q has unknown type %q", name, kind),
-			})
+			errs = append(errs, problem(origin, name,
+				fmt.Sprintf("segment %q has unknown type %q", name, kind)))
 			continue
 		}
 		if seg.Template != nil {
 			for _, ph := range placeholders(*seg.Template) {
 				if !slices.Contains(fields, ph) {
-					errs = append(errs, &Error{
-						File: file,
-						Line: lineOf(source, name),
-						Msg: fmt.Sprintf("segment %q template references unknown field {%s}; available: %s",
-							name, ph, strings.Join(fields, ", ")),
-					})
+					errs = append(errs, problem(origin, name,
+						fmt.Sprintf("segment %q template references unknown field {%s}; available: %s",
+							name, ph, strings.Join(fields, ", "))))
 				}
 			}
 		}
-		if kind == "command" && (seg.Command == nil || *seg.Command == "") {
-			errs = append(errs, &Error{
-				File: file,
-				Line: lineOf(source, name),
-				Msg:  fmt.Sprintf("segment %q has type \"command\" but no command", name),
-			})
+		if kind == "command" && !seg.commandStripped && (seg.Command == nil || *seg.Command == "") {
+			errs = append(errs, problem(origin, name,
+				fmt.Sprintf("segment %q has type \"command\" but no command", name)))
 		}
 		if seg.Scope != nil && *seg.Scope != DefaultScope && *seg.Scope != ScopeProject {
-			errs = append(errs, &Error{
-				File: file,
-				Line: lineOf(source, name),
-				Msg: fmt.Sprintf("segment %q has scope %q; want %q or %q",
-					name, *seg.Scope, DefaultScope, ScopeProject),
-			})
+			errs = append(errs, problem(origin, name,
+				fmt.Sprintf("segment %q has scope %q; want %q or %q",
+					name, *seg.Scope, DefaultScope, ScopeProject)))
 		}
 	}
 
-	errs = append(errs, validateThresholds(c, source, file)...)
+	errs = append(errs, validateThresholds(c, origin)...)
 	return errs
 }
 
@@ -92,7 +95,7 @@ func sortedSegments(c *Config) []string {
 	return names
 }
 
-func validateThresholds(c *Config, source []byte, file string) []error {
+func validateThresholds(c *Config, origin Origin) []error {
 	var errs []error
 
 	check := func(name string, warn, high, crit *int) {
@@ -103,11 +106,8 @@ func validateThresholds(c *Config, source []byte, file string) []error {
 		}{{"warn", warn}, {"high", high}, {"crit", crit}} {
 			if f.v != nil && (*f.v < 0 || *f.v > 100) {
 				ranged = false
-				errs = append(errs, &Error{
-					File: file,
-					Line: lineOf(source, name),
-					Msg:  fmt.Sprintf("%s %s = %d is outside 0-100", name, f.label, *f.v),
-				})
+				errs = append(errs, problem(origin, name,
+					fmt.Sprintf("%s %s = %d is outside 0-100", name, f.label, *f.v)))
 			}
 		}
 		// Out-of-range value suppress its own order check: reporting
@@ -127,18 +127,12 @@ func validateThresholds(c *Config, source []byte, file string) []error {
 		// under that name. Repeating per segment point every finding at block
 		// holding no threshold at all.
 		if w > h && (warn != nil || high != nil) {
-			errs = append(errs, &Error{
-				File: file,
-				Line: lineOf(source, name),
-				Msg:  fmt.Sprintf("%s warn = %d is above high = %d", name, w, h),
-			})
+			errs = append(errs, problem(origin, name,
+				fmt.Sprintf("%s warn = %d is above high = %d", name, w, h)))
 		}
 		if h > cr && (high != nil || crit != nil) {
-			errs = append(errs, &Error{
-				File: file,
-				Line: lineOf(source, name),
-				Msg:  fmt.Sprintf("%s high = %d is above crit = %d", name, h, cr),
-			})
+			errs = append(errs, problem(origin, name,
+				fmt.Sprintf("%s high = %d is above crit = %d", name, h, cr)))
 		}
 	}
 
@@ -181,24 +175,47 @@ func placeholders(tmpl string) []string {
 // lineOf find where tok sit. Zero = unknown; error print without line rather
 // than invent one.
 //
-// Table headers sweep first: [segments.dir] hold dir's settings while
-// segments = ["dir"] merely name it, and one file carry both. Comments skipped
-// throughout -- prose name segments freely, and preset header naming one sit
-// dozens of lines above its block, so contains-anywhere scan report line 1 for
-// fault on line 7 and read authoritative doing it.
+// Table headers sweep first, per headerLine. Comments skipped throughout --
+// prose name segments freely, and preset header naming one sit dozens of lines
+// above its block, so contains-anywhere scan report line 1 for fault on line 7
+// and read authoritative doing it.
 func lineOf(source []byte, tok string) int {
-	if len(source) == 0 || tok == "" {
+	if n := headerLine(source, tok); n > 0 {
+		return n
+	}
+	return mentionLine(source, tok)
+}
+
+// headerLine find [segments.tok]: block that declare tok's settings.
+//
+// Beat mentionLine, since segments = ["dir"] merely name dir while
+// [segments.dir] hold what it was configured with. One file carry both, and so
+// do two layers -- LoadResult.Origin sweep this across all of them first.
+func headerLine(source []byte, tok string) int {
+	rows, ok := rowsOf(source, tok)
+	if !ok {
 		return 0
 	}
-	rows := bytes.Split(source, []byte("\n"))
+	return scan(rows, func(line []byte) bool { return tableKey(line) == tok })
+}
 
-	if n := scan(rows, func(line []byte) bool { return tableKey(line) == tok }); n > 0 {
-		return n
+// mentionLine find tok assigned, or named inside quotes.
+func mentionLine(source []byte, tok string) int {
+	rows, ok := rowsOf(source, tok)
+	if !ok {
+		return 0
 	}
 	quoted := []byte(`"` + tok + `"`)
 	return scan(rows, func(line []byte) bool {
 		return assignedKey(line) == tok || bytes.Contains(line, quoted)
 	})
+}
+
+func rowsOf(source []byte, tok string) ([][]byte, bool) {
+	if len(source) == 0 || tok == "" {
+		return nil, false
+	}
+	return bytes.Split(source, []byte("\n")), true
 }
 
 // keyLine locate assignment of bare key, so key decode dropped point at its own

@@ -25,7 +25,7 @@ func fakeKnown(kind string) ([]string, bool) {
 
 func validateSrc(t *testing.T, src string) string {
 	t.Helper()
-	return errorText(Validate(mustParse(t, src), []byte(src), "test.toml", fakeKnown))
+	return errorText(Validate(mustParse(t, src), FileOrigin("test.toml", []byte(src)), fakeKnown))
 }
 
 func TestValidateReportsEveryProblem(t *testing.T) {
@@ -192,9 +192,9 @@ type = "nope"
 type = "nope"
 `
 	c := mustParse(t, src)
-	first := errorText(Validate(c, []byte(src), "test.toml", fakeKnown))
+	first := errorText(Validate(c, FileOrigin("test.toml", []byte(src)), fakeKnown))
 	for i := 0; i < 20; i++ {
-		if got := errorText(Validate(c, []byte(src), "test.toml", fakeKnown)); got != first {
+		if got := errorText(Validate(c, FileOrigin("test.toml", []byte(src)), fakeKnown)); got != first {
 			t.Fatalf("run %d reordered:\n%s\n---\n%s", i, first, got)
 		}
 	}

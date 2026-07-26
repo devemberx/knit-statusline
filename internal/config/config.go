@@ -60,6 +60,11 @@ type Segment struct {
 
 	// Throttle any segment that shell out.
 	CacheMS *int `toml:"cache_ms"`
+
+	// Set where project layer declared command and Load dropped it. Validate
+	// then skip "no command": that is consequence of strip Load already
+	// reported, and two lines for one mistake read as two mistakes.
+	commandStripped bool
 }
 
 // Kind name implementation. Nil receiver = segment with no block of its own.
