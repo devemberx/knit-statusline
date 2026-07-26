@@ -55,7 +55,7 @@ jobs:
           cache: false
 
       # gofmt and go vet both run from in here. .golangci.yml hold the full set.
-      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
 
@@ -109,11 +109,12 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
-      # Audit the workflows themselves: unpinned actions, workflow-wide write
-      # permissions, expressions that interpolate attacker text into a shell.
+      # Audit the workflows themselves: workflow-wide write permissions,
+      # expressions that interpolate attacker text into a shell, dangerous
+      # triggers. zizmor.yml relax the hash-pin rule alone; everything else on.
       # advanced-security off keep this job on contents: read -- findings land
       # as PR annotations instead of the security tab.
-      - uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
+      - uses: zizmorcore/zizmor-action@v0.6.1
         with:
           advanced-security: false
           annotations: true
