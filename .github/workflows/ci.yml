@@ -57,7 +57,7 @@ jobs:
       # Render path survive whatever arrive on stdin, and never print nothing:
       # empty row indistinguishable from crash. Package tests drive the same
       # cases in-process; this run real binary, so a build that only fail when
-      # linked get caught too. npm launcher parse land with npm/.
+      # linked get caught too.
       # Explicit -o suppress .exe Go add on windows, and extension-less PE exec
       # unreliably from Git Bash. mktemp -d give POSIX path; $RUNNER_TEMP is
       # D:\a\_temp, unsafe as bash command word.
@@ -100,6 +100,13 @@ jobs:
           go mod tidy
           test -z "$(git status --porcelain --untracked-files=all)" || {
             echo "go mod tidy changed the tree:"; git status --short; exit 1; }
+
+      # cli.js run nowhere else: no Go test import it, and install copy the
+      # binary to ~/.claude so render never reach the launcher. A syntax error
+      # else surface on the first `npx` after publish, and npm reject a reused
+      # version. Here, not the test matrix -- parse hold across all three OS.
+      - name: npm launcher parses
+        run: node --check npm/knit-statusline/bin/cli.js
 
   build:
     runs-on: ubuntu-latest
