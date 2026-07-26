@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 )
 
-// Bump whenever aggregation rules change. Stale cache hold totals under old
-// rules; mismatch discard rather than mix two definitions.
-const cacheVersion = 1
+// Bump when aggregation rules change. Stale cache hold totals under old rules;
+// mismatch discard rather than mix two definitions.
+//
+// 2: id-less entry stop clobbering dedup guard.
+const cacheVersion = 2
 
 // Cache hold per-file scan cursors for one scope.
 type Cache struct {
@@ -22,15 +24,15 @@ func NewCache() *Cache {
 	return &Cache{Version: cacheVersion, Files: map[string]FileCursor{}}
 }
 
-// CacheKey name cache file for a scope. Transcript path hashed: name stay short
-// and filesystem-safe whatever a project layout.
+// CacheKey name cache file per scope. Path hashed: name stay short and
+// filesystem-safe whatever project layout.
 func CacheKey(opts Options) string {
 	h := sha256.Sum256([]byte(string(opts.Scope) + "\x00" + opts.TranscriptPath))
 	return "tokens-" + hex.EncodeToString(h[:8]) + ".json"
 }
 
-// LoadCache read a cache file. Missing, unreadable, corrupt or version-mismatched
-// all yield one empty cache: a full rescan beat totals from unknown rules.
+// LoadCache read cache file. Missing, unreadable, corrupt or version-mismatched
+// all yield empty cache: full rescan beat totals from unknown rules.
 func LoadCache(dir string, opts Options) *Cache {
 	b, err := os.ReadFile(filepath.Join(dir, CacheKey(opts)))
 	if err != nil {
@@ -46,11 +48,12 @@ func LoadCache(dir string, opts Options) *Cache {
 	return &c
 }
 
-// SaveCache write atomically.
+// SaveCache write atomically. Claude Code start render while previous still
+// run, so two processes write here at once. Unique temp file then rename =
+// reader see one complete version or another, never half-written one.
 //
-// Claude Code start a render while a previous one still run, so two processes
-// write here at once. Unique temp file then rename = reader see one complete
-// version or another, never a half-written one.
+// No fsync: this run every redraw, and cache lost to crash cost one rescan,
+// same as LoadCache already do for corrupt content.
 func SaveCache(dir string, opts Options, c *Cache) error {
 	if c == nil {
 		return nil

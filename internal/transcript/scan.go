@@ -1,20 +1,21 @@
 // Package transcript accumulate token usage from Claude Code transcripts.
 //
-// Claude Code write one JSONL line per content block, each repeating a whole
-// usage object for its message. Naive sum over-count: measured session, 483
-// assistant entries over 220 distinct messages, input 62,093 read as 195,836.
-// Dedup on message.id is this package's correctness requirement.
+// One JSONL line per content block, each repeating whole usage object for its
+// message. Naive sum over-count 3x: measured session, 483 entries over 220
+// messages, input 62,093 read as 195,836. Dedup on message.id required.
 //
-// Repeats always contiguous -- eight large transcripts, zero non-contiguous.
-// One remembered id enough. Id persist in cursor too, else a message straddling
-// one incremental boundary double-count and totals jitter between renders.
+// Repeats contiguous across eight large transcripts, so one remembered id
+// enough. Id persist in cursor, else message straddling incremental boundary
+// double-count and totals jitter between renders.
 package transcript
 
 import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,8 +25,8 @@ import (
 // Entries Claude Code generate locally. Carry usage, bill nothing.
 const syntheticModel = "<synthetic>"
 
-// Totals hold four counters apart. Cache read run orders of magnitude over
-// fresh input and price differently; one "input" figure mislead.
+// Totals keep four counters apart: cache read run orders of magnitude over
+// fresh input and price differently. One merged "input" figure mislead.
 type Totals struct {
 	Input      int64 `json:"input"`
 	CacheWrite int64 `json:"cacheWrite"`
@@ -44,8 +45,7 @@ func (t Totals) Total() int64 {
 	return t.Input + t.CacheWrite + t.CacheRead + t.Output
 }
 
-// Minimal shape. Transcript line carry far more; decoding these fields only
-// keep scan cheap.
+// Minimal shape. Line carry far more; decoding only these keep scan cheap.
 type entry struct {
 	Type    string `json:"type"`
 	Message *struct {
@@ -60,25 +60,21 @@ type entry struct {
 	} `json:"message"`
 }
 
-// Prefilter. Line without this substring carry no message.usage, skip undecoded.
-// Reverse not guaranteed -- message content hold that text too -- but a false
-// positive cost one wasted decode, a false negative lose tokens.
+// Prefilter. Line without this substring carry no message.usage. Reverse not
+// guaranteed -- content hold that text too -- but false positive cost one
+// wasted decode, false negative lose tokens.
 var usageProbe = []byte(`"usage"`)
 
 // FileCursor record how far one transcript file consumed, plus its totals.
 type FileCursor struct {
 	Offset int64 `json:"offset"`
-	Size   int64 `json:"size"`
-	// Id of last counted message. Carried across runs = dedup survive one
-	// incremental boundary.
+	// Last counted message. Persisted = dedup survive incremental boundary.
 	LastMessageID string `json:"lastMessageID"`
 	Totals        Totals `json:"totals"`
 }
 
-// scanFile advance cur over bytes appended since last scan.
-//
-// Shrunk file rescanned whole: transcripts append-only, so a smaller size mean
-// that file got replaced.
+// scanFile advance cur over bytes appended since last scan. Shrunk file mean
+// replacement, not append -- transcripts append-only -- so rescan whole.
 func scanFile(path string, cur FileCursor) (FileCursor, error) {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -90,7 +86,6 @@ func scanFile(path string, cur FileCursor) (FileCursor, error) {
 		cur = FileCursor{}
 	}
 	if size == cur.Offset {
-		cur.Size = size
 		return cur, nil
 	}
 
@@ -110,22 +105,21 @@ func scanFile(path string, cur FileCursor) (FileCursor, error) {
 	consumed := cur.Offset
 
 	for {
-		// ReadBytes grow to fit. Transcript line reach megabytes, past
-		// bufio.Scanner 64KB token ceiling.
+		// ReadBytes grow to fit. Line reach megabytes, past bufio.Scanner 64KB
+		// token ceiling.
 		line, err := r.ReadBytes('\n')
 		if len(line) > 0 && line[len(line)-1] == '\n' {
 			consumed += int64(len(line))
 			applyLine(&cur, line)
 		}
-		// Fragment without newline = write in progress. Offset stay short of it
-		// so that line get read once complete.
+		// Fragment without newline = write in progress. Offset stay short of it,
+		// line counted once complete.
 		if err != nil {
 			break
 		}
 	}
 
 	cur.Offset = consumed
-	cur.Size = size
 	return cur, nil
 }
 
@@ -135,8 +129,8 @@ func applyLine(cur *FileCursor, line []byte) {
 		return
 	}
 	var e entry
-	// Undecodable line skipped in silence. Partial write and future record
-	// shape both land here; neither justify blanking a status line.
+	// Undecodable line skipped in silence. Partial write and future record shape
+	// both land here; neither justify blanking a status line.
 	if err := json.Unmarshal(line, &e); err != nil {
 		return
 	}
@@ -146,10 +140,14 @@ func applyLine(cur *FileCursor, line []byte) {
 	if e.Message.Model == syntheticModel {
 		return
 	}
-	if e.Message.ID != "" && e.Message.ID == cur.LastMessageID {
-		return
+	// Id-less entry leave guard alone. Overwriting with "" disarm dedup, so next
+	// repeat of preceding id count twice.
+	if e.Message.ID != "" {
+		if e.Message.ID == cur.LastMessageID {
+			return
+		}
+		cur.LastMessageID = e.Message.ID
 	}
-	cur.LastMessageID = e.Message.ID
 	cur.Totals.Add(Totals{
 		Input:      e.Message.Usage.InputTokens,
 		CacheWrite: e.Message.Usage.CacheCreationTokens,
@@ -168,10 +166,8 @@ const (
 	ScopeProject Scope = "project"
 )
 
-// filesFor resolve a scope to files it cover.
-//
-// Subagent transcripts sit in sibling agent-*.jsonl, not as flagged lines in
-// main one. Sidechain = which files to open, not which lines to keep.
+// filesFor resolve scope to files it cover. Subagent transcripts sit in sibling
+// agent-*.jsonl, so sidechain decide which files open, not which lines keep.
 func filesFor(transcriptPath string, scope Scope, includeSidechain bool) ([]string, error) {
 	if scope != ScopeProject {
 		return []string{transcriptPath}, nil
@@ -188,8 +184,7 @@ func filesFor(transcriptPath string, scope Scope, includeSidechain bool) ([]stri
 		}
 		files = append(files, m)
 	}
-	// Glob order already lexical. Sort make cache key and scan order explicit,
-	// not incidental.
+	// Glob order already lexical. Sort make scan order explicit, not incidental.
 	sort.Strings(files)
 	return files, nil
 }
@@ -202,9 +197,6 @@ type Options struct {
 
 // Scan return totals for a scope, reusing cache to skip bytes already counted.
 // Caller persist returned cache.
-//
-// Unreadable file skipped, never fatal: a transcript rotate or vanish between
-// renders, and one missing file must not blank its segment.
 func Scan(opts Options, cache *Cache) (Totals, *Cache) {
 	if cache == nil {
 		cache = NewCache()
@@ -221,8 +213,16 @@ func Scan(opts Options, cache *Cache) (Totals, *Cache) {
 	var total Totals
 	live := make(map[string]FileCursor, len(files))
 	for _, path := range files {
-		cur, err := scanFile(path, cache.Files[path])
+		prev, cached := cache.Files[path]
+		cur, err := scanFile(path, prev)
 		if err != nil {
+			// Gone file drop out. Every other error transient -- EMFILE, EIO,
+			// permission blip -- so hold last cursor: total stay put and next
+			// render resume instead of rescanning cold.
+			if cached && !errors.Is(err, fs.ErrNotExist) {
+				live[path] = prev
+				total.Add(prev.Totals)
+			}
 			continue
 		}
 		live[path] = cur

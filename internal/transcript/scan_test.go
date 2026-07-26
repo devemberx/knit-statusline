@@ -9,14 +9,15 @@ import (
 	"time"
 )
 
-// Transcript line shaped like ones Claude Code write: one per content block,
-// each repeating a full usage object for its message.
+// Line shaped like ones Claude Code write: one per content block, each repeating
+// a full usage object for its message. Shared with cursor_test.go.
 func assistantLine(msgID, model string, in, cw, cr, out int64) string {
 	return fmt.Sprintf(
 		`{"type":"assistant","isSidechain":false,"uuid":"u-%s","message":{"id":%q,"model":%q,"role":"assistant","usage":{"input_tokens":%d,"cache_creation_input_tokens":%d,"cache_read_input_tokens":%d,"output_tokens":%d}}}`,
 		msgID, msgID, model, in, cw, cr, out)
 }
 
+// Shared with cursor_test.go.
 func writeLines(t *testing.T, path string, lines []string) {
 	t.Helper()
 	var b strings.Builder
@@ -48,8 +49,8 @@ func scanOnce(t *testing.T, path string, cache *Cache) (Totals, *Cache) {
 	return Scan(Options{TranscriptPath: path, Scope: ScopeSession}, cache)
 }
 
-// Defining behaviour of this package: repeated lines for one message count
-// once. Undeduplicated, these three lines report 300 input tokens.
+// Defining behaviour of this package: repeated lines for one message count once.
+// Undeduplicated, these three lines report 300 input tokens.
 func TestDedupesRepeatedMessageLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeLines(t, path, []string{
@@ -101,6 +102,22 @@ func TestDedupesAcrossIncrementalBoundary(t *testing.T) {
 	}
 }
 
+// Entry carrying usage but no message.id must not overwrite dedup guard.
+// Overwritten, guard hold "" and repeat below count twice: 201, not 101.
+func TestIDLessEntryKeepsDedupGuard(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		assistantLine("msg_a", "claude-opus-4-8", 100, 0, 0, 0),
+		`{"type":"assistant","message":{"model":"claude-opus-4-8","usage":{"input_tokens":1}}}`,
+		assistantLine("msg_a", "claude-opus-4-8", 100, 0, 0, 0),
+	})
+
+	got, _ := scanOnce(t, path, nil)
+	if got.Input != 101 {
+		t.Errorf("input = %d, want 101 (id-less entry disarmed dedup)", got.Input)
+	}
+}
+
 func TestIncrementalAppendDoesNotRecount(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeLines(t, path, []string{assistantLine("msg_a", "claude-opus-4-8", 100, 0, 0, 5)})
@@ -119,8 +136,8 @@ func TestIncrementalAppendDoesNotRecount(t *testing.T) {
 	}
 }
 
-// Shrunk transcript got replaced, not appended to. Cursor untrustworthy, so
-// read it again from its start.
+// Shrunk transcript got replaced, not appended to. Cursor untrustworthy, so read
+// it again from its start.
 func TestTruncationTriggersRescan(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeLines(t, path, []string{
@@ -189,8 +206,8 @@ func TestSkipsSyntheticAndNonAssistantLines(t *testing.T) {
 	}
 }
 
-// Malformed lines skipped in silence. Corrupt transcript degrade a number,
-// never blank its status line.
+// Malformed lines skipped in silence. Corrupt transcript degrade a number, never
+// blank its status line.
 func TestCorruptLinesAreSkipped(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeLines(t, path, []string{
@@ -212,6 +229,21 @@ func TestMissingTranscriptYieldsZero(t *testing.T) {
 	}
 	if cache == nil {
 		t.Error("cache should never be nil")
+	}
+}
+
+// Claude Code omit transcript_path on some payloads. Empty path mean no
+// transcript, never current directory.
+func TestEmptyTranscriptPathYieldsZero(t *testing.T) {
+	got, cache := Scan(Options{Scope: ScopeSession}, nil)
+	if got != (Totals{}) {
+		t.Errorf("got %+v, want zero totals", got)
+	}
+	if cache == nil {
+		t.Fatal("cache should never be nil")
+	}
+	if len(cache.Files) != 0 {
+		t.Errorf("cursors recorded for no transcript: %+v", cache.Files)
 	}
 }
 
@@ -240,47 +272,93 @@ func TestProjectScopeSidechainSelection(t *testing.T) {
 	}
 }
 
-func TestCacheRoundTrip(t *testing.T) {
+// Deleted transcript lose its cursor. Retained, cursors for rotated-away files
+// pile up in a cache that only ever grow.
+func TestVanishedFileEvictsItsCursor(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "s.jsonl")
-	writeLines(t, path, []string{assistantLine("msg_a", "claude-opus-4-8", 100, 10, 1000, 5)})
+	main := filepath.Join(dir, "session.jsonl")
+	gone := filepath.Join(dir, "gone.jsonl")
+	writeLines(t, main, []string{assistantLine("msg_a", "claude-opus-4-8", 100, 0, 0, 0)})
+	writeLines(t, gone, []string{assistantLine("msg_b", "claude-opus-4-8", 200, 0, 0, 0)})
 
-	opts := Options{TranscriptPath: path, Scope: ScopeSession}
+	opts := Options{TranscriptPath: main, Scope: ScopeProject}
+	if first, _ := Scan(opts, nil); first.Input != 300 {
+		t.Fatalf("first scan input = %d, want 300", first.Input)
+	}
+
 	_, cache := Scan(opts, nil)
-
-	cacheDir := filepath.Join(dir, "cache")
-	if err := SaveCache(cacheDir, opts, cache); err != nil {
-		t.Fatalf("SaveCache: %v", err)
+	if err := os.Remove(gone); err != nil {
+		t.Fatal(err)
 	}
 
-	loaded := LoadCache(cacheDir, opts)
-	if loaded.Files[path] != cache.Files[path] {
-		t.Errorf("round trip lost state: %+v vs %+v", loaded.Files[path], cache.Files[path])
+	got, cache := Scan(opts, cache)
+	if got.Input != 100 {
+		t.Errorf("input = %d, want 100 (deleted file still counted)", got.Input)
 	}
-
-	// No temp file survive one atomic write.
-	entries, _ := os.ReadDir(cacheDir)
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".tmp") {
-			t.Errorf("temporary file left behind: %s", e.Name())
-		}
+	if _, ok := cache.Files[gone]; ok {
+		t.Error("cursor for deleted file survived")
 	}
 }
 
-func TestLoadCacheToleratesGarbage(t *testing.T) {
+// Unreadable-but-present file keep its last cursor. Dropped instead, one EMFILE
+// or permission blip dip total for a render and force cold rescan.
+// Self-referential symlink give stat error other than fs.ErrNotExist.
+func TestTransientErrorKeepsLastCursor(t *testing.T) {
 	dir := t.TempDir()
-	opts := Options{TranscriptPath: "/x/y.jsonl", Scope: ScopeSession}
+	main := filepath.Join(dir, "session.jsonl")
+	flaky := filepath.Join(dir, "flaky.jsonl")
+	writeLines(t, main, []string{assistantLine("msg_a", "claude-opus-4-8", 100, 0, 0, 0)})
+	writeLines(t, flaky, []string{assistantLine("msg_b", "claude-opus-4-8", 200, 0, 0, 0)})
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	opts := Options{TranscriptPath: main, Scope: ScopeProject}
+	_, cache := Scan(opts, nil)
+
+	if err := os.Remove(flaky); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, CacheKey(opts)), []byte("{not json"), 0o644); err != nil {
-		t.Fatal(err)
+	if err := os.Symlink("flaky.jsonl", flaky); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := os.Stat(flaky); err == nil {
+		t.Skip("self-symlink did not produce a stat error")
 	}
 
-	c := LoadCache(dir, opts)
-	if c == nil || len(c.Files) != 0 || c.Version != cacheVersion {
-		t.Errorf("corrupt cache should yield a fresh one, got %+v", c)
+	got, cache := Scan(opts, cache)
+	if got.Input != 300 {
+		t.Errorf("input = %d, want 300 (unreadable file dropped its totals)", got.Input)
+	}
+	if cache.Files[flaky].Totals.Input != 200 {
+		t.Errorf("cursor for unreadable file lost: %+v", cache.Files[flaky])
+	}
+}
+
+// IncludeSidechain stay out of CacheKey, so flipping it reuse one cache file.
+// Eviction carry that: agent cursors drop when scope stop covering them and
+// rescan cold when it cover them again, so totals stay right either way.
+func TestSidechainFlipKeepsTotalsCorrect(t *testing.T) {
+	dir := t.TempDir()
+	main := filepath.Join(dir, "session.jsonl")
+	agent := filepath.Join(dir, "agent-x.jsonl")
+	writeLines(t, main, []string{assistantLine("msg_a", "claude-opus-4-8", 100, 0, 0, 0)})
+	writeLines(t, agent, []string{assistantLine("msg_b", "claude-opus-4-8", 200, 0, 0, 0)})
+
+	plain := Options{TranscriptPath: main, Scope: ScopeProject}
+	withAgents := plain
+	withAgents.IncludeSidechain = true
+
+	_, cache := Scan(plain, nil)
+	if _, ok := cache.Files[agent]; ok {
+		t.Error("agent cursor recorded while sidechain off")
+	}
+
+	got, cache := Scan(withAgents, cache)
+	if got.Input != 300 {
+		t.Errorf("input = %d, want 300 with sidechain on", got.Input)
+	}
+
+	got, _ = Scan(plain, cache)
+	if got.Input != 100 {
+		t.Errorf("input = %d, want 100 with sidechain off again", got.Input)
 	}
 }
 
