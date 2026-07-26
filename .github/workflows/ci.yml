@@ -5,20 +5,18 @@ on:
     branches: [main]
   pull_request:
 
-# A PR push supersede its own stale run. A main push never cancel: a release tag
-# get cut from one of those commits.
+# PR push supersede its own stale run. main push never cancel: release tags get
+# cut from those commits.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# Read-only. Nothing here write to the repository.
 permissions:
   contents: read
 
 env:
-  # Without this, a go.mod toolchain line newer than what setup-go installed
-  # make the go command download a third version and test that one instead --
-  # the pin then prove nothing. local fail loudly instead.
+  # go.mod toolchain line newer than setup-go's install make go fetch a third
+  # version and test that one -- the pin prove nothing. local fail loudly.
   # https://github.com/actions/setup-go/issues/491
   GOTOOLCHAIN: local
 
@@ -27,35 +25,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Real runners, not just cross-compilation: path handling, file modes
-        # and terminal behaviour diverge per OS, and this program live in
-        # $HOME/.claude on all three.
+        # Real runners, not cross-compilation: path handling, file modes and
+        # terminal behaviour diverge per OS. Program live in $HOME/.claude on all three.
         include:
           - {os: ubuntu-latest, race: "-race"}
           - {os: macos-latest, race: "-race"}
-          # Race detector need a C toolchain on Windows and catch nothing the
-          # other two miss -- it is OS-independent.
+          # Race detector need a C toolchain on Windows, catch nothing OS-specific.
           - {os: windows-latest, race: ""}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7
         with:
-          # go.mod is the one place the version live. An env copy here drift.
           go-version-file: go.mod
-          # No external module yet, so no go.sum. setup-go fail outright when
-          # cache is on and the file is missing. Flip on with the first require.
+          # No external module yet, so no go.sum, and setup-go fail outright
+          # when cache is on and the file missing. Flip on with the first require.
           cache: false
 
       - run: go test ${{ matrix.race }} ./...
 
-      # Rendered times formatted in the viewer's local zone, so an assertion
-      # written against one zone pass only there. A second zone catch that
-      # before it reach a contributor in a different one.
-      # bash because the windows runner default to pwsh, where VAR=x cmd is a
-      # syntax error.
+      # Rendered times use the viewer's local zone, so an assertion written
+      # against one zone pass only there. bash: windows runner default to pwsh,
+      # where VAR=x cmd is a syntax error.
       - name: tests under a second timezone
         shell: bash
         run: TZ=Asia/Seoul go test -count=1 ./...
@@ -65,6 +59,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -74,13 +69,13 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # gofmt and go vet both run from in here. .golangci.yml hold the full set.
+      # gofmt and go vet run from in here. .golangci.yml hold the full set.
       - uses: golangci/golangci-lint-action@v9
         with:
           version: v2.12.2
 
-      # A require added by hand, or a dropped one left behind, show up as a
-      # dirty tree here rather than as a mystery build failure later.
+      # Hand-added require, or an orphaned one, show as a dirty tree here rather
+      # than a mystery build failure later.
       - name: go.mod stays tidy
         run: |
           go mod tidy
@@ -89,11 +84,12 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         # Mirror the release targets. A tag push is the wrong moment to learn
-        # that darwin or windows stopped compiling.
+        # darwin or windows stopped compiling.
         include:
           - {goos: linux, goarch: amd64}
           - {goos: linux, goarch: arm64}
@@ -109,8 +105,8 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # vet under each GOOS too: build-tag guarded code compile nowhere else.
-      # ./... rather than the command path: no main package in the tree yet.
+      # vet per GOOS: build-tag guarded code compile nowhere else. ./... not the
+      # command path -- no main package yet.
       - name: cross build
         env:
           CGO_ENABLED: "0"
@@ -122,6 +118,7 @@ jobs:
 
   scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -131,17 +128,14 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # Reachability based: a CVE in a module we require but never call not
-      # fail the build. The vulnerability database is fetched fresh each run,
-      # so a pinned tool version still see today's advisories.
+      # Reachability based: a CVE in a required but never called module not fail
+      # the build. Database fetched fresh each run, so the pinned tool still see
+      # today's advisories.
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
 
-      # Audit the workflows themselves: workflow-wide write permissions,
-      # expressions that interpolate attacker text into a shell, dangerous
-      # triggers. zizmor.yml relax the hash-pin rule alone; everything else on.
-      # advanced-security off keep this job on contents: read -- findings land
-      # as PR annotations instead of the security tab.
+      # zizmor.yml relax the hash-pin rule alone. advanced-security off keep this
+      # job on contents: read -- findings land as PR annotations, not security tab.
       - uses: zizmorcore/zizmor-action@v0.6.1
         with:
           advanced-security: false
@@ -151,12 +145,14 @@ jobs:
           min-confidence: medium
 
   # Single required check for branch protection. Jobs and matrix entries change
-  # without anyone editing the repository settings.
+  # without editing repository settings. skipped count as failure: an `if:` or
+  # paths-ignore added to a job else turn the required check green with nothing run.
   gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
     needs: [test, lint, build, scan]
     steps:
-      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
         run: exit 1
       - run: echo "ci green"
