@@ -3,10 +3,16 @@
 Go status line for Claude Code. Read one JSON object on stdin, print one row.
 Single static binary, no runtime deps, no network.
 
-Migration in progress — every Go package now lands, `cmd/statusline` included, so
-it runs end to end. Release plumbing (`.goreleaser.yaml`, `npm/`, the publish
-workflow), `SECURITY.md` and `.githooks/pre-push` still move over from
-`bare-statusline`.
+Migration in progress — every Go package lands, `cmd/statusline` included, and the
+release pipeline (`.goreleaser.yaml`, `npm/`, `publish.yml`) with it. `SECURITY.md`
+and `.githooks/pre-push` still move over from `bare-statusline`.
+
+## Releasing
+
+Tag is the version; nothing in the tree records it. `publish.yml` fire on `v*`,
+wait for approval in the `release` environment, then GoReleaser cut a draft
+release and six npm packages publish over OIDC — no token anywhere. Draft flip
+public only after all six land. Procedure lives in `.claude/skills/deploy/`.
 
 ## Commands
 

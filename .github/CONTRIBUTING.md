@@ -9,8 +9,8 @@ live in [CLAUDE.md](../CLAUDE.md).
 
 > **Migration in progress.** The program moves over from `bare-statusline` piece by
 > piece. Every Go package has landed, `cmd/statusline` included, so the binary builds
-> and runs end to end. Still to come: release plumbing (`.goreleaser.yaml`, `npm/`,
-> the publish workflow), `SECURITY.md`, and the `pre-push` hook.
+> and runs end to end, and the release pipeline came over with it. Still to come:
+> `SECURITY.md` and the `pre-push` hook.
 
 ---
 

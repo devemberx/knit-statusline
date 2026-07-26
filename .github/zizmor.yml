@@ -1,17 +1,11 @@
-# zizmor demand a hash for every third-party action. Relaxed to ref-pin: ci.yml
-# read as short `uses:` lines instead of 40-char hashes.
-#
-# Cost is real. A tag is a movable pointer: tj-actions March 2025 repointed every
-# version tag at a commit that dumped CI secrets into the build log, and
-# hash-pinned consumers never saw it. Dependabot bump tag names, not a tag
-# repointed under the same name -- no cover there.
-#
-# What hold: ci.yml run on contents: read and carry no secret beyond the
-# run-scoped GITHUB_TOKEN, and label-pr.yml, the one workflow whose token can
-# write, use no third-party action at all. Revisit before publish.yml land --
-# that one hold npm publish rights.
+# hash-pin is zizmor strictest policy.
+# Tag is movable pointer: tj-actions March 2025 repointed every version tag at
+# commit that dumped CI secrets, hash-pinned consumers unaffected.
+# Dependabot bump tag names, not tag repointed under same name -- no cover there.
+# Earlier ref-pin relaxation ended at publish.yml: it hold npm publish rights
+# over OIDC plus contents: write.
 rules:
   unpinned-uses:
     config:
       policies:
-        "*": ref-pin
+        "*": hash-pin
