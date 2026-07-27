@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/devemberx/knit-statusline/internal/config"
 )
@@ -24,6 +25,33 @@ func BinaryPath(home string) string {
 		name += ".exe"
 	}
 	return filepath.Join(home, ".claude", name)
+}
+
+// CommandString form statusLine.command value invoking binary. Claude Code
+// hand that string to a shell -- Git Bash on Windows -- where unquoted
+// backslash is escape character: C:\Users\... arrive separator-less, command
+// fail, row stay blank with no error. Forward slashes run everywhere.
+//
+// Quote only when path hold whitespace: quoted string is no command under
+// PowerShell fallback Claude Code use when Git Bash is absent, so bare form
+// serve both shells whenever it can.
+func CommandString(binary string) string {
+	cmd := filepath.ToSlash(binary)
+	if strings.ContainsAny(cmd, " \t") {
+		return `"` + cmd + `"`
+	}
+	return cmd
+}
+
+// OwnsCommand report whether configured command invoke installed binary.
+// Settings hold any historical form -- backslash path from old install,
+// slashed, quoted -- so compare normalized, never literal.
+func OwnsCommand(command, binary string) bool {
+	cmd := strings.TrimSpace(command)
+	if len(cmd) >= 2 && strings.HasPrefix(cmd, `"`) && strings.HasSuffix(cmd, `"`) {
+		cmd = cmd[1 : len(cmd)-1]
+	}
+	return filepath.ToSlash(cmd) == filepath.ToSlash(binary)
 }
 
 // Result report what ran, so command layer name specifics instead of claiming
@@ -96,7 +124,7 @@ func Install(opts Options) (*Result, error) {
 
 	settings["statusLine"] = map[string]any{
 		"type":    "command",
-		"command": res.InstalledBinary,
+		"command": CommandString(res.InstalledBinary),
 	}
 	if err := writeJSON(res.SettingsPath, settings); err != nil {
 		return nil, err
@@ -141,7 +169,7 @@ func Uninstall(home string) (*Result, error) {
 
 	// Only key we installed is ours to delete. User who switched status line
 	// tools by hand keep that tool's config, and missing key match nothing.
-	if res.ReplacedCommand == res.InstalledBinary {
+	if OwnsCommand(res.ReplacedCommand, res.InstalledBinary) {
 		backup, err := backupFile(res.SettingsPath)
 		if err != nil {
 			return nil, err

@@ -69,8 +69,8 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 
 	// Recorded command must be installed copy, not npx package cache npm may
 	// prune out from under it.
-	if sl["command"] != BinaryPath(home) {
-		t.Errorf("statusLine command = %v, want the installed copy %s", sl["command"], BinaryPath(home))
+	if sl["command"] != CommandString(BinaryPath(home)) {
+		t.Errorf("statusLine command = %v, want the installed copy %s", sl["command"], CommandString(BinaryPath(home)))
 	}
 
 	info, err := os.Stat(BinaryPath(home))
@@ -85,6 +85,93 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 
 	if _, err := os.Stat(config.UserPath(home)); err != nil {
 		t.Errorf("statusline.toml not written: %v", err)
+	}
+}
+
+// Claude Code hand statusLine.command to Git Bash on Windows, where unquoted
+// backslash is escape character: C:\Users\... arrive separator-less, command
+// fail, row stay blank. Recorded command must carry forward slashes. Real
+// regression coverage come from windows CI runner, where TempDir hold
+// backslashes.
+func TestInstallWritesCommandWithForwardSlashes(t *testing.T) {
+	home := t.TempDir()
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	sl, _ := readSettingsMap(t, home)["statusLine"].(map[string]any)
+	cmd, _ := sl["command"].(string)
+	if strings.ContainsRune(cmd, '\\') {
+		t.Errorf("command %q holds backslashes; Git Bash eats them", cmd)
+	}
+	if cmd != CommandString(BinaryPath(home)) {
+		t.Errorf("command = %q, want %q", cmd, CommandString(BinaryPath(home)))
+	}
+}
+
+// Home like C:\Users\John Doe hold a space; unquoted command split at it in
+// Git Bash. TempDir carry no space, so make one.
+func TestInstallQuotesACommandPathWithSpaces(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "John Doe")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	sl, _ := readSettingsMap(t, home)["statusLine"].(map[string]any)
+	cmd, _ := sl["command"].(string)
+	want := `"` + filepath.ToSlash(BinaryPath(home)) + `"`
+	if cmd != want {
+		t.Errorf("command = %q, want %q", cmd, want)
+	}
+}
+
+// Every form settings ever held must read as ours: bare platform path from old
+// install, slashed, quoted. Literal comparison would strand old entry at
+// uninstall.
+func TestOwnsCommandAcrossHistoricalForms(t *testing.T) {
+	home := t.TempDir()
+	binary := BinaryPath(home)
+
+	for _, cmd := range []string{
+		binary,
+		filepath.ToSlash(binary),
+		`"` + filepath.ToSlash(binary) + `"`,
+		CommandString(binary),
+	} {
+		if !OwnsCommand(cmd, binary) {
+			t.Errorf("OwnsCommand(%q) = false, want true", cmd)
+		}
+	}
+
+	for _, cmd := range []string{"", "/opt/other-tool", `"/opt/other-tool"`} {
+		if OwnsCommand(cmd, binary) {
+			t.Errorf("OwnsCommand(%q) = true, want false", cmd)
+		}
+	}
+}
+
+// Uninstall must recognize quoted form current install write for spaced home.
+func TestUninstallRemovesAQuotedCommand(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "John Doe")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Uninstall(home)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if !res.RemovedStatusLine {
+		t.Error("quoted command was not recognized as ours")
+	}
+	if _, ok := readSettingsMap(t, home)["statusLine"]; ok {
+		t.Error("statusLine was not removed")
 	}
 }
 
@@ -322,8 +409,9 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 
 func TestUninstallRemovesOnlyTheStatusLine(t *testing.T) {
 	home := t.TempDir()
-	// Uninstall touch statusLine only when command is our own installed copy,
-	// so seed exactly that. Marshal keep Windows backslashes escaped.
+	// Seed bare platform path: form installs wrote before CommandString, so
+	// this also prove old entry still read as ours. Marshal keep Windows
+	// backslashes escaped.
 	ours, err := json.Marshal(BinaryPath(home))
 	if err != nil {
 		t.Fatal(err)

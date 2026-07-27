@@ -76,6 +76,30 @@ jobs:
             fi
           done
 
+      # Claude Code hand statusLine.command to a shell: Git Bash on windows, sh
+      # elsewhere. Backslash path lose separators there, command fail, row stay
+      # blank -- exact windows blank-row report. So install into scratch home,
+      # then run recorded command string same way Claude Code would and demand
+      # a row. cygpath: Go want windows form of home, while mktemp hand back
+      # POSIX form mapped by Git Bash alone.
+      - name: installed command draws a row under the shell
+        shell: bash
+        run: |
+          home="$(mktemp -d)"
+          if [ "$RUNNER_OS" = Windows ]; then home="$(cygpath -w "$home")"; fi
+          bin="$(mktemp -d)/knit-statusline"
+          if [ "$RUNNER_OS" = Windows ]; then bin="$bin.exe"; fi
+          go build -o "$bin" ./cmd/statusline
+          HOME="$home" USERPROFILE="$home" "$bin" install
+          cmd="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).statusLine.command' "$home/.claude/settings.json")"
+          echo "recorded command: $cmd"
+          if ! out=$(printf '{}' | NO_COLOR=1 bash -c "$cmd"); then
+            echo "recorded command failed under bash: $cmd"; exit 1
+          fi
+          if [ -z "$out" ]; then
+            echo "blank row from: $cmd"; exit 1
+          fi
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10

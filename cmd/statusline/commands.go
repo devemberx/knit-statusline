@@ -72,7 +72,9 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
-	if res.ReplacedCommand != "" && res.ReplacedCommand != res.InstalledBinary {
+	// OwnsCommand, not string equality: reinstall over own entry hold slashed or
+	// quoted form, and naming that "replaced" read as another tool was evicted.
+	if res.ReplacedCommand != "" && !install.OwnsCommand(res.ReplacedCommand, res.InstalledBinary) {
 		fmt.Fprintf(stdout, "replaced the previous status line: %s\n", res.ReplacedCommand)
 	}
 	if res.BackupPath != "" {
