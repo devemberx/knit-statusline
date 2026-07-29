@@ -23,8 +23,26 @@ if (process.platform === "win32") {
 
 // Tags carry leading v; npm versions do not.
 const version = rawVersion.replace(/^v/, "");
+// npm reject non-semver only at publish, six manifests already stamped by then.
+// Build metadata rejected too: npm publish strip it with a warning, so registry
+// version diverge from tag and pins.
+if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/.test(version)) {
+  console.error(`not a semver version: ${rawVersion}`);
+  process.exit(1);
+}
+
 const npmRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(npmRoot, "..");
+
+// npm pack always include README, LICENSE and package.json; `files` cannot drop
+// them. Missing file drop silent instead: package page publish blank, tarball
+// carry no license text. Both copied in at stage time -- single source in git.
+for (const name of ["README.md", "LICENSE"]) {
+  if (!existsSync(join(repoRoot, name))) {
+    console.error(`missing ${join(repoRoot, name)}: packages would publish without it`);
+    process.exit(1);
+  }
+}
 
 // npm platform package keyed to its Go (goos, goarch) target.
 const TARGETS = [
@@ -40,7 +58,8 @@ const BUILD_ID = "knit-statusline";
 // GoReleaser record every artifact and its real path here. Read that path:
 // build-output dir carry a microarch suffix (amd64 _v1, arm64 _v8.0) whose
 // default move between releases.
-const artifactsPath = join(distDir, "artifacts.json");
+const dist = resolve(distDir);
+const artifactsPath = join(dist, "artifacts.json");
 if (!existsSync(artifactsPath)) {
   console.error(`missing ${artifactsPath}: run goreleaser before this script`);
   process.exit(1);
@@ -61,7 +80,9 @@ function binaryPath(goos, goarch) {
     console.error(`${hits.length} ${BUILD_ID} binaries for ${goos}/${goarch}: ambiguous`);
     process.exit(1);
   }
-  return hits.length === 1 ? hits[0].path : null;
+  // artifacts.json path relative to goreleaser cwd = dist parent, not to this
+  // script's cwd. resolve pass an absolute path through untouched.
+  return hits.length === 1 ? resolve(dirname(dist), hits[0].path) : null;
 }
 
 function patchJSON(path, mutate) {
@@ -70,22 +91,16 @@ function patchJSON(path, mutate) {
   writeFileSync(path, JSON.stringify(parsed, null, 2) + "\n");
 }
 
-for (const { pkg, goos, goarch, exe } of TARGETS) {
-  const packageDir = join(npmRoot, "platforms", pkg);
-  patchJSON(join(packageDir, "package.json"), (json) => {
-    json.version = version;
-  });
-
+// Every guard fire before the first stamp: exit mid-loop else leave the tree
+// half-stamped.
+const binaries = new Map();
+for (const { pkg, goos, goarch } of TARGETS) {
   const built = binaryPath(goos, goarch);
   if (!built || !existsSync(built)) {
     console.error(`missing build output for ${goos}/${goarch} (${pkg})`);
     process.exit(1);
   }
-
-  const dest = join(packageDir, "bin", exe);
-  copyFileSync(built, dest);
-  chmodSync(dest, 0o755);
-  console.log(`${pkg}: ${dest}`);
+  binaries.set(pkg, built);
 }
 
 const launcherDir = join(npmRoot, "knit-statusline");
@@ -95,14 +110,27 @@ const declared = Object.keys(
   JSON.parse(readFileSync(launcherPath, "utf8")).optionalDependencies ?? {},
 );
 
-// Key only this loop stamp. A key TARGETS dropped keep 0.0.0 and resolve to
-// nothing, a target the launcher never declared install nothing at all -- and an
-// optional dependency fail quiet either way.
+// Key only the loop below stamp. A key TARGETS dropped keep 0.0.0 and resolve
+// to nothing, a target the launcher never declared install nothing at all --
+// and an optional dependency fail quiet either way.
 if (declared.length !== wanted.length || wanted.some((key) => !declared.includes(key))) {
   console.error(
     `launcher optionalDependencies do not match TARGETS: ${declared.join(", ") || "none"}`,
   );
   process.exit(1);
+}
+
+for (const { pkg, exe } of TARGETS) {
+  const packageDir = join(npmRoot, "platforms", pkg);
+  patchJSON(join(packageDir, "package.json"), (json) => {
+    json.version = version;
+  });
+
+  const dest = join(packageDir, "bin", exe);
+  copyFileSync(binaries.get(pkg), dest);
+  chmodSync(dest, 0o755);
+  copyFileSync(join(repoRoot, "LICENSE"), join(packageDir, "LICENSE"));
+  console.log(`${pkg}: ${dest}`);
 }
 
 patchJSON(launcherPath, (json) => {
@@ -113,13 +141,7 @@ patchJSON(launcherPath, (json) => {
   }
 });
 
-// Launcher `files` list README.md and npm drop a missing entry silent, so
-// package page ship blank. Copy it rather than keep a second copy in git.
-const readme = join(repoRoot, "README.md");
-if (!existsSync(readme)) {
-  console.error(`missing ${readme}: launcher would publish without a description`);
-  process.exit(1);
-}
-copyFileSync(readme, join(launcherDir, "README.md"));
+copyFileSync(join(repoRoot, "README.md"), join(launcherDir, "README.md"));
+copyFileSync(join(repoRoot, "LICENSE"), join(launcherDir, "LICENSE"));
 
 console.log(`staged knit-statusline ${version}`);
