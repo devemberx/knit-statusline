@@ -88,11 +88,8 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 	}
 }
 
-// Claude Code hand statusLine.command to Git Bash on Windows, where unquoted
-// backslash is escape character: C:\Users\... arrive separator-less, command
-// fail, row stay blank. Recorded command must carry forward slashes. Real
-// regression coverage come from windows CI runner, where TempDir hold
-// backslashes.
+// Git Bash eat unquoted backslash: C:\Users\... command render blank row.
+// Real coverage on windows runner, where TempDir hold backslashes.
 func TestInstallWritesCommandWithForwardSlashes(t *testing.T) {
 	home := t.TempDir()
 	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
@@ -109,8 +106,7 @@ func TestInstallWritesCommandWithForwardSlashes(t *testing.T) {
 	}
 }
 
-// Home like C:\Users\John Doe hold a space; unquoted command split at it in
-// Git Bash. TempDir carry no space, so make one.
+// Unquoted command split at home space. TempDir carry no space, so make one.
 func TestInstallQuotesACommandPathWithSpaces(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "John Doe")
 	if err := os.MkdirAll(home, 0o755); err != nil {
@@ -128,9 +124,8 @@ func TestInstallQuotesACommandPathWithSpaces(t *testing.T) {
 	}
 }
 
-// Every form settings ever held must read as ours: bare platform path from old
-// install, slashed, quoted. Literal comparison would strand old entry at
-// uninstall.
+// Bare path from old install, slashed, quoted -- all must read as ours, else
+// uninstall strand old entry.
 func TestOwnsCommandAcrossHistoricalForms(t *testing.T) {
 	home := t.TempDir()
 	binary := BinaryPath(home)
@@ -409,9 +404,8 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 
 func TestUninstallRemovesOnlyTheStatusLine(t *testing.T) {
 	home := t.TempDir()
-	// Seed bare platform path: form installs wrote before CommandString, so
-	// this also prove old entry still read as ours. Marshal keep Windows
-	// backslashes escaped.
+	// Seed bare path old install wrote, proving old entry still read as ours.
+	// Marshal keep windows backslashes escaped.
 	ours, err := json.Marshal(BinaryPath(home))
 	if err != nil {
 		t.Fatal(err)

@@ -27,14 +27,10 @@ func BinaryPath(home string) string {
 	return filepath.Join(home, ".claude", name)
 }
 
-// CommandString form statusLine.command value invoking binary. Claude Code
-// hand that string to a shell -- Git Bash on Windows -- where unquoted
-// backslash is escape character: C:\Users\... arrive separator-less, command
-// fail, row stay blank with no error. Forward slashes run everywhere.
-//
-// Quote only when path hold whitespace: quoted string is no command under
-// PowerShell fallback Claude Code use when Git Bash is absent, so bare form
-// serve both shells whenever it can.
+// CommandString form statusLine.command for binary. Git Bash on Windows eat
+// unquoted backslash: C:\Users\... arrive separator-less, row stay blank.
+// Forward slashes run in every shell. Quote only whitespace path: quoted
+// string is no command under PowerShell fallback.
 func CommandString(binary string) string {
 	cmd := filepath.ToSlash(binary)
 	if strings.ContainsAny(cmd, " \t") {
@@ -43,9 +39,8 @@ func CommandString(binary string) string {
 	return cmd
 }
 
-// OwnsCommand report whether configured command invoke installed binary.
-// Settings hold any historical form -- backslash path from old install,
-// slashed, quoted -- so compare normalized, never literal.
+// OwnsCommand report whether command invoke installed binary. Settings hold
+// bare backslash, slashed or quoted form, so compare normalized, never literal.
 func OwnsCommand(command, binary string) bool {
 	cmd := strings.TrimSpace(command)
 	if len(cmd) >= 2 && strings.HasPrefix(cmd, `"`) && strings.HasSuffix(cmd, `"`) {

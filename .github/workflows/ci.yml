@@ -76,12 +76,10 @@ jobs:
             fi
           done
 
-      # Claude Code hand statusLine.command to a shell: Git Bash on windows, sh
-      # elsewhere. Backslash path lose separators there, command fail, row stay
-      # blank -- exact windows blank-row report. So install into scratch home,
-      # then run recorded command string same way Claude Code would and demand
-      # a row. cygpath: Go want windows form of home, while mktemp hand back
-      # POSIX form mapped by Git Bash alone.
+      # Claude Code run statusLine.command through Git Bash on windows, where
+      # backslash path lose separators and row stay blank. Run recorded command
+      # same way, demand a row. cygpath: Go want windows home, mktemp hand back
+      # POSIX path Git Bash alone map.
       - name: installed command draws a row under the shell
         shell: bash
         run: |

@@ -72,8 +72,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
-	// OwnsCommand, not string equality: reinstall over own entry hold slashed or
-	// quoted form, and naming that "replaced" read as another tool was evicted.
+	// Literal compare call own slashed or quoted entry "replaced" on reinstall.
 	if res.ReplacedCommand != "" && !install.OwnsCommand(res.ReplacedCommand, res.InstalledBinary) {
 		fmt.Fprintf(stdout, "replaced the previous status line: %s\n", res.ReplacedCommand)
 	}
