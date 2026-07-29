@@ -108,6 +108,22 @@ jobs:
       - name: npm launcher parses
         run: node --check npm/knit-statusline/bin/cli.js
 
+      # Hermetic staging run against a fake dist: version guards, artifact
+      # matching, LICENSE and README copies. publish.yml exercise the script
+      # only mid-release, the wrong moment for a first failure.
+      # Path explicit, no glob: pattern matching nothing exit 0, and a renamed
+      # test file turn this step green with zero tests run.
+      - name: npm staging script tests
+        run: node --test npm/scripts/prepare-packages.test.mjs
+
+      # Parse only, no snapshot: build matrix already compile every release
+      # target. A config typo else surface at tag time, mid-release.
+      - name: goreleaser config valid
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: check
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
