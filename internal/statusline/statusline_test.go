@@ -115,17 +115,17 @@ func TestReferencePresetOnSparseData(t *testing.T) {
 	}
 }
 
-// Every non-stable segment come back empty. context, session, cost and lines
-// differ: fixtures.Empty carry no transcript_path, freshness unprovable
-// rather than proven, so each Stable slot hold placeholder instead of
-// dropping or printing bare zero. Printing Fallback past that remains
+// Every non-stable segment come back empty. context, session, cost, lines and
+// tokens differ: fixtures.Empty carry no transcript_path, freshness
+// unprovable rather than proven, so each Stable slot hold placeholder instead
+// of dropping or printing bare zero. Printing Fallback past that remains
 // caller's job.
 func TestEmptyDocumentRendersOnlyStableSlots(t *testing.T) {
 	for _, tc := range []struct{ preset, want string }{
 		{"minimal", "✍️ …%"},
 		{"reference", "✍️ …% │ ⏱ …"},
-		{"verbose", "✍️ …% │ ⏱ …\n+… -… │ $…"},
-		{"api", "✍️ …% │ ⏱ …\n+… -… │ $…"},
+		{"verbose", "✍️ …% │ ⏱ …\n↑… ↓… │ +… -… │ $…"},
+		{"api", "✍️ …% │ ⏱ …\n↑… ↓… │ +… -… │ $…"},
 	} {
 		if got := drawPreset(t, tc.preset, fixtures.Empty); got != tc.want {
 			t.Errorf("%s: empty document produced %q, want %q", tc.preset, got, tc.want)

@@ -11,6 +11,7 @@ func init() {
 		Fields: []string{"io", "cache", "input", "cache_write", "cache_read",
 			"output", "total", "cache_hit", "input_raw", "output_raw"},
 		DefaultTemplate: "{io}{cache}",
+		Stable:          true,
 		Build:           buildTokens,
 	})
 }
@@ -32,7 +33,7 @@ func init() {
 // exact count inform nobody.
 func buildTokens(c Context) Result {
 	if c.In.TranscriptPath == "" {
-		return empty
+		return tokensNoUsage(c)
 	}
 
 	scope := transcript.ScopeSession
@@ -52,7 +53,7 @@ func buildTokens(c Context) Result {
 	_ = transcript.SaveCache(c.CacheDir, opts, cache)
 
 	if totals.Total() == 0 {
-		return empty
+		return tokensNoUsage(c)
 	}
 
 	return Result{
@@ -100,6 +101,45 @@ func cacheGroup(c Context, t transcript.Totals) string {
 		" " +
 		c.Palette.Wrap("↓", render.Dim) +
 		c.Palette.Wrap(count(t.CacheRead), render.Cyan)
+}
+
+// tokensNoUsage cover states with nothing counted.
+//
+// Fresh session sent nothing, so every counter is a real zero. Otherwise
+// transcript was unreadable or holds only synthetic entries, and no number is
+// known. scope = "project" reach here on neither: other transcripts in
+// project carry usage, so totals come back known even at first render.
+func tokensNoUsage(c Context) Result {
+	if !c.holdsSlot() {
+		return empty
+	}
+	text, col := c.Cfg.Unknown, render.Dim
+	if c.Fresh {
+		text, col = "0", render.White
+	}
+
+	// Cache group hidden, same shape as session that touched no cache: gap
+	// live inside field, so it go with it.
+	io := c.Palette.Wrap("↑", render.Dim) + c.Palette.Wrap(text, col) +
+		" " + c.Palette.Wrap("↓", render.Dim) + c.Palette.Wrap(text, col)
+
+	return Result{
+		Base: render.Dim,
+		Fields: render.Fields{
+			"io":    render.Plain(io),
+			"cache": render.Plain(""),
+
+			"input":       render.Colored(text, col),
+			"cache_write": render.Colored(text, col),
+			"cache_read":  render.Colored(text, col),
+			"output":      render.Colored(text, col),
+			"total":       render.Colored(text, col),
+			"cache_hit":   render.Colored(text, col),
+
+			"input_raw":  render.Colored(text, col),
+			"output_raw": render.Colored(text, col),
+		},
+	}
 }
 
 // cacheHit report share of input tokens served from cache. Raw cache_read reach

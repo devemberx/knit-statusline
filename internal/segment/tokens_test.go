@@ -10,6 +10,7 @@ import (
 	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/render"
+	"github.com/devemberx/knit-statusline/internal/schema"
 	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
@@ -43,25 +44,27 @@ func tokensCtx(t *testing.T, lines ...string) Context {
 }
 
 // Fixture transcript_path point nowhere on purpose, so this stand in for every
-// session before its first assistant reply.
-func TestBuildTokensIsEmptyWithoutATranscript(t *testing.T) {
+// session before its first assistant reply. tokens Stable now: ctx() default
+// to live, unprovable freshness, so absent transcript hold placeholder rather
+// than drop.
+func TestBuildTokensRendersPlaceholderWithoutATranscript(t *testing.T) {
 	c := ctx(t, fixtures.Full, "tokens")
 	c.In.TranscriptPath = ""
-	if res := Build(c); !res.Empty {
-		t.Errorf("got %+v, want empty", res)
+	if got := draw(c); got != "↑… ↓…" {
+		t.Errorf("got %q, want placeholder", got)
 	}
 
-	if res := Build(ctx(t, fixtures.Full, "tokens")); !res.Empty {
-		t.Errorf("absent transcript file gave %+v, want empty", res)
+	if got := draw(ctx(t, fixtures.Full, "tokens")); got != "↑… ↓…" {
+		t.Errorf("absent transcript file gave %q, want placeholder", got)
 	}
 }
 
-// Zero counted is absent, not zero: printing "↑0 ↓0" claim a measurement nobody
-// took.
-func TestBuildTokensIsEmptyWhenNothingCounted(t *testing.T) {
+// Zero counted is absent, not zero: printing "↑0 ↓0" claim measurement nobody
+// took. Stable slot hold placeholder instead of dropping.
+func TestBuildTokensRendersPlaceholderWhenNothingCounted(t *testing.T) {
 	c := tokensCtx(t, `{"type":"user","message":{"role":"user","content":"hi"}}`)
-	if res := Build(c); !res.Empty {
-		t.Errorf("got %+v, want empty", res)
+	if got := draw(c); got != "↑… ↓…" {
+		t.Errorf("got %q, want placeholder", got)
 	}
 }
 
@@ -208,5 +211,50 @@ func TestBuildTokensAgreeAcrossRenders(t *testing.T) {
 	second := Build(c).Fields["total"].Text
 	if first != second {
 		t.Errorf("second render gave {total} = %q, first gave %q", second, first)
+	}
+}
+
+func TestTokensFreshRendersZero(t *testing.T) {
+	res := buildTokens(ctxFor("tokens", &schema.Input{}, true))
+	if res.Empty {
+		t.Fatal("fresh tokens returned empty")
+	}
+	if got := res.Fields["input"].Text; got != "0" {
+		t.Fatalf("input = %q, want %q", got, "0")
+	}
+	if got := res.Fields["io"].Text; got != "↑0 ↓0" {
+		t.Fatalf("io = %q, want %q", got, "↑0 ↓0")
+	}
+}
+
+// Cache group stay hidden in both placeholder states: absent traffic is not a
+// value, and gap before it belong to group.
+func TestTokensPlaceholderHidesCacheGroup(t *testing.T) {
+	for _, fresh := range []bool{true, false} {
+		res := buildTokens(ctxFor("tokens", &schema.Input{}, fresh))
+		if got := res.Fields["cache"].Text; got != "" {
+			t.Fatalf("fresh=%v cache = %q, want empty", fresh, got)
+		}
+	}
+}
+
+func TestTokensLiveWithoutUsageRendersUnknown(t *testing.T) {
+	res := buildTokens(ctxFor("tokens", &schema.Input{}, false))
+	if res.Empty {
+		t.Fatal("live tokens returned empty")
+	}
+	if got := res.Fields["io"].Text; got != "↑… ↓…" {
+		t.Fatalf("io = %q, want %q", got, "↑… ↓…")
+	}
+	if got := res.Fields["total"].Text; got != config.DefaultUnknown {
+		t.Fatalf("total = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
+func TestTokensOptedOutDrops(t *testing.T) {
+	c := ctxFor("tokens", &schema.Input{}, true)
+	c.Cfg.Unknown = ""
+	if !buildTokens(c).Empty {
+		t.Fatal("unknown = \"\" did not drop the segment")
 	}
 }
