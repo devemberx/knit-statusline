@@ -251,6 +251,69 @@ func TestTokensLiveWithoutUsageRendersUnknown(t *testing.T) {
 	}
 }
 
+// Probe read session transcript alone, Scan sum whole project directory, and
+// unreadable sibling contribute 0. Fresh session therefore prove nothing about
+// project total, so zero there would be invention.
+func TestTokensProjectScopeNeverPrintsFreshZero(t *testing.T) {
+	c := ctxFor("tokens", &schema.Input{}, true)
+	c.Cfg.Scope = config.ScopeProject
+	res := buildTokens(c)
+	if res.Empty {
+		t.Fatal("project scope tokens returned empty")
+	}
+	for _, f := range []string{"input", "output", "total", "cache_read"} {
+		if got := res.Fields[f].Text; got != config.DefaultUnknown {
+			t.Fatalf("project scope %s = %q, want %q", f, got, config.DefaultUnknown)
+		}
+	}
+	if got := res.Fields["io"].Text; got != "↑… ↓…" {
+		t.Fatalf("project scope io = %q, want placeholder", got)
+	}
+}
+
+// Real scan reaching totals.Total() == 0 is separate path from blank
+// TranscriptPath: transcript exist and hold only user lines.
+func TestTokensFreshZeroAfterScanningUserOnlyTranscript(t *testing.T) {
+	c := tokensCtx(t, `{"type":"user","message":{"role":"user","content":"hi"}}`)
+	c.Fresh = true
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("scanned fresh transcript returned empty")
+	}
+	if got := res.Fields["io"].Text; got != "↑0 ↓0" {
+		t.Fatalf("io = %q, want %q", got, "↑0 ↓0")
+	}
+	if got := res.Fields["total"].Text; got != "0" {
+		t.Fatalf("total = %q, want %q", got, "0")
+	}
+}
+
+// Fresh zero is measured value, so it wear same colour a measured number would.
+// Placeholder stay Dim across every field.
+func TestTokensFreshZeroKeepsPerFieldColors(t *testing.T) {
+	fresh := buildTokens(ctxFor("tokens", &schema.Input{}, true))
+	for _, f := range []string{"cache_write", "cache_read", "cache_hit"} {
+		if got := fresh.Fields[f].Color; got != render.Cyan {
+			t.Errorf("fresh %s color = %v, want Cyan", f, got)
+		}
+	}
+	for _, f := range []string{"input", "output", "total"} {
+		if got := fresh.Fields[f].Color; got != render.White {
+			t.Errorf("fresh %s color = %v, want White", f, got)
+		}
+	}
+
+	unknown := buildTokens(ctxFor("tokens", &schema.Input{}, false))
+	for f := range unknown.Fields {
+		if f == "io" || f == "cache" {
+			continue
+		}
+		if got := unknown.Fields[f].Color; got != render.Dim {
+			t.Errorf("unknown %s color = %v, want Dim", f, got)
+		}
+	}
+}
+
 func TestTokensOptedOutDrops(t *testing.T) {
 	c := ctxFor("tokens", &schema.Input{}, true)
 	c.Cfg.Unknown = ""

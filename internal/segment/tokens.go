@@ -105,17 +105,26 @@ func cacheGroup(c Context, t transcript.Totals) string {
 
 // tokensNoUsage cover states with nothing counted.
 //
-// Fresh session sent nothing, so every counter is a real zero. Otherwise
-// transcript was unreadable or holds only synthetic entries, and no number is
-// known. scope = "project" reach here on neither: other transcripts in
-// project carry usage, so totals come back known even at first render.
+// Fresh session sent nothing, so every counter is real zero. Otherwise
+// transcript was unreadable or hold only synthetic entries, and no number is
+// known.
+//
+// Freshness prove nothing under scope = "project". Probe read session
+// transcript alone while Scan sum every *.jsonl beside it, and Scan contribute
+// 0 for each file it cannot open on cold cache -- chmod 000 sibling, EMFILE,
+// file removed mid-glob. Empty project render "↑… ↓…" as price: placeholder
+// nobody proved beat zero nobody proved.
 func tokensNoUsage(c Context) Result {
 	if !c.holdsSlot() {
 		return empty
 	}
-	text, col := c.Cfg.Unknown, render.Dim
-	if c.Fresh {
-		text, col = "0", render.White
+	fresh := c.Fresh && c.Cfg.Scope != config.ScopeProject
+
+	// Cache fields keep Cyan on real zero, same as on real number: fresh-zero
+	// is measured value, and recolouring it would mark true 0 as unmeasured.
+	text, col, cacheCol := c.Cfg.Unknown, render.Dim, render.Dim
+	if fresh {
+		text, col, cacheCol = "0", render.White, render.Cyan
 	}
 
 	// Cache group hidden, same shape as session that touched no cache: gap
@@ -130,11 +139,11 @@ func tokensNoUsage(c Context) Result {
 			"cache": render.Plain(""),
 
 			"input":       render.Colored(text, col),
-			"cache_write": render.Colored(text, col),
-			"cache_read":  render.Colored(text, col),
+			"cache_write": render.Colored(text, cacheCol),
+			"cache_read":  render.Colored(text, cacheCol),
 			"output":      render.Colored(text, col),
 			"total":       render.Colored(text, col),
-			"cache_hit":   render.Colored(text, col),
+			"cache_hit":   render.Colored(text, cacheCol),
 
 			"input_raw":  render.Colored(text, col),
 			"output_raw": render.Colored(text, col),
