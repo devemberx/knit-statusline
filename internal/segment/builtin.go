@@ -96,27 +96,15 @@ func init() {
 		DefaultTemplate: "${usd}",
 		Stable:          true,
 		Build: func(c Context) Result {
-			if c.In.Cost != nil && c.In.Cost.TotalCostUSD != nil {
-				f := render.Fields{
-					"usd": render.Colored(fmt.Sprintf("%.2f", *c.In.Cost.TotalCostUSD), render.White),
-				}
-				if c.In.Cost.TotalAPIDurationMS != nil {
-					d := time.Duration(*c.In.Cost.TotalAPIDurationMS) * time.Millisecond
-					f["api_duration"] = render.Colored(duration(d), render.White)
-				}
-				return Result{Base: render.Dim, Fields: f}
-			}
-			if !c.holdsSlot() {
+			usd, ok := costUSD(c)
+			if !ok {
 				return empty
 			}
-			usd, api := c.Cfg.Unknown, c.Cfg.Unknown
-			if c.Fresh {
-				usd, api = fmt.Sprintf("%.2f", 0.0), duration(0)
+			f := render.Fields{"usd": render.Colored(usd, render.White)}
+			if api, ok := apiDuration(c); ok {
+				f["api_duration"] = render.Colored(api, render.White)
 			}
-			return Result{Base: render.Dim, Fields: render.Fields{
-				"usd":          render.Colored(usd, render.White),
-				"api_duration": render.Colored(api, render.White),
-			}}
+			return Result{Base: render.Dim, Fields: f}
 		},
 	})
 
@@ -348,6 +336,38 @@ func usedTokens(c Context) int64 {
 func sessionDuration(c Context) (string, bool) {
 	if c.In.Cost != nil && c.In.Cost.TotalDurationMS != nil {
 		return duration(time.Duration(*c.In.Cost.TotalDurationMS) * time.Millisecond), true
+	}
+	if !c.holdsSlot() {
+		return "", false
+	}
+	if c.Fresh {
+		return duration(0), true
+	}
+	return c.Cfg.Unknown, true
+}
+
+// costUSD pick {usd} text for three states. Second return false = segment
+// drop -- default template "${usd}" leave bare "$" standing otherwise.
+func costUSD(c Context) (string, bool) {
+	if c.In.Cost != nil && c.In.Cost.TotalCostUSD != nil {
+		return fmt.Sprintf("%.2f", *c.In.Cost.TotalCostUSD), true
+	}
+	if !c.holdsSlot() {
+		return "", false
+	}
+	if c.Fresh {
+		return fmt.Sprintf("%.2f", 0.0), true
+	}
+	return c.Cfg.Unknown, true
+}
+
+// apiDuration resolve independent of {usd} -- payload win over freshness or
+// placeholder same as context_window_size override in contextNoUsage.
+// Second return false = field left out of Fields entirely, not blanked.
+func apiDuration(c Context) (string, bool) {
+	if c.In.Cost != nil && c.In.Cost.TotalAPIDurationMS != nil {
+		d := time.Duration(*c.In.Cost.TotalAPIDurationMS) * time.Millisecond
+		return duration(d), true
 	}
 	if !c.holdsSlot() {
 		return "", false

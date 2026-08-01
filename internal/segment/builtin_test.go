@@ -492,6 +492,45 @@ func TestCostFreshApiDurationIsZero(t *testing.T) {
 	}
 }
 
+// api_duration resolve off its own pointer, same as {size} in contextNoUsage.
+// total_cost_usd absent must never blank or zero a real api duration payload
+// carry -- neither placeholder nor fresh-zero may win over it.
+func TestCostAPIDurationIndependentOfUSD(t *testing.T) {
+	ms := int64(233_000)
+	apiOnly := &schema.Input{Cost: &schema.Cost{TotalAPIDurationMS: &ms}}
+
+	for _, tc := range []struct {
+		name  string
+		fresh bool
+	}{
+		{"live", false},
+		{"fresh", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := buildNamed(t, "cost", apiOnly, tc.fresh)
+			if res.Empty {
+				t.Fatal("cost returned empty")
+			}
+			if got := res.Fields["api_duration"].Text; got != "3m" {
+				t.Fatalf("api_duration = %q, want %q", got, "3m")
+			}
+		})
+	}
+}
+
+// {usd} unresolved and slot not held must drop whole segment. Building
+// Fields with api_duration alone would leave default template "${usd}"
+// render bare "$" -- worse than segment absent.
+func TestCostOptedOutDropsWithOnlyAPIDuration(t *testing.T) {
+	ms := int64(233_000)
+	def, _ := Lookup("cost")
+	c := ctxFor("cost", &schema.Input{Cost: &schema.Cost{TotalAPIDurationMS: &ms}}, false)
+	c.Cfg.Unknown = ""
+	if !def.Build(c).Empty {
+		t.Fatal("api_duration alone with unknown = \"\" did not drop the segment")
+	}
+}
+
 func TestLinesThreeStates(t *testing.T) {
 	added, removed := int64(156), int64(23)
 	known := &schema.Input{Cost: &schema.Cost{TotalLinesAdded: &added, TotalLinesRemoved: &removed}}

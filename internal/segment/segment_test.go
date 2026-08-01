@@ -215,14 +215,12 @@ func TestThresholdsComeFromResolvedConfig(t *testing.T) {
 
 // Empty document is floor every segment must survive: valid JSON, nothing
 // populated. None may panic, and none may claim data it does not have.
-// context, session, cost, lines skipped: all four are Stable, so they hold
-// their slot with placeholder rather than drop -- see
-// TestContextLiveWithoutUsageRendersUnknown and TestSessionThreeStates /
-// TestCostThreeStates / TestLinesThreeStates in builtin_test.go.
+// Stable segment skipped -- it hold its slot with placeholder rather than
+// drop, covered per-segment in builtin_test.go. Read via Lookup rather than
+// a hand-kept name list, so set stays correct as more segments go Stable.
 func TestEverySegmentSurvivesEmptyDocument(t *testing.T) {
-	stable := []string{"context", "session", "cost", "lines"}
 	for _, kind := range Names() {
-		if slices.Contains(stable, kind) {
+		if def, ok := Lookup(kind); ok && def.Stable {
 			continue
 		}
 		if got := draw(ctx(t, fixtures.Empty, kind)); got != "" {
