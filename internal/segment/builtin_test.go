@@ -565,6 +565,69 @@ func TestLinesThreeStates(t *testing.T) {
 	}
 }
 
+// Each counter resolve off its own pointer, same as api_duration. Dragging
+// known 156 down to placeholder because its partner is nil hide number payload
+// carried.
+func TestLinesResolveCountersIndependently(t *testing.T) {
+	added := int64(156)
+	in := &schema.Input{Cost: &schema.Cost{TotalLinesAdded: &added}}
+
+	live := buildNamed(t, "lines", in, false)
+	if got := live.Fields["added"].Text; got != "156" {
+		t.Fatalf("live added = %q, want %q", got, "156")
+	}
+	if got := live.Fields["removed"].Text; got != config.DefaultUnknown {
+		t.Fatalf("live removed = %q, want %q", got, config.DefaultUnknown)
+	}
+
+	fresh := buildNamed(t, "lines", in, true)
+	if got := fresh.Fields["added"].Text; got != "156" {
+		t.Fatalf("fresh added = %q, want %q", got, "156")
+	}
+	if got := fresh.Fields["removed"].Text; got != "0" {
+		t.Fatalf("fresh removed = %q, want %q", got, "0")
+	}
+}
+
+// Opted-out slot drop rather than render "+156 -" off half a payload.
+func TestLinesOptedOutDropsOnHalfAPayload(t *testing.T) {
+	added := int64(156)
+	def, _ := Lookup("lines")
+	c := ctxFor("lines", &schema.Input{Cost: &schema.Cost{TotalLinesAdded: &added}}, false)
+	c.Cfg.Unknown = ""
+	if !def.Build(c).Empty {
+		t.Fatal("one counter with unknown = \"\" did not drop the segment")
+	}
+}
+
+// Percentage arrive without context_window_size, and known branch used to omit
+// both field entirely -- template "{used}/{size}" then render bare "/", exact
+// shape collapse stable slot exist to stop.
+func TestContextKnownPctWithoutSizeHoldsBothFields(t *testing.T) {
+	in := &schema.Input{Context: &schema.ContextWin{UsedPercentage: ptr(42.0)}}
+	c := ctxFor("context", in, false)
+	c.Cfg.Template = "{used}/{size}"
+	if got := draw(c); got != config.DefaultUnknown+"/"+config.DefaultUnknown {
+		t.Fatalf("got %q, want %q", got, config.DefaultUnknown+"/"+config.DefaultUnknown)
+	}
+}
+
+// current_usage carry counted tokens whether or not window size arrive, so
+// {used} stay real number there.
+func TestContextUsedComesFromCurrentUsageWithoutSize(t *testing.T) {
+	in := &schema.Input{Context: &schema.ContextWin{
+		UsedPercentage: ptr(42.0),
+		CurrentUsage:   &schema.Usage{InputTokens: 1000, CacheReadTokens: 83_000},
+	}}
+	res := buildContext(ctxFor("context", in, false))
+	if got := res.Fields["used"].Text; got != "84k" {
+		t.Fatalf("used = %q, want %q", got, "84k")
+	}
+	if got := res.Fields["size"].Text; got != config.DefaultUnknown {
+		t.Fatalf("size = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
 func TestOptedOutDropsSessionCostLines(t *testing.T) {
 	for _, name := range []string{"session", "cost", "lines"} {
 		t.Run(name, func(t *testing.T) {

@@ -115,27 +115,19 @@ func init() {
 		DefaultTemplate: "+{added} -{removed}",
 		Stable:          true,
 		Build: func(c Context) Result {
-			if c.In.Cost != nil && c.In.Cost.TotalLinesAdded != nil && c.In.Cost.TotalLinesRemoved != nil {
-				return Result{
-					Base: render.Dim,
-					Fields: render.Fields{
-						"added":   render.Colored(strconv.FormatInt(*c.In.Cost.TotalLinesAdded, 10), render.Green),
-						"removed": render.Colored(strconv.FormatInt(*c.In.Cost.TotalLinesRemoved, 10), render.Red),
-					},
-				}
+			var added, removed *int64
+			if c.In.Cost != nil {
+				added, removed = c.In.Cost.TotalLinesAdded, c.In.Cost.TotalLinesRemoved
 			}
-			if !c.holdsSlot() {
+			// Opted-out slot drop on any absent counter, way every non-stable
+			// segment do. Default template "+{added} -{removed}" leave bare
+			// "-" standing otherwise.
+			if !c.holdsSlot() && (added == nil || removed == nil) {
 				return empty
 			}
-			text := c.Cfg.Unknown
-			if c.Fresh {
-				text = "0"
-			}
-			// Both counters take same text: one known and one absent is not a
-			// shape Claude Code send, and inventing a mixed row hide that.
 			return Result{Base: render.Dim, Fields: render.Fields{
-				"added":   render.Colored(text, render.Green),
-				"removed": render.Colored(text, render.Red),
+				"added":   render.Colored(lineCount(c, added), render.Green),
+				"removed": render.Colored(lineCount(c, removed), render.Red),
 			}}
 		},
 	})
@@ -272,9 +264,18 @@ func buildContext(c Context) Result {
 		"remaining": render.Colored(pct(100-p), t.Color(p)),
 		"bar":       render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
 	}
+	// Known percentage prove nothing about window size: used_percentage arrive
+	// without context_window_size, and omitting both field render
+	// "{used}/{size}" as bare "/" -- shape collapse slot exist to stop.
 	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
 		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)
-		f["used"] = render.Colored(count(usedTokens(c)), render.White)
+	} else if c.holdsSlot() {
+		f["size"] = render.Colored(c.Cfg.Unknown, render.Dim)
+	}
+	if used, ok := usedTokens(c); ok {
+		f["used"] = render.Colored(count(used), render.White)
+	} else if c.holdsSlot() {
+		f["used"] = render.Colored(c.Cfg.Unknown, render.Dim)
 	}
 	return Result{Base: render.Dim, Fields: f}
 }
@@ -321,16 +322,27 @@ func contextNoUsage(c Context) Result {
 	return Result{Base: render.Dim, Fields: f}
 }
 
-// current_usage hold counted tokens, so prefer it. Back-computing from
+// usedTokens report occupied tokens, second return false = no source at all.
+//
+// current_usage hold counted tokens, so prefer it -- back-computing from
 // percentage rounded to whole points miss by up to 1k on 200k window. Same
 // three counters ContextPercent sum, output left out alongside.
-func usedTokens(c Context) int64 {
+func usedTokens(c Context) (int64, bool) {
 	cw := c.In.Context
-	if u := cw.CurrentUsage; u != nil {
-		return u.InputTokens + u.CacheCreationTokens + u.CacheReadTokens
+	if cw == nil {
+		return 0, false
 	}
-	p, _ := c.In.ContextPercent()
-	return int64(p / 100 * float64(*cw.ContextWindowSize))
+	if u := cw.CurrentUsage; u != nil {
+		return u.InputTokens + u.CacheCreationTokens + u.CacheReadTokens, true
+	}
+	if cw.ContextWindowSize == nil {
+		return 0, false
+	}
+	p, ok := c.In.ContextPercent()
+	if !ok {
+		return 0, false
+	}
+	return int64(p / 100 * float64(*cw.ContextWindowSize)), true
 }
 
 // sessionDuration pick duration text for three states. Second return false
@@ -361,6 +373,21 @@ func costUSD(c Context) (string, bool) {
 		return fmt.Sprintf("%.2f", 0.0), true
 	}
 	return c.Cfg.Unknown, true
+}
+
+// lineCount pick one counter's text, resolving off its own pointer.
+//
+// Requiring both send known 156 down placeholder path when its partner is nil.
+// Whether Claude Code ever send one counter alone is unverified, and guessing
+// it never happen cost real number when it does.
+func lineCount(c Context, n *int64) string {
+	if n != nil {
+		return strconv.FormatInt(*n, 10)
+	}
+	if c.Fresh {
+		return "0"
+	}
+	return c.Cfg.Unknown
 }
 
 // apiDuration resolve independent of {usd} -- payload win over freshness or
