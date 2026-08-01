@@ -55,8 +55,8 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
   session sent nothing yet — probe error resolve to unknown, never fresh, since
   wrong fresh print lying 0. Unknown render `…` in stable segments, row shape
   fixed so vanishing slot never read as crash. Absent stay dropped for state
-  flags where nothing mean off. `limit.*` never zero: account-wide window carry
-  across sessions.
+  flags where nothing mean off. `limit.*` and `session` never zero: account-wide
+  window carry across sessions, wall clock run before first call.
 - Token counting dedup on `message.id`: Claude Code write one JSONL line per
   content block, each repeating whole `usage` object, so naive sum over-count
   ~3x. Id persist in cursor beside byte offset, else message straddling two scans

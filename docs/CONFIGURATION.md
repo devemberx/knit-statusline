@@ -132,9 +132,11 @@ the start either way:
 - The value is missing for any other reason — a resumed session, the gap after
   `/compact`, an unreadable transcript: `✍️ …%`, `↑… ↓…`.
 
-`limit.5h` and `limit.7d` are the exception: they never show zero. Both windows
-are account-wide and carry across sessions, so a brand-new session can still
-open at 80% used — a freshly started session tells you nothing about them.
+Three segments never show the zero: `limit.5h` and `limit.7d` because both
+windows are account-wide and carry across sessions — a brand-new session can
+still open at 80% used — and `session` because its duration is wall-clock time:
+a session may sit idle for minutes before its first call, so an empty
+transcript proves nothing about how long it has been open.
 
 ```toml
 [defaults]

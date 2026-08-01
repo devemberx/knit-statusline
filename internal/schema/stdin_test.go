@@ -23,7 +23,8 @@ func load(t *testing.T, b []byte) *Input {
 // went wrong.
 func TestParseFixtures(t *testing.T) {
 	for name, b := range map[string][]byte{
-		"full": fixtures.Full, "sparse": fixtures.Sparse, "empty": fixtures.Empty,
+		"full": fixtures.Full, "sparse": fixtures.Sparse,
+		"unknown": fixtures.Unknown, "empty": fixtures.Empty,
 	} {
 		if in := load(t, b); in == nil {
 			t.Fatalf("%s decoded to nil", name)
@@ -127,7 +128,8 @@ func TestParseRejectsInvalidJSON(t *testing.T) {
 // silence.
 func TestFixturesHaveNoUnmappedFields(t *testing.T) {
 	for name, b := range map[string][]byte{
-		"full": fixtures.Full, "sparse": fixtures.Sparse, "empty": fixtures.Empty,
+		"full": fixtures.Full, "sparse": fixtures.Sparse,
+		"unknown": fixtures.Unknown, "empty": fixtures.Empty,
 	} {
 		dec := json.NewDecoder(bytes.NewReader(b))
 		dec.DisallowUnknownFields()

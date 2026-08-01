@@ -29,6 +29,8 @@ segments = ["limit.7d"]
 # context, session, cost, lines, tokens, limit.5h and limit.7d hold their slot
 # from the first render: a real zero once the transcript proves the session
 # sent nothing yet, "…" while the value is still unknown for any other reason.
+# session and limit.* skip the zero -- wall clock and account-wide windows
+# carry on regardless of what this session sent.
 # Set unknown = "" to drop the segment instead, or unknown = "?" if your
 # terminal draws "…" two columns wide.
 [defaults]

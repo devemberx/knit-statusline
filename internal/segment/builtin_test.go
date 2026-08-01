@@ -438,6 +438,9 @@ func buildNamed(t *testing.T, name string, in *schema.Input, fresh bool) Result 
 	return def.Build(ctxFor(name, in, fresh))
 }
 
+// Fresh carry no zero here, unlike cost and lines: transcript prove no tokens
+// sent, not no time elapsed. total_duration_ms is wall clock, and session may
+// idle minutes before first call -- "0s" there is claim probe cannot back.
 func TestSessionThreeStates(t *testing.T) {
 	ms := int64(4_500_000)
 	known := &schema.Input{Cost: &schema.Cost{TotalDurationMS: &ms}}
@@ -449,7 +452,7 @@ func TestSessionThreeStates(t *testing.T) {
 		want  string
 	}{
 		{"known", known, false, "1h15m"},
-		{"fresh", &schema.Input{}, true, "0s"},
+		{"fresh", &schema.Input{}, true, config.DefaultUnknown},
 		{"unknown", &schema.Input{}, false, config.DefaultUnknown},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -687,6 +690,26 @@ func TestLimitNullPercentageRendersPlaceholder(t *testing.T) {
 	// not read "0% until 5pm".
 	if got := res.Fields["reset_time"].Text; got != "" {
 		t.Fatalf("reset_time = %q, want empty beside unknown percentage", got)
+	}
+}
+
+// Reported 0 is measurement, not absence. Pointer field open path where real
+// zero drown in placeholder, so exact "0%" render is pinned. Parse from JSON:
+// struct literal cannot regress decode path.
+func TestLimitReportedZeroRendersZero(t *testing.T) {
+	in := input(t, []byte(
+		`{"rate_limits":{"five_hour":{"used_percentage":0,"resets_at":1753257600}}}`))
+	res := buildNamed(t, "limit.5h", in, false)
+	if res.Empty {
+		t.Fatal("limit returned empty")
+	}
+	if got := res.Fields["pct"].Text; got != "0" {
+		t.Fatalf("pct = %q, want %q", got, "0")
+	}
+	// Known zero take known path whole: reset time render beside it, unlike
+	// null percentage where it stay blank.
+	if got := res.Fields["reset_time"].Text; got == "" {
+		t.Fatal("reset_time empty beside a reported zero")
 	}
 }
 

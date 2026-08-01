@@ -533,16 +533,18 @@ func TestSessionFreshNilInputIsLive(t *testing.T) {
 }
 
 // Pinned state must reach segments, not merely resolve inside Render.
+// cost probe here, not session: cost fresh-zero "$0.00" differ from its live
+// placeholder, while session render placeholder in both states.
 func TestRenderSessionStateOverrideReachesSegments(t *testing.T) {
 	fresh := transcript.StateFresh
-	cfg := &config.Config{Lines: []config.Line{{Segments: []string{"session"}}}}
+	cfg := &config.Config{Lines: []config.Line{{Segments: []string{"cost"}}}}
 
 	got := Render(cfg, &schema.Input{}, Options{
 		Palette:      render.NoColor(),
 		SessionState: &fresh,
 	})
-	if !strings.Contains(got, "0s") {
-		t.Fatalf("Render = %q, want a fresh-zero duration", got)
+	if !strings.Contains(got, "0.00") {
+		t.Fatalf("Render = %q, want a fresh-zero cost", got)
 	}
 }
 
@@ -598,7 +600,8 @@ func TestRowShapeSurvivesMissingUsage(t *testing.T) {
 }
 
 // Same contract at other end: a fresh session fill slots with zeros rather
-// than dropping them.
+// than dropping them. session stay at placeholder -- wall clock run whether or
+// not tokens sent, so fresh prove nothing about duration.
 func TestRowShapeSurvivesFreshSession(t *testing.T) {
 	cfg := &config.Config{Lines: []config.Line{
 		{Segments: []string{"model", "context", "session", "cost", "lines"}},
@@ -607,7 +610,7 @@ func TestRowShapeSurvivesFreshSession(t *testing.T) {
 	in := &schema.Input{Model: schema.Model{DisplayName: "Opus 5"}}
 
 	got := Render(cfg, in, Options{Palette: render.NoColor(), SessionState: &fresh})
-	for _, want := range []string{"Opus 5", "0%", "0s", "$0.00", "+0 -0"} {
+	for _, want := range []string{"Opus 5", "0%", "⏱ …", "$0.00", "+0 -0"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("Render = %q, missing %q", got, want)
 		}

@@ -345,17 +345,17 @@ func usedTokens(c Context) (int64, bool) {
 	return int64(p / 100 * float64(*cw.ContextWindowSize)), true
 }
 
-// sessionDuration pick duration text for three states. Second return false
-// = segment drop.
+// sessionDuration pick duration text. Second return false = segment drop.
+//
+// No fresh-zero here, unlike cost and lines: transcript prove no tokens sent,
+// not no time elapsed. total_duration_ms is wall clock, and session may idle
+// minutes before first call -- "0s" there is claim probe cannot back.
 func sessionDuration(c Context) (string, bool) {
 	if c.In.Cost != nil && c.In.Cost.TotalDurationMS != nil {
 		return duration(time.Duration(*c.In.Cost.TotalDurationMS) * time.Millisecond), true
 	}
 	if !c.holdsSlot() {
 		return "", false
-	}
-	if c.Fresh {
-		return duration(0), true
 	}
 	return c.Cfg.Unknown, true
 }
