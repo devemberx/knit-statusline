@@ -4,7 +4,7 @@
 #
 #   Opus 4.8 │ ✍️ 42% │ acme
 #
-# Add "session" for elapsed time.
+# Add "effort" for reasoning level.
 
 [[lines]]
 segments = ["model", "context", "dir"]

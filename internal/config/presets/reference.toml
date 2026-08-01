@@ -1,11 +1,14 @@
 # knit-statusline -- reference preset
 #
-# Recreates the layout of nilbuild/claude-statusline:
+# Follows the layout of nilbuild/claude-statusline:
 #
-#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ◕ high
+#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high
 #
 #   current ●●●●○○○○○○  42% ⟳ 3:00pm
 #   weekly  ●●○○○○○○○○  18% ⟳ jul 28, 3:00pm
+#
+# Elapsed time is left off: "session" counts wall clock including idle, so the
+# number says little about the work done. Add "session" back if you want it.
 #
 # Each [[lines]] block is one row. Reorder the names, delete one you do not
 # want, or move two onto the same row -- that is the whole customisation model.
@@ -13,7 +16,7 @@
 # restarting Claude Code, and `knit-statusline doctor` if something looks wrong.
 
 [[lines]]
-segments = ["model", "context", "dir", "session", "effort"]
+segments = ["model", "context", "dir", "effort"]
 
 # A [[lines]] block with no segments is a deliberate blank row. A row whose
 # segments all turn out to be empty is dropped instead, so a missing value never

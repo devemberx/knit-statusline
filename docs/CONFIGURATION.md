@@ -22,7 +22,7 @@ Each `[[lines]]` block is one row, and `segments` is what goes on it, in order.
 
 ```toml
 [[lines]]
-segments = ["model", "context", "dir", "session", "effort"]
+segments = ["model", "context", "dir", "effort"]
 
 # A block with no segments is a deliberate blank row.
 [[lines]]
@@ -37,7 +37,7 @@ segments = ["limit.7d"]
 That is the `reference` preset, and it produces:
 
 ```
-Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ◕ high
+Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
 weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm

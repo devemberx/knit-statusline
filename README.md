@@ -15,7 +15,7 @@
 </div>
 
 ```
-Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ◕ high
+Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
 weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm
@@ -130,7 +130,7 @@ with its own `.claude/statusline.toml`. Each `[[lines]]` block is one row, and
 
 ```toml
 [[lines]]
-segments = ["model", "context", "dir", "session", "effort"]
+segments = ["model", "context", "dir", "effort"]
 
 # A block with no segments is a deliberate blank row.
 [[lines]]
