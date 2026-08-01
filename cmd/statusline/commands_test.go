@@ -425,6 +425,7 @@ func TestUninstallOnACleanHome(t *testing.T) {
 }
 
 func TestDoctorReportsUnknownSetting(t *testing.T) {
+	isolate(t)
 	var stdout, stderr bytes.Buffer
 	if code := runDoctor(nil, &stdout, &stderr); code != 0 {
 		t.Fatalf("runDoctor = %d, want 0", code)
@@ -435,6 +436,7 @@ func TestDoctorReportsUnknownSetting(t *testing.T) {
 }
 
 func TestDoctorMarksStableSegments(t *testing.T) {
+	isolate(t)
 	var stdout, stderr bytes.Buffer
 	runDoctor(nil, &stdout, &stderr)
 	out := stdout.String()
@@ -443,20 +445,25 @@ func TestDoctorMarksStableSegments(t *testing.T) {
 	}
 }
 
+// context is field that discriminate --unknown from --sparse: limit.5h and
+// limit.7d render "…%" under both, sparse.json carrying no rate_limits at
+// all regardless of freshness.
 func TestPreviewUnknownRendersPlaceholders(t *testing.T) {
+	isolate(t)
 	t.Setenv("NO_COLOR", "1")
 	var stdout, stderr bytes.Buffer
 	if code := runPreview([]string{"--preset", "reference", "--unknown"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("runPreview = %d, want 0, stderr = %s", code, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), config.DefaultUnknown) {
-		t.Fatalf("preview --unknown printed no placeholder: %s", stdout.String())
+	if !strings.Contains(stdout.String(), "✍️ "+config.DefaultUnknown) {
+		t.Fatalf("preview --unknown printed no context placeholder: %s", stdout.String())
 	}
 }
 
 // sparse.json carry cost and lines populated with real zeros already, so
 // context is where two preview modes diverge.
 func TestPreviewSparseRendersFreshZeros(t *testing.T) {
+	isolate(t)
 	t.Setenv("NO_COLOR", "1")
 	var stdout, stderr bytes.Buffer
 	if code := runPreview([]string{"--preset", "reference", "--sparse"}, &stdout, &stderr); code != 0 {
