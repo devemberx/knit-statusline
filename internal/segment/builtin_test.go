@@ -360,21 +360,30 @@ func TestContextIconIsWhiteField(t *testing.T) {
 
 // Three build paths, three separate field maps. Icon missing from one expand to
 // nothing and shrink slot mid-session, which read as crash.
+//
+// wantPct pin which path each case land on. fixtures.Unknown gaining context
+// block would fold fresh-zero and unknown cases onto known-percentage path,
+// icon assertion alone cannot tell drift.
 func TestContextIconSurvivesEveryPath(t *testing.T) {
 	for _, tc := range []struct {
-		name  string
-		doc   []byte
-		fresh bool
+		name    string
+		doc     []byte
+		fresh   bool
+		wantPct string
 	}{
-		{"known", fixtures.Full, false},
-		{"fresh zero", fixtures.Unknown, true},
-		{"unknown", fixtures.Unknown, false},
+		{"known", fixtures.Full, false, "42"},
+		{"fresh zero", fixtures.Unknown, true, "0"},
+		{"unknown", fixtures.Unknown, false, config.DefaultUnknown},
 	} {
 		c := ctx(t, tc.doc, "context")
 		c.Fresh = tc.fresh
 		res := Build(c)
 		if res.Empty {
 			t.Fatalf("%s: context dropped its slot", tc.name)
+		}
+		if got := res.Fields["pct"].Text; got != tc.wantPct {
+			t.Fatalf("%s: fixture no longer exercise its path: {pct} = %q, want %q",
+				tc.name, got, tc.wantPct)
 		}
 		if got := res.Fields["icon"].Text; got != contextIcon {
 			t.Errorf("%s: context {icon} = %q, want %q", tc.name, got, contextIcon)

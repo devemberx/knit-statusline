@@ -68,20 +68,42 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 	}
 }
 
+// fixtureDocs enumerate documents that sweep every build path a segment can
+// take. Shared between TestProducedFieldsAreDeclared and
+// TestDeclaredIconAlwaysProduced.
+var fixtureDocs = []struct {
+	name string
+	doc  []byte
+}{
+	{"full", fixtures.Full},
+	{"sparse", fixtures.Sparse},
+	{"unknown", fixtures.Unknown},
+	{"empty", fixtures.Empty},
+}
+
+// cavemanConfigDir seed temp dir with active flag file, so caveman escape its
+// ConfigDir=="" guard for tests whose ctx() leaves ConfigDir unset. Shared
+// between TestProducedFieldsAreDeclared and TestDeclaredIconAlwaysProduced.
+func cavemanConfigDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, cavemanFlagFile), []byte("full"), 0o644); err != nil {
+		t.Fatalf("seed caveman flag file: %v", err)
+	}
+	return dir
+}
+
 // CLAUDE.md rule, checked rather than trusted: field Build populate but
 // Def.Fields omit is invisible to doctor and to config validation, so user meet
 // placeholder that expand to nothing. Run across all three fixtures, since which
 // fields appear depend on input.
+//
+// caveman need flag file on disk, absent from every fixture and from ctx()'s
+// own ConfigDir -- without cavemanConfigDir seeding it, every combination below
+// returns empty and this test never checks caveman's produced fields at all.
 func TestProducedFieldsAreDeclared(t *testing.T) {
-	for _, f := range []struct {
-		name string
-		doc  []byte
-	}{
-		{"full", fixtures.Full},
-		{"sparse", fixtures.Sparse},
-		{"unknown", fixtures.Unknown},
-		{"empty", fixtures.Empty},
-	} {
+	cavemanDir := cavemanConfigDir(t)
+	for _, f := range fixtureDocs {
 		// Fresh branch build own field set, so live pass alone check half of
 		// what stable segment produce.
 		for _, fresh := range []bool{false, true} {
@@ -89,6 +111,9 @@ func TestProducedFieldsAreDeclared(t *testing.T) {
 				def, _ := Lookup(kind)
 				c := ctx(t, f.doc, kind)
 				c.Fresh = fresh
+				if kind == "caveman" {
+					c.ConfigDir = cavemanDir
+				}
 				for name := range Build(c).Fields {
 					if !slices.Contains(def.Fields, name) {
 						t.Errorf("%s/%s fresh=%v: Build produce {%s}, absent from Def.Fields %v",
@@ -290,25 +315,14 @@ func TestBuildInjectsStableFromRegistry(t *testing.T) {
 //
 // Coverage differ per segment, not uniform across matrix. context and session
 // hold slot, so all 4 fixtures x 2 fresh states reach them. caveman need flag
-// file on disk, absent from every fixture, so test seed one config dir and
+// file on disk, absent from every fixture, so cavemanConfigDir seed one and
 // point caveman there instead of skip. effort fire only where fixture carry
 // effort level -- fixtures.Full alone -- so check run 2 of 8 combinations,
 // same as any segment gated on payload content.
 func TestDeclaredIconAlwaysProduced(t *testing.T) {
-	cavemanDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(cavemanDir, cavemanFlagFile), []byte("full"), 0o644); err != nil {
-		t.Fatalf("seed caveman flag file: %v", err)
-	}
+	cavemanDir := cavemanConfigDir(t)
 
-	for _, f := range []struct {
-		name string
-		doc  []byte
-	}{
-		{"full", fixtures.Full},
-		{"sparse", fixtures.Sparse},
-		{"unknown", fixtures.Unknown},
-		{"empty", fixtures.Empty},
-	} {
+	for _, f := range fixtureDocs {
 		for _, fresh := range []bool{false, true} {
 			for _, kind := range Names() {
 				def, _ := Lookup(kind)

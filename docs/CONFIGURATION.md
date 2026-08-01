@@ -309,10 +309,13 @@ Thresholds escalate green → orange → yellow → red as a percentage climbs p
 `warn`, `high` and `crit`. Filled bar segments carry that color and the
 remainder is dimmed.
 
-Segment icons are fields, not template text, so they carry their own colour
+Segment icons are fields, not template text, so they carry their own color
 rather than the muted weight the rest of a label gets. `context` and `session`
-render theirs in white; `effort` and `caveman` colour theirs to match what they
-report. Drop `{icon}` from a template and the glyph goes with it.
+render theirs in white; `effort` colors its icon by level, `caveman` uses
+orange. Drop `{icon}` from a template and the glyph goes with it. A literal
+glyph typed into a template instead of `{icon}` still takes the segment's base
+color, so a custom `context` template carrying a literal `✍️` keeps the
+washed-out look.
 
 The `effort` segment has its own scale. Claude Code defines five levels, and each
 gets a distinct glyph and color:
