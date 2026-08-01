@@ -248,7 +248,7 @@ func TestHoldsSlotNeedsStableAndUnknown(t *testing.T) {
 // registry up again.
 func TestBuildInjectsStableFromRegistry(t *testing.T) {
 	var seen bool
-	register("test.stable-probe", Def{
+	registerTemp(t, "test.stable-probe", Def{
 		Fields:          []string{"x"},
 		DefaultTemplate: "{x}",
 		Stable:          true,
