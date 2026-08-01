@@ -320,8 +320,13 @@ gets a distinct glyph and color:
 | `xhigh` | `●` | magenta |
 | `max` | `✦` | orange |
 
+Ultracode is a sixth entry Claude Code does not report as a level — it arrives as
+plain `xhigh`, and the segment derives it from the session transcript instead. It
+renders as `✺ ultra` in pink, and falls back to `● xhigh` whenever detection
+fails.
+
 A level the binary does not recognise renders `○` in dim — its own slot, so it
-never reads as `medium`. The glyphs form a fill ramp, so the five levels stay
+never reads as `medium`. The glyphs form a fill ramp, so the levels stay
 distinguishable with color switched off.
 
 Setting the `NO_COLOR` environment variable to anything non-empty disables color

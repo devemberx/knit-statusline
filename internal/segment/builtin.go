@@ -59,39 +59,6 @@ func init() {
 		},
 	})
 
-	register("effort", Def{
-		Fields:          []string{"level", "icon"},
-		DefaultTemplate: "{icon} {level}",
-		Build: func(c Context) Result {
-			// Absent on models without effort parameter, where showing default
-			// would claim setting this session does not have.
-			if c.In.Effort == nil || c.In.Effort.Level == "" {
-				return empty
-			}
-			level := c.In.Effort.Level
-			// Payload collapse ultracode into xhigh (claude-code#69068);
-			// transcript markers carry live state. Gate on xhigh: stale enter
-			// marker after silent drop (claude-code#80901 model switch, no exit
-			// written) must never upgrade another level.
-			if level == "xhigh" && ultracodeOn(c) {
-				level = "ultracode"
-			}
-			icon, color := effortStyle(level)
-			display := level
-			if level == "ultracode" {
-				// Row space tight; "ultra" read same and fit.
-				display = "ultra"
-			}
-			return Result{
-				Base: color,
-				Fields: render.Fields{
-					"icon":  render.Colored(icon, color),
-					"level": render.Colored(display, color),
-				},
-			}
-		},
-	})
-
 	register("limit.5h", Def{
 		Fields:          []string{"pct", "bar", "reset", "reset_time"},
 		DefaultTemplate: "current {bar} {pct:>3}%{reset}",
@@ -418,30 +385,6 @@ func apiDuration(c Context) (string, bool) {
 		return duration(0), true
 	}
 	return c.Cfg.Unknown, true
-}
-
-// Fill ramp read without color, so NO_COLOR terminal still separate max from
-// high. Unknown level take empty circle, never medium's glyph.
-func effortStyle(level string) (string, render.Color) {
-	switch level {
-	case "ultracode":
-		// "ultracode" reach here two ways: transcript markers upgrading xhigh, and
-		// claude-code#77812 builds leaking it verbatim in effort.level. Magenta
-		// shared with xhigh on purpose -- same tier, glyph carry difference.
-		return "✺", render.Magenta
-	case "max":
-		return "✦", render.Orange
-	case "xhigh":
-		return "●", render.Magenta
-	case "high":
-		return "◕", render.Cyan
-	case "medium":
-		return "◑", render.White
-	case "low":
-		return "◔", render.Dim
-	default:
-		return "○", render.Dim
-	}
 }
 
 type window int
