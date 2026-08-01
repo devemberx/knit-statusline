@@ -97,34 +97,36 @@ func TestMinimalPresetOnFullData(t *testing.T) {
 	}
 }
 
-// Case reference bash implementation get wrong. Rate limits invent nothing: no
-// empty bars, no blank rows left by vanished segments. context differ --
-// Sparse's transcript_path name file that does not exist, so probe prove
-// session fresh and 0% is fact, not invention. Stable slot hold that fact.
+// Case reference bash implementation get wrong: no blank rows left by
+// vanished segments. context differs from limit.5h/limit.7d here: Sparse's
+// transcript_path name file that does not exist, so probe prove session fresh
+// and 0% is fact, not invention. Rate limit windows carry no such proof --
+// account-wide state survive across sessions, so absent rate_limits still owe
+// a row, held at placeholder rather than a zero that would lie about room left.
 func TestReferencePresetOnSparseData(t *testing.T) {
 	got := drawPreset(t, "reference", fixtures.Sparse)
-	want := "Sonnet 5 │ ✍️ 0% │ scratch │ ⏱ 1s"
+	want := strings.Join([]string{
+		"Sonnet 5 │ ✍️ 0% │ scratch │ ⏱ 1s",
+		"",
+		"current ○○○○○○○○○○   …%",
+		"weekly  ○○○○○○○○○○   …%",
+	}, "\n")
 
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	for _, forbidden := range []string{"current", "weekly", "○"} {
-		if strings.Contains(got, forbidden) {
-			t.Errorf("output invents %q from missing data: %q", forbidden, got)
-		}
-	}
 }
 
-// Every non-stable segment come back empty. context, session, cost, lines and
-// tokens differ: fixtures.Empty carry no transcript_path, freshness
+// Every non-stable segment come back empty. context, session, limit.5h and
+// limit.7d differ: fixtures.Empty carry no transcript_path, freshness
 // unprovable rather than proven, so each Stable slot hold placeholder instead
 // of dropping or printing bare zero. Printing Fallback past that remains
 // caller's job.
 func TestEmptyDocumentRendersOnlyStableSlots(t *testing.T) {
 	for _, tc := range []struct{ preset, want string }{
 		{"minimal", "✍️ …%"},
-		{"reference", "✍️ …% │ ⏱ …"},
-		{"verbose", "✍️ …% │ ⏱ …\n↑… ↓… │ +… -… │ $…"},
+		{"reference", "✍️ …% │ ⏱ …\n\ncurrent ○○○○○○○○○○   …%\nweekly  ○○○○○○○○○○   …%"},
+		{"verbose", "✍️ …% │ ⏱ …\ncurrent ○○○○○○○○○○   …%  weekly ○○○○○○○○○○   …%\n↑… ↓… │ +… -… │ $…"},
 		{"api", "✍️ …% │ ⏱ …\n↑… ↓… │ +… -… │ $…"},
 	} {
 		if got := drawPreset(t, tc.preset, fixtures.Empty); got != tc.want {
@@ -218,13 +220,16 @@ separator = "  "
 
 // Absent value leave no bare separator standing for information that does not
 // exist.
+// pr and vim stand in for "genuinely empty on Sparse" -- limit.5h/limit.7d no
+// longer qualify: both are Stable, so absent rate_limits hold their row at a
+// placeholder rather than dropping it.
 func TestRowWithOnlyEmptySegmentsIsDropped(t *testing.T) {
 	cfg := parseTOML(t, `
 [[lines]]
 segments = ["model"]
 
 [[lines]]
-segments = ["limit.5h", "limit.7d"]
+segments = ["pr", "vim"]
 `)
 
 	if got := draw(t, cfg, fixtures.Sparse); got != "Sonnet 5" {
@@ -250,8 +255,10 @@ segments = ["version"]
 	}
 }
 
-// Both limit segments empty in Sparse, so their row drop and leave two blanks
-// adjacent. Run of two or more collapse to one.
+// Both pr and vim empty in Sparse, so their row drop and leave two blanks
+// adjacent. Run of two or more collapse to one. limit.5h/limit.7d no longer
+// serve here -- both Stable, so absent rate_limits hold their row instead of
+// dropping it.
 func TestBlankRunCollapses(t *testing.T) {
 	cfg := parseTOML(t, `
 [[lines]]
@@ -260,7 +267,7 @@ segments = ["model"]
 [[lines]]
 
 [[lines]]
-segments = ["limit.5h", "limit.7d"]
+segments = ["pr", "vim"]
 
 [[lines]]
 

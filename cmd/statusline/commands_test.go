@@ -55,9 +55,13 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 	if !strings.Contains(sparse, "degraded data") {
 		t.Errorf("sparse preview missing its label:\n%s", sparse)
 	}
-	// Degraded case is where invented value would show first.
-	if strings.Contains(sparse, "current ") || strings.Contains(sparse, "weekly ") {
-		t.Errorf("sparse preview invented rate limits:\n%s", sparse)
+	// limit.5h and limit.7d are Stable: no rate_limits still holds their row
+	// with placeholder rather than dropping it, never a fake zero or percentage.
+	if !strings.Contains(sparse, "current ○○○○○○○○○○   …%") {
+		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
+	}
+	if !strings.Contains(sparse, "weekly  ○○○○○○○○○○   …%") {
+		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
 	}
 }
 

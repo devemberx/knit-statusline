@@ -82,12 +82,14 @@ func init() {
 	register("limit.5h", Def{
 		Fields:          []string{"pct", "bar", "reset", "reset_time"},
 		DefaultTemplate: "current {bar} {pct:>3}%{reset}",
+		Stable:          true,
 		Build:           limitBuilder(fiveHour),
 	})
 
 	register("limit.7d", Def{
 		Fields:          []string{"pct", "bar", "reset", "reset_time"},
 		DefaultTemplate: "weekly {bar} {pct:>3}%{reset}",
+		Stable:          true,
 		Build:           limitBuilder(sevenDay),
 	})
 
@@ -411,7 +413,7 @@ const (
 func limitBuilder(w window) func(Context) Result {
 	return func(c Context) Result {
 		if c.In.RateLimits == nil {
-			return empty
+			return limitNoWindow(c)
 		}
 		win := c.In.RateLimits.FiveHour
 		format := clockTime
@@ -421,7 +423,7 @@ func limitBuilder(w window) func(Context) Result {
 			format = dateTime
 		}
 		if win == nil {
-			return empty
+			return limitNoWindow(c)
 		}
 
 		t := c.Thresholds()
@@ -442,4 +444,24 @@ func limitBuilder(w window) func(Context) Result {
 		}
 		return Result{Base: render.White, Fields: f}
 	}
+}
+
+// limitNoWindow render a window nobody reported.
+//
+// No fresh-zero state here, unlike every other stable segment: window is
+// account-wide and carry across sessions, so a new session may open at 80%
+// used. Zero would read as room that does not exist.
+//
+// Empty Thresholds leave bar uncolored: severity of unknown percentage
+// is unknown too, and green bar claim otherwise.
+func limitNoWindow(c Context) Result {
+	if !c.holdsSlot() {
+		return empty
+	}
+	return Result{Base: render.White, Fields: render.Fields{
+		"pct":        render.Colored(c.Cfg.Unknown, render.Dim),
+		"bar":        render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, render.Thresholds{})),
+		"reset":      render.Plain(""),
+		"reset_time": render.Plain(""),
+	}}
 }

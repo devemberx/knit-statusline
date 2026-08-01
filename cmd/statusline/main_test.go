@@ -97,14 +97,17 @@ func TestRenderFallsBackToModelName(t *testing.T) {
 	}
 }
 
-// Bare {} through default preset: context and session both hold their slot --
-// both Stable, and no transcript_path leave freshness unprovable rather than
-// proven. Row come back non-empty, so Fallback deliberately never fire here --
-// placeholder itself already prove binary ran.
+// Bare {} through default preset: context, session, limit.5h and limit.7d all
+// hold their slot -- all four Stable, and no transcript_path leave freshness
+// unprovable rather than proven. limit.5h/limit.7d hold theirs regardless of
+// freshness: no rate_limits at all still owe a row, never a fake zero. Row
+// come back non-empty, so Fallback deliberately never fire here -- placeholder
+// itself already prove binary ran.
 func TestRenderOnBarePayloadShowsStableSlotNotFallback(t *testing.T) {
 	isolate(t)
 	got := drawStdin(t, []byte(`{}`))
-	if want := "✍️ …% │ ⏱ …"; strings.TrimSpace(got) != want {
+	want := "✍️ …% │ ⏱ …\n\ncurrent ○○○○○○○○○○   …%\nweekly  ○○○○○○○○○○   …%"
+	if strings.TrimSpace(got) != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }

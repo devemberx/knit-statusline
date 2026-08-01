@@ -36,13 +36,12 @@ func TestDefaultTemplatesOnFullData(t *testing.T) {
 
 // Sparse document is non-subscriber on first render. Every segment resting on
 // data that has not arrived must drop out rather than print a placeholder.
-// context excluded: it is Stable now, holding its slot instead of dropping --
-// see TestContextLiveWithoutUsageRendersUnknown.
+// context, limit.5h and limit.7d excluded: all three are Stable now, holding
+// their slot instead of dropping -- see TestContextLiveWithoutUsageRendersUnknown
+// and TestLimitNeverRendersZeroWhenFresh.
 func TestSegmentsAbsentOnSparseData(t *testing.T) {
 	for _, kind := range []string{
 		"effort",       // model carry no effort parameter
-		"limit.5h",     // rate_limits reach subscribers only
-		"limit.7d",     //
 		"repo",         // directory outside any known repository
 		"vim",          // vim mode off
 		"pr",           // no pull request open
@@ -247,11 +246,17 @@ func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 }
 
 // Rate limit windows go absent one at a time, so each level need its own check.
+// five_hour going nil no longer empties segment -- limit.5h is Stable, so it
+// holds its slot with placeholder instead of dropping.
 func TestLimitWindowsAreIndependent(t *testing.T) {
 	c := ctx(t, fixtures.Full, "limit.5h")
 	c.In.RateLimits.FiveHour = nil
-	if res := Build(c); !res.Empty {
-		t.Errorf("missing five_hour gave %+v, want empty", res)
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("missing five_hour dropped the segment, want held placeholder")
+	}
+	if got := res.Fields["pct"].Text; got != config.DefaultUnknown {
+		t.Errorf("pct = %q, want %q", got, config.DefaultUnknown)
 	}
 
 	weekly := ctx(t, fixtures.Full, "limit.7d")
@@ -570,5 +575,71 @@ func TestOptedOutDropsSessionCostLines(t *testing.T) {
 				t.Fatal("unknown = \"\" did not drop the segment")
 			}
 		})
+	}
+}
+
+// Account-wide window survive across sessions, so a new session may open at 80%
+// used. Zero there invite spending a window that is nearly gone.
+func TestLimitNeverRendersZeroWhenFresh(t *testing.T) {
+	for _, name := range []string{"limit.5h", "limit.7d"} {
+		t.Run(name, func(t *testing.T) {
+			res := buildNamed(t, name, &schema.Input{}, true)
+			if res.Empty {
+				t.Fatal("limit returned empty")
+			}
+			if got := res.Fields["pct"].Text; got != config.DefaultUnknown {
+				t.Fatalf("pct = %q, want %q", got, config.DefaultUnknown)
+			}
+		})
+	}
+}
+
+func TestLimitUnknownRendersEmptyBarAndNoReset(t *testing.T) {
+	res := buildNamed(t, "limit.5h", &schema.Input{}, false)
+	if got := res.Fields["bar"].Text; got != "○○○○○○○○○○" {
+		t.Fatalf("bar = %q, want ten empty cells", got)
+	}
+	if got := res.Fields["reset"].Text; got != "" {
+		t.Fatalf("reset = %q, want empty", got)
+	}
+	if got := res.Fields["reset_time"].Text; got != "" {
+		t.Fatalf("reset_time = %q, want empty", got)
+	}
+}
+
+// One window absent while other report: only absent one placeholder.
+func TestLimitWindowsResolveIndependently(t *testing.T) {
+	in := &schema.Input{RateLimits: &schema.RateLimits{
+		FiveHour: &schema.Window{UsedPercentage: 42},
+	}}
+	if got := buildNamed(t, "limit.5h", in, false).Fields["pct"].Text; got != "42" {
+		t.Fatalf("limit.5h pct = %q, want %q", got, "42")
+	}
+	if got := buildNamed(t, "limit.7d", in, false).Fields["pct"].Text; got != config.DefaultUnknown {
+		t.Fatalf("limit.7d pct = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
+func TestLimitOptedOutDrops(t *testing.T) {
+	def, _ := Lookup("limit.5h")
+	c := ctxFor("limit.5h", &schema.Input{}, false)
+	c.Cfg.Unknown = ""
+	if !def.Build(c).Empty {
+		t.Fatal("unknown = \"\" did not drop the segment")
+	}
+}
+
+// Every segment design name stable, no other. Last registration land in this
+// task, so whole set is pinned here.
+func TestStableSegmentSet(t *testing.T) {
+	want := map[string]bool{
+		"context": true, "session": true, "cost": true, "lines": true,
+		"tokens": true, "limit.5h": true, "limit.7d": true,
+	}
+	for _, name := range Names() {
+		def, _ := Lookup(name)
+		if def.Stable != want[name] {
+			t.Errorf("%s Stable = %v, want %v", name, def.Stable, want[name])
+		}
 	}
 }
