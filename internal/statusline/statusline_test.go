@@ -99,6 +99,24 @@ func TestMinimalPresetOnFullData(t *testing.T) {
 	}
 }
 
+// Second preset whose first row lost "session". Pinned same reason as
+// reference: header comment and render must not drift apart.
+//
+// tokens read 0, not fixture usage: full.json transcript_path name file that
+// does not exist, which prove session sent nothing rather than fail probe. Row
+// shape is what this guard, not counts.
+func TestAPIPresetOnFullData(t *testing.T) {
+	got := drawPreset(t, "api", fixtures.Full)
+	want := strings.Join([]string{
+		"Opus 4.8 │ ✍️ 42% │ acme │ ◕ high",
+		"↑0 ↓0 │ +156 -23 │ $1.23",
+	}, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
 // Case reference bash implementation get wrong: no blank rows left by
 // vanished segments. context differs from limit.5h/limit.7d here: Sparse's
 // transcript_path name file that does not exist, so probe prove session fresh
