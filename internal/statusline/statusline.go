@@ -20,6 +20,10 @@ type Options struct {
 	Now      time.Time
 	CacheDir string
 
+	// Claude Code config root. Segment reading file beside settings.json get it
+	// from here, never from environment -- test point it at temp directory.
+	ConfigDir string
+
 	// Appended to first row when config unusable as written. Terse -- no room
 	// on row; doctor hold full text.
 	Warning string
@@ -91,11 +95,12 @@ func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name stri
 
 	resolved := cfg.Resolve(name, def.DefaultTemplate)
 	res := segment.Build(segment.Context{
-		In:       in,
-		Cfg:      resolved,
-		Palette:  opts.Palette,
-		Now:      opts.Now,
-		CacheDir: opts.CacheDir,
+		In:        in,
+		Cfg:       resolved,
+		Palette:   opts.Palette,
+		Now:       opts.Now,
+		CacheDir:  opts.CacheDir,
+		ConfigDir: opts.ConfigDir,
 	})
 	if res.Empty {
 		return ""

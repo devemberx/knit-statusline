@@ -44,12 +44,20 @@ func parseInput(t *testing.T, doc []byte) *schema.Input {
 	return in
 }
 
+// Empty config root by default: segment reading file beside settings.json find
+// nothing, so unrelated golden row stay put wherever suite run.
 func draw(t *testing.T, cfg *config.Config, doc []byte) string {
 	t.Helper()
+	return drawIn(t, cfg, doc, t.TempDir())
+}
+
+func drawIn(t *testing.T, cfg *config.Config, doc []byte, configDir string) string {
+	t.Helper()
 	return Render(cfg, parseInput(t, doc), Options{
-		Palette:  render.NoColor(),
-		Now:      time.Unix(fixtures.PreviewEpoch, 0),
-		CacheDir: t.TempDir(),
+		Palette:   render.NoColor(),
+		Now:       time.Unix(fixtures.PreviewEpoch, 0),
+		CacheDir:  t.TempDir(),
+		ConfigDir: configDir,
 	})
 }
 
@@ -443,5 +451,26 @@ func TestZeroNowDefaultsToWallClock(t *testing.T) {
 	got := Render(cfg, in, Options{Palette: render.NoColor()})
 	if strings.Contains(got, "jan 1,") {
 		t.Errorf("zero Now leaked the epoch into %q", got)
+	}
+}
+
+// Whole path: Options carry config root, segment find flag, row show level.
+func TestCavemanSegmentReachesRow(t *testing.T) {
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, ".caveman-active"), []byte("ultra"), 0o644); err != nil {
+		t.Fatalf("write flag: %v", err)
+	}
+
+	cfg := parseTOML(t, `
+[[lines]]
+segments = ["model", "caveman"]
+`)
+	if got, want := drawIn(t, cfg, fixtures.Full, configDir), "Opus 4.8 │ 🦴 ultra"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+
+	// Plugin not installed: segment and its separator both go.
+	if got, want := drawIn(t, cfg, fixtures.Full, t.TempDir()), "Opus 4.8"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
 	}
 }
