@@ -4,7 +4,9 @@
 #
 #   Opus 4.8 │ ✍️ 42% │ acme
 #
-# Add "effort" for reasoning level.
+# Add "effort" for reasoning level. It reads the transcript when the level is
+# xhigh, to tell ultracode from plain xhigh, so the no-file-read line above
+# stops holding.
 
 [[lines]]
 segments = ["model", "context", "dir"]
