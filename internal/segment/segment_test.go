@@ -56,9 +56,9 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 		t.Errorf("Names() must be sorted for doctor output: %v", names)
 	}
 	for _, want := range []string{
-		"command", "context", "cost", "dir", "effort", "fast_mode", "limit.5h",
-		"limit.7d", "lines", "model", "output_style", "pr", "repo", "session",
-		"thinking", "tokens", "version", "vim",
+		"caveman", "command", "context", "cost", "dir", "effort", "fast_mode",
+		"limit.5h", "limit.7d", "lines", "model", "output_style", "pr", "repo",
+		"session", "thinking", "tokens", "version", "vim",
 	} {
 		if !slices.Contains(names, want) {
 			t.Errorf("segment %q not registered", want)

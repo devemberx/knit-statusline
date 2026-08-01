@@ -225,6 +225,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `output_style` | `name` | |
 | `fast_mode` | `state` | Only rendered when enabled |
 | `thinking` | `state` | Only rendered when enabled |
+| `caveman` | `mode` `icon` `savings` | Only while the [caveman](https://github.com/juliusbrussee/caveman) plugin is active; `{savings}` needs `/caveman-stats` and is out of the default template |
 | `command` | `out` | Your own shell command |
 
 Abbreviated counts read as `62.1k`, `1.2M`, `364.9M`. The `_raw` fields give

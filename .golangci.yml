@@ -84,6 +84,14 @@ linters:
         linters:
           - gosec
 
+      # G304 file-inclusion taint: caveman flag path derive from
+      # CLAUDE_CONFIG_DIR or $HOME, never from stdin. Read sit behind Lstat
+      # regular-file check and 64-byte cap, tighter than taint check ask for.
+      - path: internal/segment/caveman\.go
+        text: G304
+        linters:
+          - gosec
+
       # G204 subprocess taint: command segment run user's own command by design.
       # G301 dir mode: command cache sit under $HOME/.claude at conventional
       # 0o755. Scoped per file, so a later segment shelling out get flagged.

@@ -14,11 +14,15 @@ import (
 
 // isolate point homeDir() at a scratch directory, so no test read or write real
 // ~/.claude. USERPROFILE set too: os.UserHomeDir read that one on Windows.
+//
+// CLAUDE_CONFIG_DIR pinned too: configDir() read it before HOME, so developer
+// who moved config root otherwise send these tests at real one.
 func isolate(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
 	return home
 }
 
@@ -216,5 +220,27 @@ func TestUsageListsEveryPreset(t *testing.T) {
 		if !strings.Contains(out.String(), name) {
 			t.Errorf("usage omits preset %q:\n%s", name, out.String())
 		}
+	}
+}
+
+// Caveman hook read CLAUDE_CONFIG_DIR before ~/.claude when it write flag, so
+// segment looking for that flag must resolve root same way or read wrong
+// directory for anyone who moved theirs.
+func TestConfigDirFollowsEnvThenHome(t *testing.T) {
+	home := isolate(t)
+	if got, want := configDir(), filepath.Join(home, ".claude"); got != want {
+		t.Errorf("pinned CLAUDE_CONFIG_DIR gave %q, want %q", got, want)
+	}
+
+	moved := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+	if got := configDir(); got != moved {
+		t.Errorf("CLAUDE_CONFIG_DIR=%q gave %q", moved, got)
+	}
+
+	// Empty read same as unset: os.Getenv cannot tell those apart.
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	if got, want := configDir(), filepath.Join(home, ".claude"); got != want {
+		t.Errorf("empty CLAUDE_CONFIG_DIR gave %q, want %q", got, want)
 	}
 }

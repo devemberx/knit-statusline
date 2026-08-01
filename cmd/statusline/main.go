@@ -110,10 +110,11 @@ func renderFromStdin(stdin io.Reader, stdout io.Writer) {
 	res := config.Load(home, projectDir(in))
 
 	out := statusline.Render(res.Config, in, statusline.Options{
-		Palette:  palette,
-		Now:      time.Now(),
-		CacheDir: cacheDir(),
-		Warning:  marker(res, home),
+		Palette:   palette,
+		Now:       time.Now(),
+		CacheDir:  cacheDir(),
+		ConfigDir: configDir(),
+		Warning:   marker(res, home),
 	})
 
 	// Every segment empty: valid document with nothing populated yet, or layout
@@ -181,4 +182,15 @@ func homeDir() string {
 
 func cacheDir() string {
 	return filepath.Join(homeDir(), ".claude", "statusline-cache")
+}
+
+// configDir locate Claude Code config root.
+//
+// CLAUDE_CONFIG_DIR is what caveman hook read when it write flag, so segment
+// must read same variable or look in wrong directory for people who move it.
+func configDir() string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(homeDir(), ".claude")
 }

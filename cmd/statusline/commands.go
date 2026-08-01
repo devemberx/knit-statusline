@@ -152,8 +152,9 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, statusline.Render(cfg, in, statusline.Options{
 		Palette: render.NewPalette(),
 		// Fixed instant keep reset times stable, so two previews compare.
-		Now:      time.Unix(fixtures.PreviewEpoch, 0),
-		CacheDir: cacheDir(),
+		Now:       time.Unix(fixtures.PreviewEpoch, 0),
+		CacheDir:  cacheDir(),
+		ConfigDir: configDir(),
 	}))
 	fmt.Fprintln(stdout)
 
