@@ -802,3 +802,42 @@ func TestStableSegmentSet(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionIconIsWhiteField(t *testing.T) {
+	f := Build(ctx(t, fixtures.Full, "session")).Fields["icon"]
+	if f.Text != sessionIcon {
+		t.Errorf("session {icon} text = %q, want %q", f.Text, sessionIcon)
+	}
+	if f.Color != render.White {
+		t.Errorf("session {icon} color = %q, want White %q", f.Color, render.White)
+	}
+}
+
+// Placeholder duration take same field map as real one, so icon ride along.
+// Assert it rather than trust it -- unknown branch is where slot width matter.
+func TestSessionIconSurvivesUnknownDuration(t *testing.T) {
+	c := ctx(t, fixtures.Unknown, "session")
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("session dropped its slot on unknown duration")
+	}
+	if got := res.Fields["duration"].Text; got != config.DefaultUnknown {
+		t.Fatalf("fixture no longer exercise unknown path: {duration} = %q", got)
+	}
+	if got := res.Fields["icon"].Text; got != sessionIcon {
+		t.Errorf("session {icon} = %q, want %q", got, sessionIcon)
+	}
+}
+
+func TestSessionIconEscapesDim(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	c := ctx(t, fixtures.Full, "session")
+	c.Palette = render.NewPalette()
+	out := draw(c)
+	if strings.Contains(out, "\033[2m"+sessionIcon) {
+		t.Errorf("session icon still under dim: %q", out)
+	}
+	if !strings.Contains(out, string(render.White)+sessionIcon) {
+		t.Errorf("session icon not wrapped in White: %q", out)
+	}
+}

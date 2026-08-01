@@ -10,9 +10,12 @@ import (
 )
 
 // Icon sit in field, not template literal. Literal text take Result.Base, Base
-// is Dim for this segment, and SGR 2 over emoji glyph blend it into background
+// is Dim for both segments, and SGR 2 over emoji glyph blend it into background
 // until unreadable. effort and caveman already carry icon this way.
-const contextIcon = "✍️"
+const (
+	contextIcon = "✍️"
+	sessionIcon = "⏱"
+)
 
 func init() {
 	register("model", Def{
@@ -45,8 +48,8 @@ func init() {
 	})
 
 	register("session", Def{
-		Fields:          []string{"duration", "id", "name"},
-		DefaultTemplate: "⏱ {duration}",
+		Fields:          []string{"duration", "id", "name", "icon"},
+		DefaultTemplate: "{icon} {duration}",
 		Stable:          true,
 		Build: func(c Context) Result {
 			text, ok := sessionDuration(c)
@@ -54,6 +57,7 @@ func init() {
 				return empty
 			}
 			f := render.Fields{
+				"icon":     render.Colored(sessionIcon, render.White),
 				"duration": render.Colored(text, render.White),
 				"id":       render.Colored(c.In.SessionID, render.Dim),
 			}
