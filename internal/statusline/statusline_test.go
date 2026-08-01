@@ -66,7 +66,7 @@ func drawPreset(t *testing.T, preset string, doc []byte) string {
 func TestReferencePresetOnFullData(t *testing.T) {
 	got := drawPreset(t, "reference", fixtures.Full)
 	want := strings.Join([]string{
-		"Opus 4.8 │ ✍️ 42% │ acme │ ⏱ 1h15m │ ● high",
+		"Opus 4.8 │ ✍️ 42% │ acme │ ⏱ 1h15m │ ◕ high",
 		"",
 		"current ●●●●○○○○○○  42% ⟳ 8:00am",
 		"weekly  ●●○○○○○○○○  18% ⟳ jul 27, 8:00am",

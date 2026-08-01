@@ -276,14 +276,22 @@ func usedTokens(c Context) int64 {
 	return int64(p / 100 * float64(*cw.ContextWindowSize))
 }
 
+// Fill ramp read without color, so NO_COLOR terminal still separate max from
+// high. Unknown level take empty circle, never medium's glyph.
 func effortStyle(level string) (string, render.Color) {
 	switch level {
-	case "max", "xhigh", "high":
+	case "max":
+		return "✦", render.Orange
+	case "xhigh":
 		return "●", render.Magenta
+	case "high":
+		return "◕", render.Cyan
+	case "medium":
+		return "◑", render.White
 	case "low":
 		return "◔", render.Dim
 	default:
-		return "◑", render.Dim
+		return "○", render.Dim
 	}
 }
 

@@ -36,7 +36,7 @@ segments = ["limit.7d"]
 That is the `reference` preset, and it produces:
 
 ```
-Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
+Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ◕ high
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
 weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm
@@ -212,7 +212,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `context` | `pct` `remaining` `used` `size` `bar` | Absent before the first API call and after `/compact` |
 | `dir` | `name` `path` `project` `worktree` `git` `branch` `dirty` | `{git}` is a preformatted ` (branch*)`, empty outside a repo |
 | `session` | `duration` `id` `name` | |
-| `effort` | `level` `icon` | Absent on models without an effort parameter |
+| `effort` | `level` `icon` | Absent on models without an effort parameter; `{icon}` tracks the level — see [Colors](#colors) |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
 | `tokens` | `io` `cache` `cache_hit` `input` `cache_write` `cache_read` `output` `total` `input_raw` `output_raw` | Read from the transcript, so the totals are cumulative |
@@ -262,6 +262,21 @@ never leaves red.
 Thresholds escalate green → orange → yellow → red as a percentage climbs past
 `warn`, `high` and `crit`. Filled bar segments carry that color and the
 remainder is dimmed.
+
+The `effort` segment has its own scale. Claude Code defines five levels, and each
+gets a distinct glyph and color:
+
+| Level | Icon | Color |
+| --- | --- | --- |
+| `low` | `◔` | dim |
+| `medium` | `◑` | white |
+| `high` | `◕` | cyan |
+| `xhigh` | `●` | magenta |
+| `max` | `✦` | orange |
+
+A level the binary does not recognise renders `○` in dim — its own slot, so it
+never reads as `medium`. The glyphs form a fill ramp, so the five levels stay
+distinguishable with color switched off.
 
 Setting the `NO_COLOR` environment variable to anything non-empty disables color
 entirely.
