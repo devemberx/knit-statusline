@@ -7,7 +7,8 @@ After any edit:
 
 ```sh
 knit-statusline preview            # render sample data
-knit-statusline preview --sparse   # how it looks when values are missing
+knit-statusline preview --sparse   # how a fresh session looks: zeros, no rate limits
+knit-statusline preview --unknown  # how a resumed session looks before it reports anything
 knit-statusline doctor             # problems, with line numbers
 ```
 
@@ -117,6 +118,49 @@ crit = 85
 [segments.context]
 crit = 95           # this segment only
 ```
+
+### Choose what an unknown value shows
+
+Seven segments — `context`, `session`, `cost`, `lines`, `tokens`, `limit.5h`,
+`limit.7d` — hold their slot from the first render instead of dropping out until
+Claude Code has something to report. A status line that grows a segment
+mid-session reads as a bug as easily as a crash does, so the slot is there from
+the start either way:
+
+- The transcript proves the session has sent nothing yet, so the value really is
+  zero: `✍️ 0%`, `↑0 ↓0`.
+- The value is missing for any other reason — a resumed session, the gap after
+  `/compact`, an unreadable transcript: `✍️ …%`, `↑… ↓…`.
+
+Three segments never show the zero: `limit.5h` and `limit.7d` because both
+windows are account-wide and carry across sessions — a brand-new session can
+still open at 80% used — and `session` because its duration is wall-clock time:
+a session may sit idle for minutes before its first call, so an empty
+transcript proves nothing about how long it has been open.
+
+```toml
+[defaults]
+unknown = "…"
+
+[segments."limit.5h"]
+unknown = "?"
+```
+
+`…` is U+2026. It is one column wide in most terminals, but East Asian
+Ambiguous: a CJK-locale terminal that draws it two columns wide will shift
+alignment specs such as `{pct:>3}` by one column. Set `unknown = "?"` there.
+
+Setting `unknown = ""` opts a segment out entirely — no placeholder and no
+fresh zeros either, the segment drops out on a missing value the way every
+other segment already does:
+
+```toml
+[segments."limit.7d"]
+unknown = ""
+```
+
+`preview --sparse` and `preview --unknown`, shown above, are how you check both
+shapes without waiting for a real session to reach them.
 
 ---
 
@@ -246,10 +290,11 @@ exact digits.
 | `command` | `type = "command"` | What to run | — |
 | `timeout_ms` | `type = "command"`, `dir` | How long to wait — bounds the command, or the git call for `dir` | `1000` |
 | `cache_ms` | `type = "command"` | Reuse the previous output for this long | `0` |
+| `unknown` | `context`, `session`, `cost`, `lines`, `tokens`, `limit.5h`, `limit.7d` | Text shown while a value is unknown rather than dropping the segment; `""` opts back out | `…` |
 
-Set fallbacks for `separator`, `bar_width`, `warn`, `high` and `crit` under
-`[defaults]`. A per-line `separator` overrides the default for that row; the
-built-in separator is `" │ "`.
+Set fallbacks for `separator`, `bar_width`, `warn`, `high`, `crit` and `unknown`
+under `[defaults]`. A per-line `separator` overrides the default for that row;
+the built-in separator is `" │ "`.
 
 `warn` must not exceed `high`, nor `high` exceed `crit`, and the check runs
 against effective values — set `warn = 95` alone and it is compared against the

@@ -1,0 +1,16 @@
+{
+  "cwd": "/tmp/scratch",
+  "session_id": "00000000-0000-0000-0000-000000000000",
+  "transcript_path": "/tmp/scratch/does-not-exist.jsonl",
+  "model": {
+    "id": "claude-sonnet-5",
+    "display_name": "Sonnet"
+  },
+  "workspace": {
+    "current_dir": "/tmp/scratch",
+    "project_dir": "/tmp/scratch",
+    "added_dirs": []
+  },
+  "version": "2.1.211",
+  "exceeds_200k_tokens": false
+}

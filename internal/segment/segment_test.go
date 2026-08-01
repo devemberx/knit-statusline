@@ -77,14 +77,21 @@ func TestProducedFieldsAreDeclared(t *testing.T) {
 	}{
 		{"full", fixtures.Full},
 		{"sparse", fixtures.Sparse},
+		{"unknown", fixtures.Unknown},
 		{"empty", fixtures.Empty},
 	} {
-		for _, kind := range Names() {
-			def, _ := Lookup(kind)
-			for name := range Build(ctx(t, f.doc, kind)).Fields {
-				if !slices.Contains(def.Fields, name) {
-					t.Errorf("%s/%s: Build produce {%s}, absent from Def.Fields %v",
-						f.name, kind, name, def.Fields)
+		// Fresh branch build own field set, so live pass alone check half of
+		// what stable segment produce.
+		for _, fresh := range []bool{false, true} {
+			for _, kind := range Names() {
+				def, _ := Lookup(kind)
+				c := ctx(t, f.doc, kind)
+				c.Fresh = fresh
+				for name := range Build(c).Fields {
+					if !slices.Contains(def.Fields, name) {
+						t.Errorf("%s/%s fresh=%v: Build produce {%s}, absent from Def.Fields %v",
+							f.name, kind, fresh, name, def.Fields)
+					}
 				}
 			}
 		}
@@ -215,10 +222,62 @@ func TestThresholdsComeFromResolvedConfig(t *testing.T) {
 
 // Empty document is floor every segment must survive: valid JSON, nothing
 // populated. None may panic, and none may claim data it does not have.
+//
+// Two verdicts, read off Lookup rather than hand-kept name list: stable segment
+// hold its slot, so it must draw something; every other must draw nothing.
+// Skipping stable ones left seven segments with no floor test at all.
 func TestEverySegmentSurvivesEmptyDocument(t *testing.T) {
 	for _, kind := range Names() {
-		if got := draw(ctx(t, fixtures.Empty, kind)); got != "" {
+		def, _ := Lookup(kind)
+		got := draw(ctx(t, fixtures.Empty, kind))
+		if def.Stable {
+			if got == "" {
+				t.Errorf("%s is stable but dropped out of an empty document", kind)
+			}
+			continue
+		}
+		if got != "" {
 			t.Errorf("%s rendered %q from an empty document", kind, got)
 		}
+	}
+}
+
+func TestHoldsSlotNeedsStableAndUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stable  bool
+		unknown string
+		want    bool
+	}{
+		{"stable with text", true, "…", true},
+		{"stable opted out", true, "", false},
+		{"not stable", false, "…", false},
+		{"neither", false, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Context{stable: tc.stable, Cfg: config.Resolved{Unknown: tc.unknown}}
+			if got := c.holdsSlot(); got != tc.want {
+				t.Fatalf("holdsSlot = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Build own stable flag: builder read it through Context, never look
+// registry up again.
+func TestBuildInjectsStableFromRegistry(t *testing.T) {
+	var seen bool
+	registerTemp(t, "test.stable-probe", Def{
+		Fields:          []string{"x"},
+		DefaultTemplate: "{x}",
+		Stable:          true,
+		Build: func(c Context) Result {
+			seen = c.stable
+			return empty
+		},
+	})
+	Build(Context{Cfg: config.Resolved{Kind: "test.stable-probe", Unknown: "…"}})
+	if !seen {
+		t.Fatal("Build did not inject Def.Stable into Context")
 	}
 }

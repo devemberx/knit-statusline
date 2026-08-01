@@ -103,9 +103,12 @@ type RateLimits struct {
 	SevenDay *Window `json:"seven_day"`
 }
 
+// Window is one rate-limit window. UsedPercentage pointer like every other
+// optional: window object present with percentage null decode to 0 otherwise,
+// and 0% claim a full window on account that may sit at 80%.
 type Window struct {
-	UsedPercentage float64 `json:"used_percentage"`
-	ResetsAt       *int64  `json:"resets_at"`
+	UsedPercentage *float64 `json:"used_percentage"`
+	ResetsAt       *int64   `json:"resets_at"`
 }
 
 type Vim struct {

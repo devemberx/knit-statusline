@@ -315,6 +315,9 @@ func mergeDefaults(dst *Defaults, src Defaults) {
 	if src.Crit != nil {
 		dst.Crit = src.Crit
 	}
+	if src.Unknown != nil {
+		dst.Unknown = src.Unknown
+	}
 }
 
 func mergeSegment(dst, src *Segment) {
@@ -335,6 +338,9 @@ func mergeSegment(dst, src *Segment) {
 	}
 	if src.BarWidth != nil {
 		dst.BarWidth = src.BarWidth
+	}
+	if src.Unknown != nil {
+		dst.Unknown = src.Unknown
 	}
 	if src.Scope != nil {
 		dst.Scope = src.Scope

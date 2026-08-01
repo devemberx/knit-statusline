@@ -26,11 +26,26 @@ type Context struct {
 	// Claude Code config root -- settings.json live here, and caveman flag
 	// beside it. Level never reach stdin payload, so file is only source.
 	ConfigDir string
+
+	// Fresh mean transcript prove session sent nothing yet, so zero is a fact.
+	// False cover live session and unprovable freshness alike.
+	Fresh bool
+
+	// Set by Build from Def.Stable. Builder never reach registry itself.
+	stable bool
 }
 
 func (c Context) Thresholds() render.Thresholds {
 	return render.Thresholds{Warn: c.Cfg.Warn, High: c.Cfg.High, Crit: c.Cfg.Crit}
 }
+
+// holdsSlot report whether segment keep its place when its value is missing.
+//
+// Stable segment do, unless config blank Unknown -- single opt-out returning
+// pre-three-state behaviour, fresh zeros included. Somebody rejecting
+// placeholder reject "$0.00" sitting there too, and a second knob for that is a
+// knob nobody find.
+func (c Context) holdsSlot() bool { return c.stable && c.Cfg.Unknown != "" }
 
 // pipeDrain bound Wait after context cancellation. Killing a child leave any
 // grandchild holding inherited stdout, and Output() read to EOF regardless of
@@ -64,7 +79,14 @@ type Def struct {
 	// user meet silently blank segment.
 	Fields          []string
 	DefaultTemplate string
-	Build           func(Context) Result
+
+	// Stable segment hold its slot when value missing, rendering Cfg.Unknown
+	// rather than dropping. Row shape fixed from first render, so slot vanishing
+	// mid-session never read as crash. State flag stay false: absent already
+	// mean off there, and placeholder add noise, not fact.
+	Stable bool
+
+	Build func(Context) Result
 }
 
 var registry = map[string]Def{}
@@ -110,6 +132,7 @@ func Build(ctx Context) (res Result) {
 	if !ok {
 		return empty
 	}
+	ctx.stable = d.Stable
 	defer func() {
 		if recover() != nil {
 			res = empty

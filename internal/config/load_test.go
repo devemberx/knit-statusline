@@ -271,6 +271,34 @@ func TestMergeDefaultsPerKey(t *testing.T) {
 	}
 }
 
+// Unknown is a pointer field like every other Defaults setting; a project
+// layer declaring it onto a base with no [defaults] unknown must still land.
+func TestMergeDefaultsCarriesUnknownPlaceholder(t *testing.T) {
+	base := mustParse(t, "[defaults]\nwarn = 40\n")
+	override := mustParse(t, "[defaults]\nunknown = \"?\"\n")
+
+	got := Merge(base, override)
+	if got.Defaults.Unknown == nil || *got.Defaults.Unknown != "?" {
+		t.Errorf("unknown = %v, want \"?\"", got.Defaults.Unknown)
+	}
+}
+
+// Empty string opts segment out of held slot. Must survive merging onto
+// segment base layer already declares, same as any other field.
+func TestMergeSegmentKeepsEmptyUnknownPlaceholder(t *testing.T) {
+	base := mustParse(t, "[segments.\"limit.5h\"]\ntemplate = \"{pct}%\"\n")
+	override := mustParse(t, "[segments.\"limit.5h\"]\nunknown = \"\"\n")
+
+	got := Merge(base, override)
+	seg := got.Segments["limit.5h"]
+	if seg.Unknown == nil || *seg.Unknown != "" {
+		t.Errorf("unknown = %v, want empty string to survive", seg.Unknown)
+	}
+	if seg.Template == nil || *seg.Template != "{pct}%" {
+		t.Error("template should survive an override that does not mention it")
+	}
+}
+
 func TestMergeAddsSegmentsAbsentFromBase(t *testing.T) {
 	base := mustParse(t, "[segments.model]\ntemplate = \"{name}\"\n")
 	override := mustParse(t, "[segments.k8s]\ntype = \"command\"\ncommand = \"kubectl\"\n")

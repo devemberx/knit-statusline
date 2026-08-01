@@ -137,3 +137,38 @@ func TestResolveCarriesEveryOverride(t *testing.T) {
 		t.Errorf("cache_ms = %d", r.CacheMS)
 	}
 }
+
+func TestResolveUnknownDefault(t *testing.T) {
+	c := &Config{}
+	if got := c.Resolve("context", "{pct}").Unknown; got != DefaultUnknown {
+		t.Fatalf("Unknown = %q, want %q", got, DefaultUnknown)
+	}
+}
+
+func TestResolveUnknownFromDefaults(t *testing.T) {
+	want := "?"
+	c := &Config{Defaults: Defaults{Unknown: &want}}
+	if got := c.Resolve("context", "{pct}").Unknown; got != want {
+		t.Fatalf("Unknown = %q, want %q", got, want)
+	}
+}
+
+func TestResolveUnknownSegmentOverridesDefaults(t *testing.T) {
+	global, seg := "?", "~"
+	c := &Config{
+		Defaults: Defaults{Unknown: &global},
+		Segments: map[string]*Segment{"cost": {Unknown: &seg}},
+	}
+	if got := c.Resolve("cost", "${usd}").Unknown; got != seg {
+		t.Fatalf("Unknown = %q, want %q", got, seg)
+	}
+}
+
+// Empty string is a setting, not absent one: it is how a segment opt out.
+func TestResolveUnknownEmptyStringSurvivesResolution(t *testing.T) {
+	off := ""
+	c := &Config{Segments: map[string]*Segment{"cost": {Unknown: &off}}}
+	if got := c.Resolve("cost", "${usd}").Unknown; got != "" {
+		t.Fatalf("Unknown = %q, want empty", got)
+	}
+}

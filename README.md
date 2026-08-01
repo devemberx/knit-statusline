@@ -112,8 +112,10 @@ knit-statusline preview    # render sample data — no Claude Code restart neede
 knit-statusline doctor     # config problems, with line numbers, and every available field
 ```
 
-`preview --sparse` shows the same layout with values missing, which is how it
-looks in a fresh session before the first API call.
+`preview --sparse` shows the same layout at the start of a fresh session,
+before the first API call. `preview --unknown` shows a resumed session that
+has not reported anything yet — what a legitimate `…` placeholder looks like,
+as opposed to a segment that drops out of the row silently.
 
 </details>
 

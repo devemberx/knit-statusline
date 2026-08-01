@@ -10,6 +10,7 @@ import (
 	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/render"
+	"github.com/devemberx/knit-statusline/internal/schema"
 	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
@@ -43,25 +44,27 @@ func tokensCtx(t *testing.T, lines ...string) Context {
 }
 
 // Fixture transcript_path point nowhere on purpose, so this stand in for every
-// session before its first assistant reply.
-func TestBuildTokensIsEmptyWithoutATranscript(t *testing.T) {
+// session before its first assistant reply. tokens Stable now: ctx() default
+// to live, unprovable freshness, so absent transcript hold placeholder rather
+// than drop.
+func TestBuildTokensRendersPlaceholderWithoutATranscript(t *testing.T) {
 	c := ctx(t, fixtures.Full, "tokens")
 	c.In.TranscriptPath = ""
-	if res := Build(c); !res.Empty {
-		t.Errorf("got %+v, want empty", res)
+	if got := draw(c); got != "↑… ↓…" {
+		t.Errorf("got %q, want placeholder", got)
 	}
 
-	if res := Build(ctx(t, fixtures.Full, "tokens")); !res.Empty {
-		t.Errorf("absent transcript file gave %+v, want empty", res)
+	if got := draw(ctx(t, fixtures.Full, "tokens")); got != "↑… ↓…" {
+		t.Errorf("absent transcript file gave %q, want placeholder", got)
 	}
 }
 
-// Zero counted is absent, not zero: printing "↑0 ↓0" claim a measurement nobody
-// took.
-func TestBuildTokensIsEmptyWhenNothingCounted(t *testing.T) {
+// Zero counted is absent, not zero: printing "↑0 ↓0" claim measurement nobody
+// took. Stable slot hold placeholder instead of dropping.
+func TestBuildTokensRendersPlaceholderWhenNothingCounted(t *testing.T) {
 	c := tokensCtx(t, `{"type":"user","message":{"role":"user","content":"hi"}}`)
-	if res := Build(c); !res.Empty {
-		t.Errorf("got %+v, want empty", res)
+	if got := draw(c); got != "↑… ↓…" {
+		t.Errorf("got %q, want placeholder", got)
 	}
 }
 
@@ -208,5 +211,113 @@ func TestBuildTokensAgreeAcrossRenders(t *testing.T) {
 	second := Build(c).Fields["total"].Text
 	if first != second {
 		t.Errorf("second render gave {total} = %q, first gave %q", second, first)
+	}
+}
+
+func TestTokensFreshRendersZero(t *testing.T) {
+	res := buildTokens(ctxFor("tokens", &schema.Input{}, true))
+	if res.Empty {
+		t.Fatal("fresh tokens returned empty")
+	}
+	if got := res.Fields["input"].Text; got != "0" {
+		t.Fatalf("input = %q, want %q", got, "0")
+	}
+	if got := res.Fields["io"].Text; got != "↑0 ↓0" {
+		t.Fatalf("io = %q, want %q", got, "↑0 ↓0")
+	}
+}
+
+// Cache group stay hidden in both placeholder states: absent traffic is not a
+// value, and gap before it belong to group.
+func TestTokensPlaceholderHidesCacheGroup(t *testing.T) {
+	for _, fresh := range []bool{true, false} {
+		res := buildTokens(ctxFor("tokens", &schema.Input{}, fresh))
+		if got := res.Fields["cache"].Text; got != "" {
+			t.Fatalf("fresh=%v cache = %q, want empty", fresh, got)
+		}
+	}
+}
+
+func TestTokensLiveWithoutUsageRendersUnknown(t *testing.T) {
+	res := buildTokens(ctxFor("tokens", &schema.Input{}, false))
+	if res.Empty {
+		t.Fatal("live tokens returned empty")
+	}
+	if got := res.Fields["io"].Text; got != "↑… ↓…" {
+		t.Fatalf("io = %q, want %q", got, "↑… ↓…")
+	}
+	if got := res.Fields["total"].Text; got != config.DefaultUnknown {
+		t.Fatalf("total = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
+// Probe read session transcript alone, Scan sum whole project directory, and
+// unreadable sibling contribute 0. Fresh session therefore prove nothing about
+// project total, so zero there would be invention.
+func TestTokensProjectScopeNeverPrintsFreshZero(t *testing.T) {
+	c := ctxFor("tokens", &schema.Input{}, true)
+	c.Cfg.Scope = config.ScopeProject
+	res := buildTokens(c)
+	if res.Empty {
+		t.Fatal("project scope tokens returned empty")
+	}
+	for _, f := range []string{"input", "output", "total", "cache_read"} {
+		if got := res.Fields[f].Text; got != config.DefaultUnknown {
+			t.Fatalf("project scope %s = %q, want %q", f, got, config.DefaultUnknown)
+		}
+	}
+	if got := res.Fields["io"].Text; got != "↑… ↓…" {
+		t.Fatalf("project scope io = %q, want placeholder", got)
+	}
+}
+
+// Real scan reaching totals.Total() == 0 is separate path from blank
+// TranscriptPath: transcript exist and hold only user lines.
+func TestTokensFreshZeroAfterScanningUserOnlyTranscript(t *testing.T) {
+	c := tokensCtx(t, `{"type":"user","message":{"role":"user","content":"hi"}}`)
+	c.Fresh = true
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("scanned fresh transcript returned empty")
+	}
+	if got := res.Fields["io"].Text; got != "↑0 ↓0" {
+		t.Fatalf("io = %q, want %q", got, "↑0 ↓0")
+	}
+	if got := res.Fields["total"].Text; got != "0" {
+		t.Fatalf("total = %q, want %q", got, "0")
+	}
+}
+
+// Fresh zero is measured value, so it wear same colour a measured number would.
+// Placeholder stay Dim across every field.
+func TestTokensFreshZeroKeepsPerFieldColors(t *testing.T) {
+	fresh := buildTokens(ctxFor("tokens", &schema.Input{}, true))
+	for _, f := range []string{"cache_write", "cache_read", "cache_hit"} {
+		if got := fresh.Fields[f].Color; got != render.Cyan {
+			t.Errorf("fresh %s color = %v, want Cyan", f, got)
+		}
+	}
+	for _, f := range []string{"input", "output", "total"} {
+		if got := fresh.Fields[f].Color; got != render.White {
+			t.Errorf("fresh %s color = %v, want White", f, got)
+		}
+	}
+
+	unknown := buildTokens(ctxFor("tokens", &schema.Input{}, false))
+	for f := range unknown.Fields {
+		if f == "io" || f == "cache" {
+			continue
+		}
+		if got := unknown.Fields[f].Color; got != render.Dim {
+			t.Errorf("unknown %s color = %v, want Dim", f, got)
+		}
+	}
+}
+
+func TestTokensOptedOutDrops(t *testing.T) {
+	c := ctxFor("tokens", &schema.Input{}, true)
+	c.Cfg.Unknown = ""
+	if !buildTokens(c).Empty {
+		t.Fatal("unknown = \"\" did not drop the segment")
 	}
 }

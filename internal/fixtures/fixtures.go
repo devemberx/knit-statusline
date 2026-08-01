@@ -23,6 +23,14 @@ var Full []byte
 //go:embed sparse.json
 var Sparse []byte
 
+// Unknown is resumed session: nothing reported yet and nothing proven either.
+// Sparse minus cost and minus context_window, so every stable segment reach
+// its placeholder. Sparse keep both blocks populated with real zeros, which
+// win on known path under either freshness and hide four of seven placeholders.
+//
+//go:embed unknown.json
+var Unknown []byte
+
 // Empty is bare JSON object -- floor every code path must survive.
 //
 //go:embed empty.json

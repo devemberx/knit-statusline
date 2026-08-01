@@ -11,6 +11,7 @@ func init() {
 		Fields: []string{"io", "cache", "input", "cache_write", "cache_read",
 			"output", "total", "cache_hit", "input_raw", "output_raw"},
 		DefaultTemplate: "{io}{cache}",
+		Stable:          true,
 		Build:           buildTokens,
 	})
 }
@@ -32,7 +33,7 @@ func init() {
 // exact count inform nobody.
 func buildTokens(c Context) Result {
 	if c.In.TranscriptPath == "" {
-		return empty
+		return tokensNoUsage(c)
 	}
 
 	scope := transcript.ScopeSession
@@ -52,7 +53,7 @@ func buildTokens(c Context) Result {
 	_ = transcript.SaveCache(c.CacheDir, opts, cache)
 
 	if totals.Total() == 0 {
-		return empty
+		return tokensNoUsage(c)
 	}
 
 	return Result{
@@ -100,6 +101,54 @@ func cacheGroup(c Context, t transcript.Totals) string {
 		" " +
 		c.Palette.Wrap("↓", render.Dim) +
 		c.Palette.Wrap(count(t.CacheRead), render.Cyan)
+}
+
+// tokensNoUsage cover states with nothing counted.
+//
+// Fresh session sent nothing, so every counter is real zero. Otherwise
+// transcript was unreadable or hold only synthetic entries, and no number is
+// known.
+//
+// Freshness prove nothing under scope = "project". Probe read session
+// transcript alone while Scan sum every *.jsonl beside it, and Scan contribute
+// 0 for each file it cannot open on cold cache -- chmod 000 sibling, EMFILE,
+// file removed mid-glob. Empty project render "↑… ↓…" as price: placeholder
+// nobody proved beat zero nobody proved.
+func tokensNoUsage(c Context) Result {
+	if !c.holdsSlot() {
+		return empty
+	}
+	fresh := c.Fresh && c.Cfg.Scope != config.ScopeProject
+
+	// Cache fields keep Cyan on real zero, same as on real number: fresh-zero
+	// is measured value, and recolouring it would mark true 0 as unmeasured.
+	text, col, cacheCol := c.Cfg.Unknown, render.Dim, render.Dim
+	if fresh {
+		text, col, cacheCol = "0", render.White, render.Cyan
+	}
+
+	// Cache group hidden, same shape as session that touched no cache: gap
+	// live inside field, so it go with it.
+	io := c.Palette.Wrap("↑", render.Dim) + c.Palette.Wrap(text, col) +
+		" " + c.Palette.Wrap("↓", render.Dim) + c.Palette.Wrap(text, col)
+
+	return Result{
+		Base: render.Dim,
+		Fields: render.Fields{
+			"io":    render.Plain(io),
+			"cache": render.Plain(""),
+
+			"input":       render.Colored(text, col),
+			"cache_write": render.Colored(text, cacheCol),
+			"cache_read":  render.Colored(text, cacheCol),
+			"output":      render.Colored(text, col),
+			"total":       render.Colored(text, col),
+			"cache_hit":   render.Colored(text, cacheCol),
+
+			"input_raw":  render.Colored(text, col),
+			"output_raw": render.Colored(text, col),
+		},
+	}
 }
 
 // cacheHit report share of input tokens served from cache. Raw cache_read reach

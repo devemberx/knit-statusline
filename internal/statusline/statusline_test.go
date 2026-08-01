@@ -14,7 +14,10 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 	"github.com/devemberx/knit-statusline/internal/schema"
 	"github.com/devemberx/knit-statusline/internal/segment"
+	"github.com/devemberx/knit-statusline/internal/transcript"
 )
+
+func ptr[T any](v T) *T { return &v }
 
 // Pin zone golden expectations written in.
 //
@@ -96,29 +99,40 @@ func TestMinimalPresetOnFullData(t *testing.T) {
 	}
 }
 
-// Case reference bash implementation get wrong. Nothing available, so nothing
-// invented: no "0%" context, no empty rate limit bars, no blank rows left by
-// vanished segments.
+// Case reference bash implementation get wrong: no blank rows left by
+// vanished segments. context differs from limit.5h/limit.7d here: Sparse's
+// transcript_path name file that does not exist, so probe prove session fresh
+// and 0% is fact, not invention. Rate limit windows carry no such proof --
+// account-wide state survive across sessions, so absent rate_limits still owe
+// a row, held at placeholder rather than a zero that would lie about room left.
 func TestReferencePresetOnSparseData(t *testing.T) {
 	got := drawPreset(t, "reference", fixtures.Sparse)
-	want := "Sonnet 5 │ scratch │ ⏱ 1s"
+	want := strings.Join([]string{
+		"Sonnet 5 │ ✍️ 0% │ scratch │ ⏱ 1s",
+		"",
+		"current ○○○○○○○○○○   …%",
+		"weekly  ○○○○○○○○○○   …%",
+	}, "\n")
 
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	for _, forbidden := range []string{"0%", "current", "weekly", "○"} {
-		if strings.Contains(got, forbidden) {
-			t.Errorf("output invents %q from missing data: %q", forbidden, got)
-		}
-	}
 }
 
-// Every segment come back empty, so Render yield "". Printing Fallback is
+// Every non-stable segment come back empty. context, session, limit.5h and
+// limit.7d differ: fixtures.Empty carry no transcript_path, freshness
+// unprovable rather than proven, so each Stable slot hold placeholder instead
+// of dropping or printing bare zero. Printing Fallback past that remains
 // caller's job.
-func TestEmptyDocumentRendersNothing(t *testing.T) {
-	for _, preset := range []string{"minimal", "reference", "verbose", "api"} {
-		if got := drawPreset(t, preset, fixtures.Empty); got != "" {
-			t.Errorf("%s: empty document produced %q", preset, got)
+func TestEmptyDocumentRendersOnlyStableSlots(t *testing.T) {
+	for _, tc := range []struct{ preset, want string }{
+		{"minimal", "✍️ …%"},
+		{"reference", "✍️ …% │ ⏱ …\n\ncurrent ○○○○○○○○○○   …%\nweekly  ○○○○○○○○○○   …%"},
+		{"verbose", "✍️ …% │ ⏱ …\ncurrent ○○○○○○○○○○   …%  weekly ○○○○○○○○○○   …%\n↑… ↓… │ +… -… │ $…"},
+		{"api", "✍️ …% │ ⏱ …\n↑… ↓… │ +… -… │ $…"},
+	} {
+		if got := drawPreset(t, tc.preset, fixtures.Empty); got != tc.want {
+			t.Errorf("%s: empty document produced %q, want %q", tc.preset, got, tc.want)
 		}
 	}
 }
@@ -166,6 +180,7 @@ func TestEveryPresetRendersEveryFixture(t *testing.T) {
 		}{
 			{"full", fixtures.Full},
 			{"sparse", fixtures.Sparse},
+			{"unknown", fixtures.Unknown},
 			{"empty", fixtures.Empty},
 		} {
 			got := draw(t, cfg, f.doc)
@@ -208,13 +223,16 @@ separator = "  "
 
 // Absent value leave no bare separator standing for information that does not
 // exist.
+// pr and vim stand in for "genuinely empty on Sparse" -- limit.5h/limit.7d no
+// longer qualify: both are Stable, so absent rate_limits hold their row at a
+// placeholder rather than dropping it.
 func TestRowWithOnlyEmptySegmentsIsDropped(t *testing.T) {
 	cfg := parseTOML(t, `
 [[lines]]
 segments = ["model"]
 
 [[lines]]
-segments = ["limit.5h", "limit.7d"]
+segments = ["pr", "vim"]
 `)
 
 	if got := draw(t, cfg, fixtures.Sparse); got != "Sonnet 5" {
@@ -240,8 +258,10 @@ segments = ["version"]
 	}
 }
 
-// Both limit segments empty in Sparse, so their row drop and leave two blanks
-// adjacent. Run of two or more collapse to one.
+// Both pr and vim empty in Sparse, so their row drop and leave two blanks
+// adjacent. Run of two or more collapse to one. limit.5h/limit.7d no longer
+// serve here -- both Stable, so absent rate_limits hold their row instead of
+// dropping it.
 func TestBlankRunCollapses(t *testing.T) {
 	cfg := parseTOML(t, `
 [[lines]]
@@ -250,7 +270,7 @@ segments = ["model"]
 [[lines]]
 
 [[lines]]
-segments = ["limit.5h", "limit.7d"]
+segments = ["pr", "vim"]
 
 [[lines]]
 
@@ -472,5 +492,127 @@ segments = ["model", "caveman"]
 	// Plugin not installed: segment and its separator both go.
 	if got, want := drawIn(t, cfg, fixtures.Full, t.TempDir()), "Opus 4.8"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Override exist so preview and tests pin a state without a transcript on disk.
+func TestSessionFreshHonoursOverride(t *testing.T) {
+	fresh, live := transcript.StateFresh, transcript.StateLive
+
+	if !sessionFresh(&schema.Input{}, Options{SessionState: &fresh}) {
+		t.Fatal("StateFresh override did not resolve fresh")
+	}
+	if sessionFresh(&schema.Input{}, Options{SessionState: &live}) {
+		t.Fatal("StateLive override resolved fresh")
+	}
+}
+
+// Override beat payload: fixture naming transcript path that happens to
+// exist must not flip pinned state.
+func TestSessionFreshOverrideBeatsProbe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	live := transcript.StateLive
+	in := &schema.Input{TranscriptPath: path}
+
+	if sessionFresh(in, Options{SessionState: &live}) {
+		t.Fatal("probe overrode the pinned state")
+	}
+	if !sessionFresh(in, Options{}) {
+		t.Fatal("empty transcript did not probe fresh")
+	}
+}
+
+// Nil input probe nothing: live is answer that print no number.
+func TestSessionFreshNilInputIsLive(t *testing.T) {
+	if sessionFresh(nil, Options{}) {
+		t.Fatal("nil input resolved fresh")
+	}
+}
+
+// Pinned state must reach segments, not merely resolve inside Render.
+// cost probe here, not session: cost fresh-zero "$0.00" differ from its live
+// placeholder, while session render placeholder in both states.
+func TestRenderSessionStateOverrideReachesSegments(t *testing.T) {
+	fresh := transcript.StateFresh
+	cfg := &config.Config{Lines: []config.Line{{Segments: []string{"cost"}}}}
+
+	got := Render(cfg, &schema.Input{}, Options{
+		Palette:      render.NoColor(),
+		SessionState: &fresh,
+	})
+	if !strings.Contains(got, "0.00") {
+		t.Fatalf("Render = %q, want a fresh-zero cost", got)
+	}
+}
+
+// Row shape must not change as usage arrives. Two payloads differing only in
+// usage-derived fields render same rows and same segment count per row, so no
+// slot appear or vanish mid-session.
+//
+// Only stable segments take part: pr and repo legitimately come and go.
+func TestRowShapeSurvivesMissingUsage(t *testing.T) {
+	cfg := &config.Config{Lines: []config.Line{
+		{Segments: []string{"model", "context", "session", "cost", "lines"}},
+		{Segments: []string{"tokens"}},
+		{Segments: []string{"limit.5h"}},
+		{Segments: []string{"limit.7d"}},
+	}}
+
+	usd, ms, added, removed := 1.23, int64(4_500_000), int64(156), int64(23)
+	p := 42.0
+	known := &schema.Input{
+		Model:   schema.Model{DisplayName: "Opus 5"},
+		Context: &schema.ContextWin{UsedPercentage: &p},
+		Cost: &schema.Cost{
+			TotalCostUSD: &usd, TotalDurationMS: &ms,
+			TotalLinesAdded: &added, TotalLinesRemoved: &removed,
+		},
+		RateLimits: &schema.RateLimits{
+			FiveHour: &schema.Window{UsedPercentage: ptr(42.0)},
+			SevenDay: &schema.Window{UsedPercentage: ptr(18.0)},
+		},
+	}
+	bare := &schema.Input{Model: schema.Model{DisplayName: "Opus 5"}}
+
+	live := transcript.StateLive
+	opts := Options{Palette: render.NoColor(), SessionState: &live}
+
+	shape := func(in *schema.Input) []int {
+		var out []int
+		for _, row := range strings.Split(Render(cfg, in, opts), "\n") {
+			out = append(out, strings.Count(row, config.DefaultSeparator)+1)
+		}
+		return out
+	}
+
+	got, want := shape(bare), shape(known)
+	if len(got) != len(want) {
+		t.Fatalf("row count = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d segment count = %d, want %d", i+1, got[i], want[i])
+		}
+	}
+}
+
+// Same contract at other end: a fresh session fill slots with zeros rather
+// than dropping them. session stay at placeholder -- wall clock run whether or
+// not tokens sent, so fresh prove nothing about duration.
+func TestRowShapeSurvivesFreshSession(t *testing.T) {
+	cfg := &config.Config{Lines: []config.Line{
+		{Segments: []string{"model", "context", "session", "cost", "lines"}},
+	}}
+	fresh := transcript.StateFresh
+	in := &schema.Input{Model: schema.Model{DisplayName: "Opus 5"}}
+
+	got := Render(cfg, in, Options{Palette: render.NoColor(), SessionState: &fresh})
+	for _, want := range []string{"Opus 5", "0%", "⏱ …", "$0.00", "+0 -0"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Render = %q, missing %q", got, want)
+		}
 	}
 }

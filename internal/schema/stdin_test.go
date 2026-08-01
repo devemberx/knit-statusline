@@ -23,7 +23,8 @@ func load(t *testing.T, b []byte) *Input {
 // went wrong.
 func TestParseFixtures(t *testing.T) {
 	for name, b := range map[string][]byte{
-		"full": fixtures.Full, "sparse": fixtures.Sparse, "empty": fixtures.Empty,
+		"full": fixtures.Full, "sparse": fixtures.Sparse,
+		"unknown": fixtures.Unknown, "empty": fixtures.Empty,
 	} {
 		if in := load(t, b); in == nil {
 			t.Fatalf("%s decoded to nil", name)
@@ -43,7 +44,7 @@ func TestFullFixtureFields(t *testing.T) {
 	if in.RateLimits == nil || in.RateLimits.FiveHour == nil {
 		t.Fatal("five_hour rate limit missing")
 	}
-	if got := in.RateLimits.FiveHour.UsedPercentage; got != 42.4 {
+	if got := in.RateLimits.FiveHour.UsedPercentage; got == nil || *got != 42.4 {
 		t.Errorf("five_hour used = %v, want 42.4", got)
 	}
 	if in.Effort == nil || in.Effort.Level != "high" {
@@ -85,6 +86,26 @@ func TestSparseFixtureAbsences(t *testing.T) {
 	}
 }
 
+// Unknown fixture exist for absences sparse cannot carry: cost and
+// context_window both gone, so no stable segment find a known value and each
+// reach its placeholder. Regaining either block silently hide three of seven.
+func TestUnknownFixtureAbsences(t *testing.T) {
+	in := load(t, fixtures.Unknown)
+
+	if in.Cost != nil {
+		t.Error("cost should be absent, else session, cost and lines take known path")
+	}
+	if in.Context != nil {
+		t.Error("context_window should be absent")
+	}
+	if in.RateLimits != nil {
+		t.Error("rate_limits should be absent")
+	}
+	if _, ok := in.ContextPercent(); ok {
+		t.Error("ContextPercent() should report unknown")
+	}
+}
+
 func TestEmptyDocumentIsSafe(t *testing.T) {
 	in := load(t, fixtures.Empty)
 
@@ -107,7 +128,8 @@ func TestParseRejectsInvalidJSON(t *testing.T) {
 // silence.
 func TestFixturesHaveNoUnmappedFields(t *testing.T) {
 	for name, b := range map[string][]byte{
-		"full": fixtures.Full, "sparse": fixtures.Sparse, "empty": fixtures.Empty,
+		"full": fixtures.Full, "sparse": fixtures.Sparse,
+		"unknown": fixtures.Unknown, "empty": fixtures.Empty,
 	} {
 		dec := json.NewDecoder(bytes.NewReader(b))
 		dec.DisallowUnknownFields()

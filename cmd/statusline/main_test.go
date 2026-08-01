@@ -88,11 +88,40 @@ func TestRenderFallsBackWhenNothingParses(t *testing.T) {
 }
 
 // Valid document with nothing populated: model name is whatever identity remain.
+// context still hold its slot with placeholder -- Contains, not exact match.
 func TestRenderFallsBackToModelName(t *testing.T) {
 	isolate(t)
 	got := drawStdin(t, []byte(`{"model":{"display_name":"Opus","id":"claude-opus-4-8"}}`))
-	if strings.TrimSpace(got) != "Opus 4.8" {
-		t.Errorf("got %q, want Opus 4.8", got)
+	if !strings.Contains(got, "Opus 4.8") {
+		t.Errorf("got %q, want it to contain Opus 4.8", got)
+	}
+}
+
+// Bare {} through default preset: context, session, limit.5h and limit.7d all
+// hold their slot -- all four Stable, and no transcript_path leave freshness
+// unprovable rather than proven. limit.5h/limit.7d hold theirs regardless of
+// freshness: no rate_limits at all still owe a row, never a fake zero. Row
+// come back non-empty, so Fallback deliberately never fire here -- placeholder
+// itself already prove binary ran.
+func TestRenderOnBarePayloadShowsStableSlotNotFallback(t *testing.T) {
+	isolate(t)
+	got := drawStdin(t, []byte(`{}`))
+	want := "✍️ …% │ ⏱ …\n\ncurrent ○○○○○○○○○○   …%\nweekly  ○○○○○○○○○○   …%"
+	if strings.TrimSpace(got) != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// Fallback path must stay reachable, not become dead code now that context
+// hold its own slot on most layouts. Config here name only a non-stable
+// segment, so bare {} leave Render() with nothing at all.
+func TestRenderFallsBackWhenRowGenuinelyEmpty(t *testing.T) {
+	home := isolate(t)
+	writeUserConfig(t, home, "[[lines]]\nsegments = [\"pr\"]\n")
+
+	got := drawStdin(t, []byte(`{}`))
+	if strings.TrimSpace(got) != "Claude" {
+		t.Errorf("got %q, want Claude", got)
 	}
 }
 

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -52,12 +54,16 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 		t.Fatalf("sparse exit = %d", code)
 	}
 	sparse := out.String()
-	if !strings.Contains(sparse, "degraded data") {
+	if !strings.Contains(sparse, "fresh session") {
 		t.Errorf("sparse preview missing its label:\n%s", sparse)
 	}
-	// Degraded case is where invented value would show first.
-	if strings.Contains(sparse, "current ") || strings.Contains(sparse, "weekly ") {
-		t.Errorf("sparse preview invented rate limits:\n%s", sparse)
+	// limit.5h and limit.7d are Stable: no rate_limits still holds their row
+	// with placeholder rather than dropping it, never a fake zero or percentage.
+	if !strings.Contains(sparse, "current ○○○○○○○○○○   …%") {
+		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
+	}
+	if !strings.Contains(sparse, "weekly  ○○○○○○○○○○   …%") {
+		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
 	}
 }
 
@@ -417,5 +423,88 @@ func TestUninstallOnACleanHome(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "no status line was configured") {
 		t.Errorf("output = %q", out.String())
+	}
+}
+
+func TestDoctorReportsUnknownSetting(t *testing.T) {
+	isolate(t)
+	var stdout, stderr bytes.Buffer
+	if code := runDoctor(nil, &stdout, &stderr); code != 0 {
+		t.Fatalf("runDoctor = %d, want 0", code)
+	}
+	// Resolved value, not label alone: doctor printing "unknown" beside wrong
+	// text pass a Contains check on name while reporting setting nobody set.
+	want := fmt.Sprintf("unknown    %q", config.DefaultUnknown)
+	if !strings.Contains(stdout.String(), want) {
+		t.Fatalf("doctor did not report %s:\n%s", want, stdout.String())
+	}
+}
+
+func TestDoctorMarksStableSegments(t *testing.T) {
+	isolate(t)
+	var stdout, stderr bytes.Buffer
+	runDoctor(nil, &stdout, &stderr)
+	out := stdout.String()
+	// Whole set, not one marker: design name seven, and marker landing on one
+	// arbitrary segment satisfy a bare Contains.
+	for _, name := range []string{
+		"context", "cost", "limit.5h", "limit.7d", "lines", "session", "tokens",
+	} {
+		if !regexp.MustCompile(`(?m)^  ` + regexp.QuoteMeta(name) + `\s.*\(holds slot\)$`).MatchString(out) {
+			t.Errorf("doctor did not mark %s as holding its slot:\n%s", name, out)
+		}
+	}
+	if got := strings.Count(out, "(holds slot)"); got != 7 {
+		t.Errorf("(holds slot) marked %d segments, want 7:\n%s", got, out)
+	}
+}
+
+// --unknown must reach every stable segment, not context alone. unknown.json
+// drop cost and context_window for that: sparse.json carry both populated with
+// real zeros, which win on known path and hide session, cost and lines.
+func TestPreviewUnknownRendersPlaceholders(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+	var stdout, stderr bytes.Buffer
+	if code := runPreview([]string{"--preset", "verbose", "--unknown"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runPreview = %d, want 0, stderr = %s", code, stderr.String())
+	}
+	u := config.DefaultUnknown
+	for _, want := range []string{
+		"✍️ " + u,          // context
+		"⏱ " + u,           // session
+		"$" + u,            // cost
+		"+" + u + " -" + u, // lines
+		"↑" + u + " ↓" + u, // tokens
+		"current ○○○○○○○○○○   " + u + "%", // limit.5h
+		"weekly ○○○○○○○○○○   " + u + "%",  // limit.7d
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("preview --unknown missing %q:\n%s", want, stdout.String())
+		}
+	}
+	// Fresh-zero shapes belong to --sparse alone. One appearing here mean
+	// fixture regained block that win on known path.
+	for _, banned := range []string{"✍️ 0%", "⏱ 0s", "$0.00", "+0 -0", "↑0 ↓0"} {
+		if strings.Contains(stdout.String(), banned) {
+			t.Errorf("preview --unknown printed %q, zero nobody proved:\n%s", banned, stdout.String())
+		}
+	}
+}
+
+// Opposite row from same command: sparse.json carry cost and context_window
+// populated, and probe prove session sent nothing, so every zero is fact.
+func TestPreviewSparseRendersFreshZeros(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+	var stdout, stderr bytes.Buffer
+	if code := runPreview([]string{"--preset", "reference", "--sparse"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runPreview = %d, want 0, stderr = %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "0%") {
+		t.Fatalf("preview --sparse printed no fresh zero: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "✍️ "+config.DefaultUnknown) {
+		t.Fatalf("preview --sparse placeholdered context instead of zeroing it: %s", stdout.String())
 	}
 }
