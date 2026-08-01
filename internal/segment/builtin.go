@@ -272,28 +272,33 @@ func buildContext(c Context) Result {
 //
 // {size} split off from {used}: nothing was sent, so used is a real zero, while
 // window size was never reported at all and zero would be absurd.
+//
+// {size} override sit outside both branches: context_window_size is static
+// model configuration, not usage, so payload win over freshness either way.
 func contextNoUsage(c Context) Result {
 	if !c.holdsSlot() {
 		return empty
 	}
+
+	u := c.Cfg.Unknown
+	var f render.Fields
 	if !c.Fresh {
-		u := c.Cfg.Unknown
-		return Result{Base: render.Dim, Fields: render.Fields{
+		f = render.Fields{
 			"pct":       render.Colored(u, render.Dim),
 			"remaining": render.Colored(u, render.Dim),
 			"used":      render.Colored(u, render.Dim),
 			"size":      render.Colored(u, render.Dim),
 			"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, render.Thresholds{})),
-		}}
-	}
-
-	t := c.Thresholds()
-	f := render.Fields{
-		"pct":       render.Colored(pct(0), t.Color(0)),
-		"remaining": render.Colored(pct(100), t.Color(0)),
-		"used":      render.Colored(count(0), render.White),
-		"size":      render.Colored(c.Cfg.Unknown, render.Dim),
-		"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, t)),
+		}
+	} else {
+		t := c.Thresholds()
+		f = render.Fields{
+			"pct":       render.Colored(pct(0), t.Color(0)),
+			"remaining": render.Colored(pct(100), t.Color(0)),
+			"used":      render.Colored(count(0), render.White),
+			"size":      render.Colored(u, render.Dim),
+			"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, t)),
+		}
 	}
 	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
 		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)

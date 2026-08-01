@@ -97,6 +97,31 @@ func TestRenderFallsBackToModelName(t *testing.T) {
 	}
 }
 
+// Bare {} through default preset: context alone hold its slot -- Stable, and
+// no transcript_path leave freshness unprovable rather than proven. Row come
+// back non-empty, so Fallback deliberately never fire here -- placeholder
+// itself already prove binary ran.
+func TestRenderOnBarePayloadShowsStableSlotNotFallback(t *testing.T) {
+	isolate(t)
+	got := drawStdin(t, []byte(`{}`))
+	if strings.TrimSpace(got) != "✍️ …%" {
+		t.Errorf("got %q, want just the context placeholder", got)
+	}
+}
+
+// Fallback path must stay reachable, not become dead code now that context
+// hold its own slot on most layouts. Config here name only a non-stable
+// segment, so bare {} leave Render() with nothing at all.
+func TestRenderFallsBackWhenRowGenuinelyEmpty(t *testing.T) {
+	home := isolate(t)
+	writeUserConfig(t, home, "[[lines]]\nsegments = [\"pr\"]\n")
+
+	got := drawStdin(t, []byte(`{}`))
+	if strings.TrimSpace(got) != "Claude" {
+		t.Errorf("got %q, want Claude", got)
+	}
+}
+
 func TestRenderDrawsTheDefaultPreset(t *testing.T) {
 	isolate(t)
 	got := drawStdin(t, fixtures.Full)

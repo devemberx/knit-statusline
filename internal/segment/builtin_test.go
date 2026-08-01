@@ -387,6 +387,20 @@ func TestContextLiveWithoutUsageRendersUnknown(t *testing.T) {
 	}
 }
 
+// context_window_size is static model configuration, not usage, so it win over
+// freshness on a live session same as it does on a fresh one -- {pct} still
+// carry no fact, {size} does.
+func TestContextLiveWithSizeShowsRealWindow(t *testing.T) {
+	in := &schema.Input{Context: &schema.ContextWin{ContextWindowSize: ptr(int64(200000))}}
+	res := buildContext(ctxFor("context", in, false))
+	if got := res.Fields["size"].Text; got != "200k" {
+		t.Fatalf("size = %q, want %q", got, "200k")
+	}
+	if got := res.Fields["pct"].Text; got != config.DefaultUnknown {
+		t.Fatalf("pct = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
 // Payload beat freshness: a fresh session reporting occupancy show it.
 func TestContextKnownBeatsFresh(t *testing.T) {
 	p := 42.0
