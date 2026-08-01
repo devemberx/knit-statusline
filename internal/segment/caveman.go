@@ -25,6 +25,9 @@ const cavemanIcon = "🦴"
 // Flag caveman UserPromptSubmit hook write, under Claude Code config root.
 const cavemanFlagFile = ".caveman-active"
 
+// Pre-rendered string /caveman-stats write. Absent until that command run once.
+const cavemanSavingsFile = ".caveman-statusline-suffix"
+
 // Upstream caveman-statusline.sh read same 64 bytes. Cap bound row width and
 // bound read: os.ReadFile would load planted gigabyte file whole.
 const cavemanMaxBytes = 64
@@ -50,16 +53,18 @@ func buildCaveman(c Context) Result {
 	if mode == "" {
 		return empty
 	}
-	return Result{
-		Base: render.Orange,
-		Fields: render.Fields{
-			"icon": render.Colored(cavemanIcon, render.Orange),
-			"mode": render.Colored(mode, render.Orange),
-			// Template naming savings must not break when /caveman-stats never
-			// ran.
-			"savings": render.Plain(""),
-		},
+	f := render.Fields{
+		"icon": render.Colored(cavemanIcon, render.Orange),
+		"mode": render.Colored(mode, render.Orange),
+		// Template naming savings must not break when /caveman-stats never ran.
+		"savings": render.Plain(""),
 	}
+	// Leading space sit inside field, same as limit's {reset}. Template writing
+	// "{mode}{savings}" leave trailing space otherwise.
+	if s := cavemanSavings(c.ConfigDir); s != "" {
+		f["savings"] = render.Colored(" "+s, render.Dim)
+	}
+	return Result{Base: render.Orange, Fields: f}
 }
 
 // readCavemanFile read at most cavemanMaxBytes from regular file.
@@ -105,4 +110,17 @@ func cavemanMode(raw string) string {
 		return ""
 	}
 	return mode
+}
+
+// cavemanSavings read pre-rendered token count.
+//
+// Content free-form -- "⛏ 12.4k" carry pictograph and digits -- so mode
+// whitelist cannot guard it and sanitize drop control bytes instead. Missing
+// file cost this field alone, never mode beside it.
+func cavemanSavings(dir string) string {
+	raw, ok := readCavemanFile(filepath.Join(dir, cavemanSavingsFile))
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(sanitize(raw))
 }
