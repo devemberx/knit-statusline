@@ -273,3 +273,39 @@ func TestConfigDirFollowsEnvThenHome(t *testing.T) {
 		t.Errorf("empty CLAUDE_CONFIG_DIR gave %q, want %q", got, want)
 	}
 }
+
+// Cache sit under config root: user who move root otherwise read config from
+// new place and write cache to old one, splitting state across two directories.
+func TestCacheDirFollowsTheConfigRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+
+	moved := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+	if got, want := cacheDir(), filepath.Join(moved, "statusline-cache"); got != want {
+		t.Errorf("moved root gave %q, want %q", got, want)
+	}
+
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	want := filepath.Join(home, ".claude", "statusline-cache")
+	if got := cacheDir(); got != want {
+		t.Errorf("default root gave %q, want %q", got, want)
+	}
+}
+
+// No home and no variable mean no root. Empty string keep install and Load
+// guards live: filepath.Join would hand them relative ".claude" instead, and
+// every path then resolve against whatever directory process sit in.
+func TestConfigDirAndCacheDirAreEmptyWithoutAHome(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	if got := configDir(); got != "" {
+		t.Errorf("configDir() = %q, want empty", got)
+	}
+	if got := cacheDir(); got != "" {
+		t.Errorf("cacheDir() = %q, want empty", got)
+	}
+}

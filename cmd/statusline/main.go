@@ -181,17 +181,34 @@ func homeDir() string {
 	return os.Getenv("HOME")
 }
 
+// cacheDir hold transcript cursor and command output. Sit under config root,
+// not $HOME: split root read config from one directory and cache to another.
+// Empty root give empty path, which segment and cursor already treat as
+// "no cache" rather than a relative directory under cwd.
 func cacheDir() string {
-	return filepath.Join(homeDir(), ".claude", "statusline-cache")
+	root := configDir()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "statusline-cache")
 }
 
-// configDir locate Claude Code config root.
+// configDir locate Claude Code config root. settings.json, statusline.toml, our
+// binary and our cache all live under it.
 //
-// CLAUDE_CONFIG_DIR is what caveman hook read when it write flag, so segment
-// must read same variable or look in wrong directory for people who move it.
+// CLAUDE_CONFIG_DIR relocate whole root, so reading $HOME directly write files
+// Claude Code never open.
+//
+// Empty home give empty root, never ".claude": filepath.Join on empty string
+// yield relative path, and install and Load guard on empty exactly to stop
+// dropping a config directory into whatever directory command ran from.
 func configDir() string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
 		return d
 	}
-	return filepath.Join(homeDir(), ".claude")
+	h := homeDir()
+	if h == "" {
+		return ""
+	}
+	return filepath.Join(h, ".claude")
 }
