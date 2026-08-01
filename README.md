@@ -83,13 +83,8 @@ Your hooks, permissions, plugins and every other setting are read, merged and
 written back untouched. If `statusLine` already pointed at another tool, the
 installer reports what it replaced — and leaves it alone on uninstall.
 
-On Windows the command is recorded with forward slashes: Claude Code runs the
-status line through Git Bash, which eats unquoted backslashes. A path Bash would
-otherwise split — one holding a space, or a character like `&` or `'` — is quoted
-as well. Quoting is skipped wherever Bash does not need it, because PowerShell,
-the fallback when Git Bash is missing, reads a quoted command as a string instead
-of running it. A home directory with a space in it therefore needs Git Bash
-present.
+On Windows, a home directory containing a space or one of `&` `'` needs Git Bash
+present — it comes with Git for Windows.
 
 </details>
 
