@@ -140,14 +140,15 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
-	// Sparse fixture serve both placeholder rows. State decide which: same
-	// payload, opposite answers to "has this session sent anything".
+	// One fixture per row: sparse carry cost and context_window populated with
+	// real zeros, and those win on known path whatever freshness say, so
+	// session, cost and lines would never show their placeholder at all.
 	doc := fixtures.Full
 	kind := "complete data"
 	state := transcript.StateLive
 	switch {
 	case *unknown:
-		doc = fixtures.Sparse
+		doc = fixtures.Unknown
 		kind = "unknown data: resumed session, nothing reported yet"
 	case *sparse:
 		doc = fixtures.Sparse

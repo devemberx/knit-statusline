@@ -85,6 +85,26 @@ func TestSparseFixtureAbsences(t *testing.T) {
 	}
 }
 
+// Unknown fixture exist for absences sparse cannot carry: cost and
+// context_window both gone, so no stable segment find a known value and each
+// reach its placeholder. Regaining either block silently hide three of seven.
+func TestUnknownFixtureAbsences(t *testing.T) {
+	in := load(t, fixtures.Unknown)
+
+	if in.Cost != nil {
+		t.Error("cost should be absent, else session, cost and lines take known path")
+	}
+	if in.Context != nil {
+		t.Error("context_window should be absent")
+	}
+	if in.RateLimits != nil {
+		t.Error("rate_limits should be absent")
+	}
+	if _, ok := in.ContextPercent(); ok {
+		t.Error("ContextPercent() should report unknown")
+	}
+}
+
 func TestEmptyDocumentIsSafe(t *testing.T) {
 	in := load(t, fixtures.Empty)
 

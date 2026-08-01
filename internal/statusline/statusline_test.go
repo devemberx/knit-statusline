@@ -180,6 +180,7 @@ func TestEveryPresetRendersEveryFixture(t *testing.T) {
 		}{
 			{"full", fixtures.Full},
 			{"sparse", fixtures.Sparse},
+			{"unknown", fixtures.Unknown},
 			{"empty", fixtures.Empty},
 		} {
 			got := draw(t, cfg, f.doc)

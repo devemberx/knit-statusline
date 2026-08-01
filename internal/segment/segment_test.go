@@ -77,14 +77,21 @@ func TestProducedFieldsAreDeclared(t *testing.T) {
 	}{
 		{"full", fixtures.Full},
 		{"sparse", fixtures.Sparse},
+		{"unknown", fixtures.Unknown},
 		{"empty", fixtures.Empty},
 	} {
-		for _, kind := range Names() {
-			def, _ := Lookup(kind)
-			for name := range Build(ctx(t, f.doc, kind)).Fields {
-				if !slices.Contains(def.Fields, name) {
-					t.Errorf("%s/%s: Build produce {%s}, absent from Def.Fields %v",
-						f.name, kind, name, def.Fields)
+		// Fresh branch build own field set, so live pass alone check half of
+		// what stable segment produce.
+		for _, fresh := range []bool{false, true} {
+			for _, kind := range Names() {
+				def, _ := Lookup(kind)
+				c := ctx(t, f.doc, kind)
+				c.Fresh = fresh
+				for name := range Build(c).Fields {
+					if !slices.Contains(def.Fields, name) {
+						t.Errorf("%s/%s fresh=%v: Build produce {%s}, absent from Def.Fields %v",
+							f.name, kind, fresh, name, def.Fields)
+					}
 				}
 			}
 		}
@@ -215,15 +222,21 @@ func TestThresholdsComeFromResolvedConfig(t *testing.T) {
 
 // Empty document is floor every segment must survive: valid JSON, nothing
 // populated. None may panic, and none may claim data it does not have.
-// Stable segment skipped -- it hold its slot with placeholder rather than
-// drop, covered per-segment in builtin_test.go. Read via Lookup rather than
-// a hand-kept name list, so set stays correct as more segments go Stable.
+//
+// Two verdicts, read off Lookup rather than hand-kept name list: stable segment
+// hold its slot, so it must draw something; every other must draw nothing.
+// Skipping stable ones left seven segments with no floor test at all.
 func TestEverySegmentSurvivesEmptyDocument(t *testing.T) {
 	for _, kind := range Names() {
-		if def, ok := Lookup(kind); ok && def.Stable {
+		def, _ := Lookup(kind)
+		got := draw(ctx(t, fixtures.Empty, kind))
+		if def.Stable {
+			if got == "" {
+				t.Errorf("%s is stable but dropped out of an empty document", kind)
+			}
 			continue
 		}
-		if got := draw(ctx(t, fixtures.Empty, kind)); got != "" {
+		if got != "" {
 			t.Errorf("%s rendered %q from an empty document", kind, got)
 		}
 	}
