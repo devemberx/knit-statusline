@@ -222,3 +222,43 @@ func TestEverySegmentSurvivesEmptyDocument(t *testing.T) {
 		}
 	}
 }
+
+func TestHoldsSlotNeedsStableAndUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stable  bool
+		unknown string
+		want    bool
+	}{
+		{"stable with text", true, "…", true},
+		{"stable opted out", true, "", false},
+		{"not stable", false, "…", false},
+		{"neither", false, "", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Context{stable: tc.stable, Cfg: config.Resolved{Unknown: tc.unknown}}
+			if got := c.holdsSlot(); got != tc.want {
+				t.Fatalf("holdsSlot = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// Build own stable flag: builder read it through Context, never look
+// registry up again.
+func TestBuildInjectsStableFromRegistry(t *testing.T) {
+	var seen bool
+	register("test.stable-probe", Def{
+		Fields:          []string{"x"},
+		DefaultTemplate: "{x}",
+		Stable:          true,
+		Build: func(c Context) Result {
+			seen = c.stable
+			return empty
+		},
+	})
+	Build(Context{Cfg: config.Resolved{Kind: "test.stable-probe", Unknown: "…"}})
+	if !seen {
+		t.Fatal("Build did not inject Def.Stable into Context")
+	}
+}
