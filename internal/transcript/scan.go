@@ -47,10 +47,7 @@ func (t Totals) Total() int64 {
 
 // Minimal shape. Line carry far more; decoding only these keep scan cheap.
 type entry struct {
-	Type       string `json:"type"`
-	Attachment *struct {
-		Type string `json:"type"`
-	} `json:"attachment"`
+	Type    string `json:"type"`
 	Message *struct {
 		ID    string `json:"id"`
 		Model string `json:"model"`
@@ -77,21 +74,12 @@ func (e entry) countable() bool {
 // wasted decode, false negative lose tokens.
 var usageProbe = []byte(`"usage"`)
 
-// Marker entry carry no usage object, so it need its own probe. Conversation
-// text mentioning marker name match too -- false positive cost one decode,
-// structure check in applyLine reject it.
-var ultraProbe = []byte(`"ultra_effort_`)
-
 // FileCursor record how far one transcript file consumed, plus its totals.
 type FileCursor struct {
 	Offset int64 `json:"offset"`
 	// Last counted message. Persisted = dedup survive incremental boundary.
 	LastMessageID string `json:"lastMessageID"`
-	// Last ultracode marker: "" none seen, "on" enter, "off" exit. Payload
-	// collapse ultracode into xhigh (claude-code#69068); markers are only
-	// live signal, so state persist beside offset.
-	Ultracode string `json:"ultracode,omitempty"`
-	Totals    Totals `json:"totals"`
+	Totals        Totals `json:"totals"`
 }
 
 // scanFile advance cur over bytes appended since last scan. Shrunk file mean
@@ -146,8 +134,7 @@ func scanFile(path string, cur FileCursor) (FileCursor, error) {
 
 // applyLine fold one complete transcript line into cursor.
 func applyLine(cur *FileCursor, line []byte) {
-	hasUsage := bytes.Contains(line, usageProbe)
-	if !hasUsage && !bytes.Contains(line, ultraProbe) {
+	if !bytes.Contains(line, usageProbe) {
 		return
 	}
 	var e entry
@@ -156,19 +143,6 @@ func applyLine(cur *FileCursor, line []byte) {
 	if err := json.Unmarshal(line, &e); err != nil {
 		return
 	}
-	// Structured marker only. Mention inside message content decode as string,
-	// never as attachment.type, so conversation about markers cannot flip state.
-	if e.Type == "attachment" && e.Attachment != nil {
-		switch e.Attachment.Type {
-		case "ultra_effort_enter":
-			cur.Ultracode = "on"
-		case "ultra_effort_exit":
-			cur.Ultracode = "off"
-		}
-		return
-	}
-	// Marker switch stay above this: ultraProbe admit lines carrying no usage,
-	// and countable() reject every one of them, so state would never land.
 	if !e.countable() {
 		return
 	}
@@ -264,10 +238,4 @@ func Scan(opts Options, cache *Cache) (Totals, *Cache) {
 	// Replace, not merge. Cursors for vanished files else accumulate forever.
 	cache.Files = cursors
 	return total, cache
-}
-
-// UltracodeOn report whether path's last seen marker is enter. Query after
-// Scan; cursor carry state, so answer stay stable across incremental scans.
-func (c *Cache) UltracodeOn(path string) bool {
-	return c != nil && c.Files[path].Ultracode == "on"
 }

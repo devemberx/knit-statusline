@@ -34,9 +34,9 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
 - `internal/config/` — `config.go` TOML types + `Resolve`, `load.go` read and
   merge, `validate.go` problem reporting.
 - `internal/segment/` — `segment.go` `Def` registry, `builtin.go` field-mapping
-  segments, `git.go`, `tokens.go`, `effort.go`, `caveman.go`, `command.go`,
-  `format.go`. Segment reaching past parsed stdin — subprocess, filesystem,
-  cache — take own file; `builtin.go` stay pure.
+  segments, `git.go`, `tokens.go`, `caveman.go`, `command.go`, `format.go`.
+  Segment reaching past parsed stdin — subprocess, filesystem, cache — take own
+  file; `builtin.go` stay pure.
 - `internal/render/` — `style.go` colors, palette, thresholds; `template.go`
   placeholder expansion.
 - `internal/transcript/` — `scan.go` JSONL scan into `Totals`, `cursor.go` byte
