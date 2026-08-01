@@ -59,26 +59,6 @@ func init() {
 		},
 	})
 
-	register("effort", Def{
-		Fields:          []string{"level", "icon"},
-		DefaultTemplate: "{icon} {level}",
-		Build: func(c Context) Result {
-			// Absent on models without effort parameter, where showing default
-			// would claim setting this session does not have.
-			if c.In.Effort == nil || c.In.Effort.Level == "" {
-				return empty
-			}
-			icon, color := effortStyle(c.In.Effort.Level)
-			return Result{
-				Base: color,
-				Fields: render.Fields{
-					"icon":  render.Colored(icon, color),
-					"level": render.Colored(c.In.Effort.Level, color),
-				},
-			}
-		},
-	})
-
 	register("limit.5h", Def{
 		Fields:          []string{"pct", "bar", "reset", "reset_time"},
 		DefaultTemplate: "current {bar} {pct:>3}%{reset}",
@@ -405,25 +385,6 @@ func apiDuration(c Context) (string, bool) {
 		return duration(0), true
 	}
 	return c.Cfg.Unknown, true
-}
-
-// Fill ramp read without color, so NO_COLOR terminal still separate max from
-// high. Unknown level take empty circle, never medium's glyph.
-func effortStyle(level string) (string, render.Color) {
-	switch level {
-	case "max":
-		return "✦", render.Orange
-	case "xhigh":
-		return "●", render.Magenta
-	case "high":
-		return "◕", render.Cyan
-	case "medium":
-		return "◑", render.White
-	case "low":
-		return "◔", render.Dim
-	default:
-		return "○", render.Dim
-	}
 }
 
 type window int
