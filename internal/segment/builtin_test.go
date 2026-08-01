@@ -199,8 +199,8 @@ func TestContextBarAgreesWithPercentage(t *testing.T) {
 	}
 }
 
-// Five levels Claude Code emit, each own glyph and color, plus one level it does
-// not emit today.
+// Five levels Claude Code emit, each own glyph and color. Unknown level get own
+// slot too.
 func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 	levels := []struct {
 		level string
