@@ -1,6 +1,8 @@
 package segment
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -279,5 +281,55 @@ func TestBuildInjectsStableFromRegistry(t *testing.T) {
 	Build(Context{Cfg: config.Resolved{Kind: "test.stable-probe", Unknown: "…"}})
 	if !seen {
 		t.Fatal("Build did not inject Def.Stable into Context")
+	}
+}
+
+// Opposite direction from TestProducedFieldsAreDeclared: declared field that one
+// path omit expand to nothing, so slot narrow mid-session and read as crash.
+// Icon is fixed part of segment shape, so any row drawn at all carry one.
+//
+// Coverage differ per segment, not uniform across matrix. context and session
+// hold slot, so all 4 fixtures x 2 fresh states reach them. caveman need flag
+// file on disk, absent from every fixture, so test seed one config dir and
+// point caveman there instead of skip. effort fire only where fixture carry
+// effort level -- fixtures.Full alone -- so check run 2 of 8 combinations,
+// same as any segment gated on payload content.
+func TestDeclaredIconAlwaysProduced(t *testing.T) {
+	cavemanDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(cavemanDir, cavemanFlagFile), []byte("full"), 0o644); err != nil {
+		t.Fatalf("seed caveman flag file: %v", err)
+	}
+
+	for _, f := range []struct {
+		name string
+		doc  []byte
+	}{
+		{"full", fixtures.Full},
+		{"sparse", fixtures.Sparse},
+		{"unknown", fixtures.Unknown},
+		{"empty", fixtures.Empty},
+	} {
+		for _, fresh := range []bool{false, true} {
+			for _, kind := range Names() {
+				def, _ := Lookup(kind)
+				if !slices.Contains(def.Fields, "icon") {
+					continue
+				}
+				c := ctx(t, f.doc, kind)
+				c.Fresh = fresh
+				if kind == "caveman" {
+					c.ConfigDir = cavemanDir
+				}
+				res := Build(c)
+				// Dropped slot draw nothing, so no shape to hold.
+				if res.Empty {
+					continue
+				}
+				if res.Fields["icon"].Text == "" {
+					t.Errorf("%s/%s fresh=%v: drew row with empty {icon}",
+						f.name, kind, fresh)
+				}
+			}
+		}
 	}
 }

@@ -253,9 +253,9 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | Segment | Fields | Notes |
 | --- | --- | --- |
 | `model` | `name` `family` `version` `id` | `{name}` is `Opus 4.8`; `{family}` and `{version}` are its halves, and `{version}` is empty when the id carries no release number |
-| `context` | `pct` `remaining` `used` `size` `bar` | Absent before the first API call and after `/compact` |
+| `context` | `pct` `remaining` `used` `size` `bar` `icon` | Absent before the first API call and after `/compact`; `{icon}` is `✍️` in white |
 | `dir` | `name` `path` `project` `worktree` `git` `branch` `dirty` | `{git}` is a preformatted ` (branch*)`, empty outside a repo |
-| `session` | `duration` `id` `name` | |
+| `session` | `duration` `id` `name` `icon` | `{icon}` is `⏱` in white |
 | `effort` | `level` `icon` | Absent on models without an effort parameter; `{icon}` tracks the level — see [Colors](#colors) |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
@@ -308,6 +308,11 @@ never leaves red.
 Thresholds escalate green → orange → yellow → red as a percentage climbs past
 `warn`, `high` and `crit`. Filled bar segments carry that color and the
 remainder is dimmed.
+
+Segment icons are fields, not template text, so they carry their own colour
+rather than the muted weight the rest of a label gets. `context` and `session`
+render theirs in white; `effort` and `caveman` colour theirs to match what they
+report. Drop `{icon}` from a template and the glyph goes with it.
 
 The `effort` segment has its own scale. Claude Code defines five levels, and each
 gets a distinct glyph and color:
