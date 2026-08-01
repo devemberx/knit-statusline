@@ -60,6 +60,15 @@ type entry struct {
 	} `json:"message"`
 }
 
+// countable report whether decoded entry contribute to Totals.
+//
+// Probe share it: two copies of this filter drift, and probe disagreeing with
+// counter mark session live that show zero tokens.
+func (e entry) countable() bool {
+	return e.Type == "assistant" && e.Message != nil &&
+		e.Message.Usage != nil && e.Message.Model != syntheticModel
+}
+
 // Prefilter. Line without this substring carry no message.usage. Reverse not
 // guaranteed -- content hold that text too -- but false positive cost one
 // wasted decode, false negative lose tokens.
@@ -134,10 +143,7 @@ func applyLine(cur *FileCursor, line []byte) {
 	if err := json.Unmarshal(line, &e); err != nil {
 		return
 	}
-	if e.Type != "assistant" || e.Message == nil || e.Message.Usage == nil {
-		return
-	}
-	if e.Message.Model == syntheticModel {
+	if !e.countable() {
 		return
 	}
 	// Id-less entry leave guard alone. Overwriting with "" disarm dedup, so next
