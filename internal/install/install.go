@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"unicode"
 
 	"github.com/devemberx/knit-statusline/internal/config"
 )
@@ -24,6 +26,94 @@ func BinaryPath(home string) string {
 		name += ".exe"
 	}
 	return filepath.Join(home, ".claude", name)
+}
+
+// CommandString form statusLine.command for binary. Git Bash on Windows eat
+// unquoted backslash: C:\Users\... arrive separator-less, row stay blank.
+// Forward slashes run in every shell. Quote whole bash-unsafe set, not
+// whitespace alone: O'Brien or A&B home break bash same way a space does.
+// Quoted string is no command under PowerShell fallback, so bare form stay
+// whenever bash allow it -- mid-word tilde (8.3 short name) and non-ASCII
+// included. Double quote leave $ backtick " \ live in bash; escape those.
+func CommandString(binary string) string {
+	cmd := filepath.ToSlash(binary)
+	if !strings.ContainsFunc(cmd, bashUnsafe) {
+		return cmd
+	}
+	esc := strings.NewReplacer(`\`, `\\`, `"`, `\"`, `$`, `\$`, "`", "\\`").Replace(cmd)
+	return `"` + esc + `"`
+}
+
+// bashUnsafe report rune unquoted bash command word cannot carry. Safe list,
+// not unsafe list: unknown punctuation quote, never slip through.
+func bashUnsafe(c rune) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return false
+	case c > unicode.MaxASCII:
+		// Non-ASCII mean nothing to bash or PowerShell.
+		return false
+	}
+	return !strings.ContainsRune("-_./:+~", c)
+}
+
+// OwnsCommand report whether command invoke installed binary. Settings hold
+// bare backslash, slashed, quoted or quoted-escaped form, so compare
+// normalized, never literal.
+func OwnsCommand(command, binary string) bool {
+	cmd := unquoteCommand(strings.TrimSpace(command))
+	if cmd == "" {
+		return false
+	}
+	if samePathText(cmd, binary) {
+		return true
+	}
+	// 8.3 short home (C:\Users\RUNNER~1) and symlinked home name one binary by
+	// two strings no rewrite reconcile. Stat settle it. Uninstall call this
+	// before deleting binary, so file still there to stat.
+	return sameFile(cmd, binary)
+}
+
+// unquoteCommand undo CommandString quoting. Bash double-quote rule: backslash
+// stay literal unless it precede $ backtick " or \.
+func unquoteCommand(cmd string) string {
+	if len(cmd) < 2 || !strings.HasPrefix(cmd, `"`) || !strings.HasSuffix(cmd, `"`) {
+		return cmd
+	}
+	inner := cmd[1 : len(cmd)-1]
+	var b strings.Builder
+	b.Grow(len(inner))
+	for i := 0; i < len(inner); i++ {
+		if inner[i] == '\\' && i+1 < len(inner) && strings.IndexByte("$`\"\\", inner[i+1]) >= 0 {
+			i++
+		}
+		b.WriteByte(inner[i])
+	}
+	return b.String()
+}
+
+// samePathText compare path as text. Windows fold case: settings may hold
+// c:\users\... while os.UserHomeDir resolve C:\Users\...
+func samePathText(a, b string) bool {
+	a, b = filepath.ToSlash(a), filepath.ToSlash(b)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
+
+// sameFile report both path name one file on disk. Stat only, never exec.
+// Missing either side mean no.
+func sameFile(a, b string) bool {
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	fb, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(fa, fb)
 }
 
 // Result report what ran, so command layer name specifics instead of claiming
@@ -96,7 +186,7 @@ func Install(opts Options) (*Result, error) {
 
 	settings["statusLine"] = map[string]any{
 		"type":    "command",
-		"command": res.InstalledBinary,
+		"command": CommandString(res.InstalledBinary),
 	}
 	if err := writeJSON(res.SettingsPath, settings); err != nil {
 		return nil, err
@@ -141,7 +231,7 @@ func Uninstall(home string) (*Result, error) {
 
 	// Only key we installed is ours to delete. User who switched status line
 	// tools by hand keep that tool's config, and missing key match nothing.
-	if res.ReplacedCommand == res.InstalledBinary {
+	if OwnsCommand(res.ReplacedCommand, res.InstalledBinary) {
 		backup, err := backupFile(res.SettingsPath)
 		if err != nil {
 			return nil, err

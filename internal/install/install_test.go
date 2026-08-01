@@ -69,8 +69,8 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 
 	// Recorded command must be installed copy, not npx package cache npm may
 	// prune out from under it.
-	if sl["command"] != BinaryPath(home) {
-		t.Errorf("statusLine command = %v, want the installed copy %s", sl["command"], BinaryPath(home))
+	if sl["command"] != CommandString(BinaryPath(home)) {
+		t.Errorf("statusLine command = %v, want the installed copy %s", sl["command"], CommandString(BinaryPath(home)))
 	}
 
 	info, err := os.Stat(BinaryPath(home))
@@ -85,6 +85,238 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 
 	if _, err := os.Stat(config.UserPath(home)); err != nil {
 		t.Errorf("statusline.toml not written: %v", err)
+	}
+}
+
+// Git Bash eat unquoted backslash: C:\Users\... command render blank row.
+// Real coverage on windows runner, where TempDir hold backslashes.
+func TestInstallWritesCommandWithForwardSlashes(t *testing.T) {
+	home := t.TempDir()
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	sl, _ := readSettingsMap(t, home)["statusLine"].(map[string]any)
+	cmd, _ := sl["command"].(string)
+	if strings.ContainsRune(cmd, '\\') {
+		t.Errorf("command %q holds backslashes; Git Bash eats them", cmd)
+	}
+	if cmd != CommandString(BinaryPath(home)) {
+		t.Errorf("command = %q, want %q", cmd, CommandString(BinaryPath(home)))
+	}
+}
+
+// Unquoted command split at home space. TempDir carry no space, so make one.
+func TestInstallQuotesACommandPathWithSpaces(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "John Doe")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	sl, _ := readSettingsMap(t, home)["statusLine"].(map[string]any)
+	cmd, _ := sl["command"].(string)
+	want := `"` + filepath.ToSlash(BinaryPath(home)) + `"`
+	if cmd != want {
+		t.Errorf("command = %q, want %q", cmd, want)
+	}
+}
+
+// Bare path from old install, slashed, quoted -- all must read as ours, else
+// uninstall strand old entry.
+func TestOwnsCommandAcrossHistoricalForms(t *testing.T) {
+	home := t.TempDir()
+	binary := BinaryPath(home)
+
+	for _, cmd := range []string{
+		binary,
+		filepath.ToSlash(binary),
+		`"` + filepath.ToSlash(binary) + `"`,
+		CommandString(binary),
+	} {
+		if !OwnsCommand(cmd, binary) {
+			t.Errorf("OwnsCommand(%q) = false, want true", cmd)
+		}
+	}
+
+	for _, cmd := range []string{"", "/opt/other-tool", `"/opt/other-tool"`} {
+		if OwnsCommand(cmd, binary) {
+			t.Errorf("OwnsCommand(%q) = true, want false", cmd)
+		}
+	}
+}
+
+// Metacharacter break bash same as space: O'Brien leave quote unmatched, A&B
+// split command, (1) open subshell. All legal Windows filename characters.
+func TestInstallQuotesAMetacharacterPath(t *testing.T) {
+	for _, dir := range []string{"O'Brien", "A&B", "backup (1)"} {
+		home := filepath.Join(t.TempDir(), dir)
+		if err := os.MkdirAll(home, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+			t.Fatal(err)
+		}
+
+		sl, _ := readSettingsMap(t, home)["statusLine"].(map[string]any)
+		cmd, _ := sl["command"].(string)
+		want := `"` + filepath.ToSlash(BinaryPath(home)) + `"`
+		if cmd != want {
+			t.Errorf("home %q: command = %q, want %q", dir, cmd, want)
+		}
+	}
+}
+
+// Double quote leave $ backtick \ " live in bash: "we$ird" expand empty
+// variable, backtick open command substitution, lone \ eat next rune, " end
+// quote early. Escape all four. Backslash and " never survive on windows
+// (ToSlash, illegal filename rune) but stay legal in unix home names.
+func TestCommandStringEscapesExpansionCharacters(t *testing.T) {
+	for _, tc := range []struct{ binary, want string }{
+		{`/home/we$ird/.claude/knit-statusline`, `"/home/we\$ird/.claude/knit-statusline"`},
+		{"/home/back`tick/.claude/knit-statusline", "\"/home/back\\`tick/.claude/knit-statusline\""},
+		{`/home/we"ird/.claude/knit-statusline`, `"/home/we\"ird/.claude/knit-statusline"`},
+	} {
+		if got := CommandString(tc.binary); got != tc.want {
+			t.Errorf("CommandString(%q) = %q, want %q", tc.binary, got, tc.want)
+		}
+	}
+}
+
+// Literal backslash in unix home name must arrive escaped, not eaten. Windows
+// excluded: ToSlash read same rune as separator and rewrite it.
+func TestCommandStringEscapesUnixBackslash(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ToSlash rewrite backslash to slash on windows")
+	}
+	got := CommandString(`/home/back\slash/.claude/knit-statusline`)
+	if want := `"/home/back\\slash/.claude/knit-statusline"`; got != want {
+		t.Errorf("CommandString = %q, want %q", got, want)
+	}
+}
+
+// Mid-word tilde expand in no shell, and 8.3 short home C:\Users\RUNNER~1 is
+// common. Quoting it would only break PowerShell fallback for nothing.
+func TestCommandStringLeavesShortNamesBare(t *testing.T) {
+	// Slashed input: ToSlash rewrite separators on windows alone, and quoting
+	// decision is what this test pin.
+	got := CommandString("C:/Users/RUNNER~1/.claude/knit-statusline.exe")
+	if want := "C:/Users/RUNNER~1/.claude/knit-statusline.exe"; got != want {
+		t.Errorf("CommandString = %q, want %q", got, want)
+	}
+}
+
+// Non-ASCII home safe bare in both shells; quoting would cost PowerShell
+// fallback every CJK user.
+func TestCommandStringLeavesNonASCIIBare(t *testing.T) {
+	got := CommandString(`C:/Users/홍길동/.claude/knit-statusline.exe`)
+	if want := `C:/Users/홍길동/.claude/knit-statusline.exe`; got != want {
+		t.Errorf("CommandString = %q, want %q", got, want)
+	}
+}
+
+// Every form CommandString emit must read back as ours, else uninstall strand
+// its own entry.
+func TestOwnsCommandRoundTripsEveryEmittedForm(t *testing.T) {
+	for _, binary := range []string{
+		`/home/plain/.claude/knit-statusline`,
+		`/home/John Doe/.claude/knit-statusline`,
+		`/home/O'Brien/.claude/knit-statusline`,
+		`/home/we$ird/.claude/knit-statusline`,
+		"/home/back`tick/.claude/knit-statusline",
+		`C:\Users\A&B\.claude\knit-statusline.exe`,
+		`C:\Users\홍길동\.claude\knit-statusline.exe`,
+	} {
+		if !OwnsCommand(CommandString(binary), binary) {
+			t.Errorf("OwnsCommand(CommandString(%q)) = false, want true", binary)
+		}
+	}
+}
+
+// Windows path compare case-insensitively. Exact compare strand our own key
+// while deleting binary it point at.
+func TestOwnsCommandFoldsWindowsCase(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("unix path are case-sensitive")
+	}
+	binary := `C:\Users\John\.claude\knit-statusline.exe`
+	if !OwnsCommand(`c:/users/john/.claude/knit-statusline.exe`, binary) {
+		t.Error("case difference read as another tool")
+	}
+}
+
+// One binary, two strings: 8.3 short home C:\Users\RUNNER~1 on windows,
+// symlinked home on unix. No rewrite reconcile those, so stat settle it.
+func TestOwnsCommandMatchesSameFileByAnotherPath(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "real")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	if _, err := Install(Options{Home: target, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	if !OwnsCommand(CommandString(BinaryPath(link)), BinaryPath(target)) {
+		t.Error("same binary reached through symlinked home read as another tool")
+	}
+
+	// Stat must not turn every existing file into ours.
+	other := filepath.Join(root, "other-tool")
+	if err := os.WriteFile(other, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if OwnsCommand(other, BinaryPath(target)) {
+		t.Error("another tool on disk claimed as ours")
+	}
+}
+
+// Fallback path see escaped bytes whenever exact compare miss (case, short
+// name). Unescaped rune then mismatch, so unquote must reverse CommandString.
+func TestUnquoteCommandReversesEscaping(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`/home/plain/knit-statusline`, `/home/plain/knit-statusline`},
+		{`"/home/John Doe/knit-statusline"`, `/home/John Doe/knit-statusline`},
+		{`"/home/we\$ird/knit-statusline"`, `/home/we$ird/knit-statusline`},
+		{"\"/home/back\\`tick/knit-statusline\"", "/home/back`tick/knit-statusline"},
+		{`"/home/we\"ird/knit-statusline"`, `/home/we"ird/knit-statusline`},
+		{`"/home/back\\slash/knit-statusline"`, `/home/back\slash/knit-statusline`},
+		// Backslash before anything else stay literal, bash rule.
+		{`"/home/back\slash/knit-statusline"`, `/home/back\slash/knit-statusline`},
+		{`""`, ``},
+		{`"`, `"`},
+	} {
+		if got := unquoteCommand(tc.in); got != tc.want {
+			t.Errorf("unquoteCommand(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// Uninstall must recognize quoted form current install write for spaced home.
+func TestUninstallRemovesAQuotedCommand(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "John Doe")
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(Options{Home: home, Binary: fakeBinary(t)}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Uninstall(home)
+	if err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+	if !res.RemovedStatusLine {
+		t.Error("quoted command was not recognized as ours")
+	}
+	if _, ok := readSettingsMap(t, home)["statusLine"]; ok {
+		t.Error("statusLine was not removed")
 	}
 }
 
@@ -322,8 +554,8 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 
 func TestUninstallRemovesOnlyTheStatusLine(t *testing.T) {
 	home := t.TempDir()
-	// Uninstall touch statusLine only when command is our own installed copy,
-	// so seed exactly that. Marshal keep Windows backslashes escaped.
+	// Seed bare path old install wrote, proving old entry still read as ours.
+	// Marshal keep windows backslashes escaped.
 	ours, err := json.Marshal(BinaryPath(home))
 	if err != nil {
 		t.Fatal(err)

@@ -76,6 +76,36 @@ jobs:
             fi
           done
 
+      # Claude Code run statusLine.command through Git Bash on windows, where
+      # backslash path lose separators and row stay blank. Run recorded command
+      # same way, demand a row, then demand uninstall recognize its own entry.
+      # Home names cover both branches: mktemp -d alone never hold a space, so
+      # quoted form would ship untested. cygpath: Go want windows home, mktemp
+      # hand back POSIX path Git Bash alone map.
+      - name: installed command draws a row under the shell
+        shell: bash
+        run: |
+          bin="$(mktemp -d)/knit-statusline"
+          if [ "$RUNNER_OS" = Windows ]; then bin="$bin.exe"; fi
+          go build -o "$bin" ./cmd/statusline
+          for name in plain "John Doe" "O'Brien"; do
+            home="$(mktemp -d)/$name"
+            mkdir -p "$home"
+            if [ "$RUNNER_OS" = Windows ]; then home="$(cygpath -w "$home")"; fi
+            HOME="$home" USERPROFILE="$home" "$bin" install
+            cmd="$(node -p 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).statusLine.command' "$home/.claude/settings.json")"
+            echo "recorded command for [$name]: $cmd"
+            if ! out=$(printf '{}' | NO_COLOR=1 bash -c "$cmd"); then
+              echo "recorded command failed under bash: $cmd"; exit 1
+            fi
+            if [ -z "$out" ]; then
+              echo "blank row from: $cmd"; exit 1
+            fi
+            if ! HOME="$home" USERPROFILE="$home" "$bin" uninstall | grep -q "removed the status line"; then
+              echo "uninstall did not recognize its own entry: $cmd"; exit 1
+            fi
+          done
+
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
