@@ -8,14 +8,14 @@
 
 const { spawnSync } = require("node:child_process");
 
-// npm install exactly one, picked by "os" and "cpu" in each platform package.
-const PACKAGE_BY_TARGET = {
-  "darwin-arm64": "@devemberx/knit-statusline-darwin-arm64",
-  "darwin-x64": "@devemberx/knit-statusline-darwin-x64",
-  "linux-arm64": "@devemberx/knit-statusline-linux-arm64",
-  "linux-x64": "@devemberx/knit-statusline-linux-x64",
-  "win32-x64": "@devemberx/knit-statusline-win32-x64",
-};
+// npm install exactly one platform package, picked by "os" and "cpu" in each.
+// Supported set read from own manifest: prepare-packages.mjs hold these keys
+// against its TARGETS, so a target list repeated here drift silently -- package
+// installed, launcher still call it unsupported.
+const PACKAGE_PREFIX = "@devemberx/knit-statusline-";
+const PLATFORM_PACKAGES = Object.keys(
+  require("../package.json").optionalDependencies ?? {},
+);
 
 function fail(message) {
   console.error(`knit-statusline: ${message}`);
@@ -24,12 +24,15 @@ function fail(message) {
 
 function resolveBinary() {
   const target = `${process.platform}-${process.arch}`;
-  const pkg = PACKAGE_BY_TARGET[target];
+  const pkg = `${PACKAGE_PREFIX}${target}`;
 
-  if (!pkg) {
+  if (!PLATFORM_PACKAGES.includes(pkg)) {
+    const supported = PLATFORM_PACKAGES.map((name) =>
+      name.slice(PACKAGE_PREFIX.length)
+    ).join(", ");
     fail(
       `no prebuilt binary for ${target}.\n` +
-        `Supported: ${Object.keys(PACKAGE_BY_TARGET).join(", ")}\n` +
+        `Supported: ${supported}\n` +
         `Build from source instead: go install github.com/devemberx/knit-statusline/cmd/statusline@latest`
     );
   }

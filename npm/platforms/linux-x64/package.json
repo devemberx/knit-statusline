@@ -17,6 +17,7 @@
     "x64"
   ],
   "files": [
-    "bin/knit-statusline"
+    "bin/knit-statusline",
+    "LICENSE"
   ]
 }

@@ -7,8 +7,10 @@
 /npm/platforms/*/bin/*
 !/npm/platforms/*/bin/.gitkeep
 
-# README copied into launcher package at stage time
+# README and LICENSE copied into npm packages at stage time
 /npm/knit-statusline/README.md
+/npm/knit-statusline/LICENSE
+/npm/platforms/*/LICENSE
 
 node_modules/
 
