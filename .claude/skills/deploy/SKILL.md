@@ -56,7 +56,7 @@ gh api repos/:owner/:repo/environments/release \
 - No `release` environment (the `gh api` call 404s) **or** `protection_rules` without
   `required_reviewers` → stop, either way. `publish.yml` names the environment, so GitHub creates
   it on first run with no protection rules at all, and an environment with no required reviewer
-  approves itself — the tag would publish six packages to npm with no human in the loop. Fix it
+  approves itself — the tag would publish seven packages to npm with no human in the loop. Fix it
   at Settings → Environments → `release` → Required reviewers, then re-run the check.
 
 ### First release only (no tags yet)
@@ -65,18 +65,19 @@ The npm side has to be bootstrapped once by hand. Trusted publishing is configur
 package** and npm requires the package to already exist on the registry, so a package that has
 never been published cannot have a trusted publisher attached yet.
 
-Confirm with the user that all six exist and are configured:
+Confirm with the user that all seven exist and are configured:
 
 ```bash
-npm trust list @devemberx/knit-statusline          # and the five platform packages
+npm trust list @devemberx/knit-statusline          # and the six platform packages
 ```
 
-The six are `@devemberx/knit-statusline` plus `@devemberx/knit-statusline-<target>` for
-`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64` and `win32-x64`. Each must point at
-repository `devemberx/knit-statusline`, workflow file `publish.yml`, environment `release`.
+The seven are `@devemberx/knit-statusline` plus `@devemberx/knit-statusline-<target>` for
+`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64` and `win32-x64`. Each
+must point at repository `devemberx/knit-statusline`, workflow file `publish.yml`, environment
+`release`.
 
 Unconfigured → stop, and give the user the bootstrap procedure. `npm trust` attaches one
-publisher to one package, so it runs once per package — six times:
+publisher to one package, so it runs once per package — seven times:
 
 ```bash
 npm install -g npm@11                # npm trust need 11.15.0+; 11.18 run on node 22.9+
@@ -85,7 +86,7 @@ for dir in npm/platforms/*/ npm/knit-statusline; do
   npm publish "./${dir%/}" --access public --tag bootstrap
 done
 for pkg in @devemberx/knit-statusline \
-           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-x64}; do
+           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-arm64,win32-x64}; do
   npm trust github "$pkg" --repository devemberx/knit-statusline \
     --file publish.yml --environment release --allow-publish --yes
   sleep 2                            # endpoint rate-limit
@@ -109,7 +110,7 @@ Then verify the placeholders did not claim `latest`:
 # --tag bootstrap unproven here: npm reported to set dist-tags.latest on a
 # package's first publish whatever --tag say.
 for pkg in @devemberx/knit-statusline \
-           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-x64}; do
+           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-arm64,win32-x64}; do
   printf '%s ' "$pkg"; npm view "$pkg" dist-tags   # 'latest' MUST be absent
 done
 ```
@@ -242,7 +243,7 @@ Tell the user two things:
 
 ## Recovering a partial publish
 
-The job publishes six packages in sequence. If it dies partway — network, a revoked trusted
+The job publishes seven packages in sequence. If it dies partway — network, a revoked trusted
 publisher, an npm outage — some are on the registry and some are not, and the GitHub Release is
 still a draft.
 
@@ -251,7 +252,7 @@ Do not cut a new version to escape this. The run is designed to be repeated:
 ```bash
 # 1. See how far run got.
 for pkg in @devemberx/knit-statusline \
-           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-x64}; do
+           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-arm64,win32-x64}; do
   printf '%s ' "$pkg"; npm view "${pkg}@${NEW_VERSION}" version 2>/dev/null || echo "(absent)"
 done
 
@@ -264,7 +265,7 @@ Do not delete the draft by hand first. `replace_existing_draft` owns that, and a
 `gh release delete` on a tag with several stacked drafts removes whichever one GitHub
 answers with.
 
-The release only flips public after all six succeed, so a half-finished run never fronts
+The release only flips public after all seven succeed, so a half-finished run never fronts
 packages that do not exist.
 
 ## Hard rules
