@@ -22,6 +22,10 @@ type Defaults struct {
 	Warn      *int    `toml:"warn"`
 	High      *int    `toml:"high"`
 	Crit      *int    `toml:"crit"`
+
+	// Text standing where value is unknown. Empty opt segment out of held slot
+	// entirely, fresh zeros included.
+	Unknown *string `toml:"unknown"`
 }
 
 // Line is one rendered row.
@@ -48,6 +52,8 @@ type Segment struct {
 	Crit *int `toml:"crit"`
 
 	BarWidth *int `toml:"bar_width"`
+
+	Unknown *string `toml:"unknown"`
 
 	// tokens segment only.
 	Scope            *string `toml:"scope"`
@@ -83,6 +89,11 @@ const (
 	DefaultCrit      = 90
 	DefaultScope     = "session"
 	DefaultTimeoutMS = 1000
+
+	// U+2026, one column in terminals resolving East Asian Ambiguous narrow.
+	// CJK-locale terminal draw it two columns wide and shift alignment specs;
+	// unknown = "?" is escape.
+	DefaultUnknown = "…"
 )
 
 // ScopeProject count across whole project, not one session.
@@ -97,6 +108,7 @@ type Resolved struct {
 
 	Warn, High, Crit int
 	BarWidth         int
+	Unknown          string
 
 	Scope            string
 	IncludeSidechain bool
@@ -134,6 +146,7 @@ func (c *Config) Resolve(name, defaultTemplate string) Resolved {
 		High:      pick(s.High, c.Defaults.High, DefaultHigh),
 		Crit:      pick(s.Crit, c.Defaults.Crit, DefaultCrit),
 		BarWidth:  pick(s.BarWidth, c.Defaults.BarWidth, DefaultBarWidth),
+		Unknown:   pickStr(s.Unknown, c.Defaults.Unknown, DefaultUnknown),
 		Scope:     DefaultScope,
 		TimeoutMS: DefaultTimeoutMS,
 	}
@@ -160,6 +173,18 @@ func (c *Config) Resolve(name, defaultTemplate string) Resolved {
 }
 
 func pick(segment, global *int, builtin int) int {
+	if segment != nil {
+		return *segment
+	}
+	if global != nil {
+		return *global
+	}
+	return builtin
+}
+
+// pickStr mirror pick for string settings. Empty string is a value here, not
+// absent one, so only nil fall through to next layer.
+func pickStr(segment, global *string, builtin string) string {
 	if segment != nil {
 		return *segment
 	}
