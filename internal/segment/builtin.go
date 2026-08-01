@@ -9,6 +9,11 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 )
 
+// Icon sit in field, not template literal. Literal text take Result.Base, Base
+// is Dim for this segment, and SGR 2 over emoji glyph blend it into background
+// until unreadable. effort and caveman already carry icon this way.
+const contextIcon = "✍️"
+
 func init() {
 	register("model", Def{
 		Fields:          []string{"name", "family", "version", "id"},
@@ -33,8 +38,8 @@ func init() {
 	})
 
 	register("context", Def{
-		Fields:          []string{"pct", "remaining", "used", "size", "bar"},
-		DefaultTemplate: "✍️ {pct}%",
+		Fields:          []string{"pct", "remaining", "used", "size", "bar", "icon"},
+		DefaultTemplate: "{icon} {pct}%",
 		Stable:          true,
 		Build:           buildContext,
 	})
@@ -260,6 +265,7 @@ func buildContext(c Context) Result {
 
 	t := c.Thresholds()
 	f := render.Fields{
+		"icon":      render.Colored(contextIcon, render.White),
 		"pct":       render.Colored(pct(p), t.Color(p)),
 		"remaining": render.Colored(pct(100-p), t.Color(p)),
 		"bar":       render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
@@ -316,6 +322,7 @@ func contextNoUsage(c Context) Result {
 			"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, t)),
 		}
 	}
+	f["icon"] = render.Colored(contextIcon, render.White)
 	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
 		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)
 	}

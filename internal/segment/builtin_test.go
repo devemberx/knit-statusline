@@ -345,6 +345,59 @@ func TestPercentagesCarrySeverityColour(t *testing.T) {
 	}
 }
 
+// Icon must reach field map, not stay template literal: literal take
+// Result.Base, Base is Dim here, and SGR 2 over emoji glyph fade it past
+// reading.
+func TestContextIconIsWhiteField(t *testing.T) {
+	f := Build(ctx(t, fixtures.Full, "context")).Fields["icon"]
+	if f.Text != contextIcon {
+		t.Errorf("context {icon} text = %q, want %q", f.Text, contextIcon)
+	}
+	if f.Color != render.White {
+		t.Errorf("context {icon} color = %q, want White %q", f.Color, render.White)
+	}
+}
+
+// Three build paths, three separate field maps. Icon missing from one expand to
+// nothing and shrink slot mid-session, which read as crash.
+func TestContextIconSurvivesEveryPath(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		doc   []byte
+		fresh bool
+	}{
+		{"known", fixtures.Full, false},
+		{"fresh zero", fixtures.Unknown, true},
+		{"unknown", fixtures.Unknown, false},
+	} {
+		c := ctx(t, tc.doc, "context")
+		c.Fresh = tc.fresh
+		res := Build(c)
+		if res.Empty {
+			t.Fatalf("%s: context dropped its slot", tc.name)
+		}
+		if got := res.Fields["icon"].Text; got != contextIcon {
+			t.Errorf("%s: context {icon} = %q, want %q", tc.name, got, contextIcon)
+		}
+	}
+}
+
+// End-to-end over live palette, since field colour alone prove nothing about
+// what Expand emit. NO_COLOR set empty so NewPalette enable regardless of
+// environment running test.
+func TestContextIconEscapesDim(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	c := ctx(t, fixtures.Full, "context")
+	c.Palette = render.NewPalette()
+	out := draw(c)
+	if strings.Contains(out, "\033[2m"+contextIcon) {
+		t.Errorf("context icon still under dim: %q", out)
+	}
+	if !strings.Contains(out, string(render.White)+contextIcon) {
+		t.Errorf("context icon not wrapped in White: %q", out)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
 
 // ctxFor build Context for one segment name with registry's own default
