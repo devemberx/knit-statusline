@@ -426,3 +426,110 @@ func TestContextOptedOutDropsWhenFresh(t *testing.T) {
 		t.Fatal("unknown = \"\" did not drop the fresh segment")
 	}
 }
+
+func buildNamed(t *testing.T, name string, in *schema.Input, fresh bool) Result {
+	t.Helper()
+	def, _ := Lookup(name)
+	return def.Build(ctxFor(name, in, fresh))
+}
+
+func TestSessionThreeStates(t *testing.T) {
+	ms := int64(4_500_000)
+	known := &schema.Input{Cost: &schema.Cost{TotalDurationMS: &ms}}
+
+	for _, tc := range []struct {
+		name  string
+		in    *schema.Input
+		fresh bool
+		want  string
+	}{
+		{"known", known, false, "1h15m"},
+		{"fresh", &schema.Input{}, true, "0s"},
+		{"unknown", &schema.Input{}, false, config.DefaultUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := buildNamed(t, "session", tc.in, tc.fresh)
+			if res.Empty {
+				t.Fatal("session returned empty")
+			}
+			if got := res.Fields["duration"].Text; got != tc.want {
+				t.Fatalf("duration = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCostThreeStates(t *testing.T) {
+	usd := 1.23
+	known := &schema.Input{Cost: &schema.Cost{TotalCostUSD: &usd}}
+
+	for _, tc := range []struct {
+		name  string
+		in    *schema.Input
+		fresh bool
+		want  string
+	}{
+		{"known", known, false, "1.23"},
+		{"fresh", &schema.Input{}, true, "0.00"},
+		{"unknown", &schema.Input{}, false, config.DefaultUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := buildNamed(t, "cost", tc.in, tc.fresh)
+			if res.Empty {
+				t.Fatal("cost returned empty")
+			}
+			if got := res.Fields["usd"].Text; got != tc.want {
+				t.Fatalf("usd = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCostFreshApiDurationIsZero(t *testing.T) {
+	res := buildNamed(t, "cost", &schema.Input{}, true)
+	if got := res.Fields["api_duration"].Text; got != "0s" {
+		t.Fatalf("api_duration = %q, want %q", got, "0s")
+	}
+}
+
+func TestLinesThreeStates(t *testing.T) {
+	added, removed := int64(156), int64(23)
+	known := &schema.Input{Cost: &schema.Cost{TotalLinesAdded: &added, TotalLinesRemoved: &removed}}
+
+	for _, tc := range []struct {
+		name        string
+		in          *schema.Input
+		fresh       bool
+		add, remove string
+	}{
+		{"known", known, false, "156", "23"},
+		{"fresh", &schema.Input{}, true, "0", "0"},
+		{"unknown", &schema.Input{}, false, config.DefaultUnknown, config.DefaultUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			res := buildNamed(t, "lines", tc.in, tc.fresh)
+			if res.Empty {
+				t.Fatal("lines returned empty")
+			}
+			if got := res.Fields["added"].Text; got != tc.add {
+				t.Fatalf("added = %q, want %q", got, tc.add)
+			}
+			if got := res.Fields["removed"].Text; got != tc.remove {
+				t.Fatalf("removed = %q, want %q", got, tc.remove)
+			}
+		})
+	}
+}
+
+func TestOptedOutDropsSessionCostLines(t *testing.T) {
+	for _, name := range []string{"session", "cost", "lines"} {
+		t.Run(name, func(t *testing.T) {
+			def, _ := Lookup(name)
+			c := ctxFor(name, &schema.Input{}, true)
+			c.Cfg.Unknown = ""
+			if !def.Build(c).Empty {
+				t.Fatal("unknown = \"\" did not drop the segment")
+			}
+		})
+	}
+}

@@ -42,13 +42,14 @@ func init() {
 	register("session", Def{
 		Fields:          []string{"duration", "id", "name"},
 		DefaultTemplate: "⏱ {duration}",
+		Stable:          true,
 		Build: func(c Context) Result {
-			if c.In.Cost == nil || c.In.Cost.TotalDurationMS == nil {
+			text, ok := sessionDuration(c)
+			if !ok {
 				return empty
 			}
-			d := time.Duration(*c.In.Cost.TotalDurationMS) * time.Millisecond
 			f := render.Fields{
-				"duration": render.Colored(duration(d), render.White),
+				"duration": render.Colored(text, render.White),
 				"id":       render.Colored(c.In.SessionID, render.Dim),
 			}
 			if c.In.SessionName != nil {
@@ -93,35 +94,59 @@ func init() {
 	register("cost", Def{
 		Fields:          []string{"usd", "api_duration"},
 		DefaultTemplate: "${usd}",
+		Stable:          true,
 		Build: func(c Context) Result {
-			if c.In.Cost == nil || c.In.Cost.TotalCostUSD == nil {
+			if c.In.Cost != nil && c.In.Cost.TotalCostUSD != nil {
+				f := render.Fields{
+					"usd": render.Colored(fmt.Sprintf("%.2f", *c.In.Cost.TotalCostUSD), render.White),
+				}
+				if c.In.Cost.TotalAPIDurationMS != nil {
+					d := time.Duration(*c.In.Cost.TotalAPIDurationMS) * time.Millisecond
+					f["api_duration"] = render.Colored(duration(d), render.White)
+				}
+				return Result{Base: render.Dim, Fields: f}
+			}
+			if !c.holdsSlot() {
 				return empty
 			}
-			f := render.Fields{
-				"usd": render.Colored(fmt.Sprintf("%.2f", *c.In.Cost.TotalCostUSD), render.White),
+			usd, api := c.Cfg.Unknown, c.Cfg.Unknown
+			if c.Fresh {
+				usd, api = fmt.Sprintf("%.2f", 0.0), duration(0)
 			}
-			if c.In.Cost.TotalAPIDurationMS != nil {
-				d := time.Duration(*c.In.Cost.TotalAPIDurationMS) * time.Millisecond
-				f["api_duration"] = render.Colored(duration(d), render.White)
-			}
-			return Result{Base: render.Dim, Fields: f}
+			return Result{Base: render.Dim, Fields: render.Fields{
+				"usd":          render.Colored(usd, render.White),
+				"api_duration": render.Colored(api, render.White),
+			}}
 		},
 	})
 
 	register("lines", Def{
 		Fields:          []string{"added", "removed"},
 		DefaultTemplate: "+{added} -{removed}",
+		Stable:          true,
 		Build: func(c Context) Result {
-			if c.In.Cost == nil || c.In.Cost.TotalLinesAdded == nil || c.In.Cost.TotalLinesRemoved == nil {
+			if c.In.Cost != nil && c.In.Cost.TotalLinesAdded != nil && c.In.Cost.TotalLinesRemoved != nil {
+				return Result{
+					Base: render.Dim,
+					Fields: render.Fields{
+						"added":   render.Colored(strconv.FormatInt(*c.In.Cost.TotalLinesAdded, 10), render.Green),
+						"removed": render.Colored(strconv.FormatInt(*c.In.Cost.TotalLinesRemoved, 10), render.Red),
+					},
+				}
+			}
+			if !c.holdsSlot() {
 				return empty
 			}
-			return Result{
-				Base: render.Dim,
-				Fields: render.Fields{
-					"added":   render.Colored(strconv.FormatInt(*c.In.Cost.TotalLinesAdded, 10), render.Green),
-					"removed": render.Colored(strconv.FormatInt(*c.In.Cost.TotalLinesRemoved, 10), render.Red),
-				},
+			text := c.Cfg.Unknown
+			if c.Fresh {
+				text = "0"
 			}
+			// Both counters take same text: one known and one absent is not a
+			// shape Claude Code send, and inventing a mixed row hide that.
+			return Result{Base: render.Dim, Fields: render.Fields{
+				"added":   render.Colored(text, render.Green),
+				"removed": render.Colored(text, render.Red),
+			}}
 		},
 	})
 
@@ -316,6 +341,21 @@ func usedTokens(c Context) int64 {
 	}
 	p, _ := c.In.ContextPercent()
 	return int64(p / 100 * float64(*cw.ContextWindowSize))
+}
+
+// sessionDuration pick duration text for three states. Second return false
+// = segment drop.
+func sessionDuration(c Context) (string, bool) {
+	if c.In.Cost != nil && c.In.Cost.TotalDurationMS != nil {
+		return duration(time.Duration(*c.In.Cost.TotalDurationMS) * time.Millisecond), true
+	}
+	if !c.holdsSlot() {
+		return "", false
+	}
+	if c.Fresh {
+		return duration(0), true
+	}
+	return c.Cfg.Unknown, true
 }
 
 // Fill ramp read without color, so NO_COLOR terminal still separate max from

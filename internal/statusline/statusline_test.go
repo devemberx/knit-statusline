@@ -115,14 +115,20 @@ func TestReferencePresetOnSparseData(t *testing.T) {
 	}
 }
 
-// Every non-stable segment come back empty. context differ: Empty document
-// carry no transcript_path, freshness unprovable rather than proven, so Stable
-// slot hold placeholder rather than a bare zero. Printing Fallback past that
-// remains caller's job.
-func TestEmptyDocumentRendersOnlyTheStableSlot(t *testing.T) {
-	for _, preset := range []string{"minimal", "reference", "verbose", "api"} {
-		if got := drawPreset(t, preset, fixtures.Empty); got != "✍️ …%" {
-			t.Errorf("%s: empty document produced %q, want just the context placeholder", preset, got)
+// Every non-stable segment come back empty. context, session, cost and lines
+// differ: fixtures.Empty carry no transcript_path, freshness unprovable
+// rather than proven, so each Stable slot hold placeholder instead of
+// dropping or printing bare zero. Printing Fallback past that remains
+// caller's job.
+func TestEmptyDocumentRendersOnlyStableSlots(t *testing.T) {
+	for _, tc := range []struct{ preset, want string }{
+		{"minimal", "✍️ …%"},
+		{"reference", "✍️ …% │ ⏱ …"},
+		{"verbose", "✍️ …% │ ⏱ …\n+… -… │ $…"},
+		{"api", "✍️ …% │ ⏱ …\n+… -… │ $…"},
+	} {
+		if got := drawPreset(t, tc.preset, fixtures.Empty); got != tc.want {
+			t.Errorf("%s: empty document produced %q, want %q", tc.preset, got, tc.want)
 		}
 	}
 }
@@ -513,5 +519,19 @@ func TestSessionFreshOverrideBeatsProbe(t *testing.T) {
 func TestSessionFreshNilInputIsLive(t *testing.T) {
 	if sessionFresh(nil, Options{}) {
 		t.Fatal("nil input resolved fresh")
+	}
+}
+
+// Pinned state must reach segments, not merely resolve inside Render.
+func TestRenderSessionStateOverrideReachesSegments(t *testing.T) {
+	fresh := transcript.StateFresh
+	cfg := &config.Config{Lines: []config.Line{{Segments: []string{"session"}}}}
+
+	got := Render(cfg, &schema.Input{}, Options{
+		Palette:      render.NoColor(),
+		SessionState: &fresh,
+	})
+	if !strings.Contains(got, "0s") {
+		t.Fatalf("Render = %q, want a fresh-zero duration", got)
 	}
 }
