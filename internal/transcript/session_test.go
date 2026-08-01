@@ -3,6 +3,7 @@ package transcript
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -10,11 +11,12 @@ import (
 func write(t *testing.T, lines ...string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "session.jsonl")
-	var body string
+	var body strings.Builder
 	for _, l := range lines {
-		body += l + "\n"
+		body.WriteString(l)
+		body.WriteByte('\n')
 	}
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(body.String()), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path
