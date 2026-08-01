@@ -33,9 +33,6 @@ drop, or restyle without touching code.
   effort, rate limits, cost, tokens, lines changed, PR.
 - 🔢 **Cumulative token tracking.** Fresh input, cache writes, cache reads and
   output counted separately, because they are priced separately.
-- ✺ **Ultracode aware.** The effort segment shows `✺ ultra` while ultracode is
-  active. Detection is best effort — when it fails, the segment falls back to
-  plain `xhigh`.
 - 🔌 **Anything else you want.** A `command` segment runs any shell command, with
   a timeout and a cache.
 - 📦 **No runtime dependencies.** One static binary — no `jq`, no `curl`, no

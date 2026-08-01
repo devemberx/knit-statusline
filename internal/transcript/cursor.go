@@ -12,8 +12,7 @@ import (
 // mismatch discard rather than mix two definitions.
 //
 // 2: id-less entry stop clobbering dedup guard.
-// 3: cursor carry ultracode marker state.
-const cacheVersion = 3
+const cacheVersion = 2
 
 // Cache hold per-file scan cursors for one scope.
 type Cache struct {

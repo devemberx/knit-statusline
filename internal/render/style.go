@@ -21,7 +21,6 @@ const (
 	Yellow  Color = "\033[38;2;230;200;0m"
 	White   Color = "\033[38;2;220;220;220m"
 	Magenta Color = "\033[38;2;180;140;255m"
-	Pink    Color = "\033[38;2;255;60;175m"
 	Dim     Color = "\033[2m"
 
 	reset = "\033[0m"
