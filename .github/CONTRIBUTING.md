@@ -129,7 +129,7 @@ type(scope)!: summary       ← imperative, lowercase, no period, ≤50 chars
 
 CI runs on every PR: the test suite on Linux, macOS and Windows runners, the same
 tests again under `TZ=Asia/Seoul`, `golangci-lint`, a `go mod tidy` drift check, a
-five-target cross-compile matrix, `govulncheck`, and a `zizmor` audit of the
+six-target cross-compile matrix, `govulncheck`, and a `zizmor` audit of the
 workflows. The `gate` job aggregates them into one required check. Say in **Testing**
 what you checked beyond that.
 
