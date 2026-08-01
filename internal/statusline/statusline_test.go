@@ -542,3 +542,71 @@ func TestRenderSessionStateOverrideReachesSegments(t *testing.T) {
 		t.Fatalf("Render = %q, want a fresh-zero duration", got)
 	}
 }
+
+// Row shape must not change as usage arrives. Two payloads differing only in
+// usage-derived fields render same rows and same segment count per row, so no
+// slot appear or vanish mid-session.
+//
+// Only stable segments take part: pr and repo legitimately come and go.
+func TestRowShapeSurvivesMissingUsage(t *testing.T) {
+	cfg := &config.Config{Lines: []config.Line{
+		{Segments: []string{"model", "context", "session", "cost", "lines"}},
+		{Segments: []string{"tokens"}},
+		{Segments: []string{"limit.5h"}},
+		{Segments: []string{"limit.7d"}},
+	}}
+
+	usd, ms, added, removed := 1.23, int64(4_500_000), int64(156), int64(23)
+	p := 42.0
+	known := &schema.Input{
+		Model:   schema.Model{DisplayName: "Opus 5"},
+		Context: &schema.ContextWin{UsedPercentage: &p},
+		Cost: &schema.Cost{
+			TotalCostUSD: &usd, TotalDurationMS: &ms,
+			TotalLinesAdded: &added, TotalLinesRemoved: &removed,
+		},
+		RateLimits: &schema.RateLimits{
+			FiveHour: &schema.Window{UsedPercentage: 42},
+			SevenDay: &schema.Window{UsedPercentage: 18},
+		},
+	}
+	bare := &schema.Input{Model: schema.Model{DisplayName: "Opus 5"}}
+
+	live := transcript.StateLive
+	opts := Options{Palette: render.NoColor(), SessionState: &live}
+
+	shape := func(in *schema.Input) []int {
+		var out []int
+		for _, row := range strings.Split(Render(cfg, in, opts), "\n") {
+			out = append(out, strings.Count(row, config.DefaultSeparator)+1)
+		}
+		return out
+	}
+
+	got, want := shape(bare), shape(known)
+	if len(got) != len(want) {
+		t.Fatalf("row count = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("row %d segment count = %d, want %d", i+1, got[i], want[i])
+		}
+	}
+}
+
+// Same contract at other end: a fresh session fill slots with zeros rather
+// than dropping them.
+func TestRowShapeSurvivesFreshSession(t *testing.T) {
+	cfg := &config.Config{Lines: []config.Line{
+		{Segments: []string{"model", "context", "session", "cost", "lines"}},
+	}}
+	fresh := transcript.StateFresh
+	in := &schema.Input{Model: schema.Model{DisplayName: "Opus 5"}}
+
+	got := Render(cfg, in, Options{Palette: render.NoColor(), SessionState: &fresh})
+	for _, want := range []string{"Opus 5", "0%", "0s", "$0.00", "+0 -0"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("Render = %q, missing %q", got, want)
+		}
+	}
+}
