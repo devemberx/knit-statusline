@@ -15,7 +15,7 @@
 </div>
 
 ```
-Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ● high
+Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ◕ high
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
 weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm
