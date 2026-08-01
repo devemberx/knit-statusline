@@ -217,7 +217,7 @@ func Scan(opts Options, cache *Cache) (Totals, *Cache) {
 	}
 
 	var total Totals
-	live := make(map[string]FileCursor, len(files))
+	cursors := make(map[string]FileCursor, len(files))
 	for _, path := range files {
 		prev, cached := cache.Files[path]
 		cur, err := scanFile(path, prev)
@@ -226,16 +226,16 @@ func Scan(opts Options, cache *Cache) (Totals, *Cache) {
 			// permission blip -- so hold last cursor: total stay put and next
 			// render resume instead of rescanning cold.
 			if cached && !errors.Is(err, fs.ErrNotExist) {
-				live[path] = prev
+				cursors[path] = prev
 				total.Add(prev.Totals)
 			}
 			continue
 		}
-		live[path] = cur
+		cursors[path] = cur
 		total.Add(cur.Totals)
 	}
 
 	// Replace, not merge. Cursors for vanished files else accumulate forever.
-	cache.Files = live
+	cache.Files = cursors
 	return total, cache
 }
