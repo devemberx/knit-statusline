@@ -140,7 +140,7 @@ open at 80% used — a freshly started session tells you nothing about them.
 [defaults]
 unknown = "…"
 
-[segments.cost]
+[segments."limit.5h"]
 unknown = "?"
 ```
 
