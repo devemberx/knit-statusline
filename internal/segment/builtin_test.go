@@ -607,10 +607,30 @@ func TestLimitUnknownRendersEmptyBarAndNoReset(t *testing.T) {
 	}
 }
 
+// Window present with used_percentage null is shape payload send. Non-pointer
+// field decode it to 0, printing "0%" for account that may sit at 80% used.
+// Parse from JSON rather than struct literal: struct tag is what break.
+func TestLimitNullPercentageRendersPlaceholder(t *testing.T) {
+	in := input(t, []byte(
+		`{"rate_limits":{"five_hour":{"used_percentage":null,"resets_at":1753257600}}}`))
+	res := buildNamed(t, "limit.5h", in, false)
+	if res.Empty {
+		t.Fatal("limit returned empty")
+	}
+	if got := res.Fields["pct"].Text; got != config.DefaultUnknown {
+		t.Fatalf("pct = %q, want %q", got, config.DefaultUnknown)
+	}
+	// Reset time is known, but percentage is not: template pairing them must
+	// not read "0% until 5pm".
+	if got := res.Fields["reset_time"].Text; got != "" {
+		t.Fatalf("reset_time = %q, want empty beside unknown percentage", got)
+	}
+}
+
 // One window absent while other report: only absent one placeholder.
 func TestLimitWindowsResolveIndependently(t *testing.T) {
 	in := &schema.Input{RateLimits: &schema.RateLimits{
-		FiveHour: &schema.Window{UsedPercentage: 42},
+		FiveHour: &schema.Window{UsedPercentage: ptr(42.0)},
 	}}
 	if got := buildNamed(t, "limit.5h", in, false).Fields["pct"].Text; got != "42" {
 		t.Fatalf("limit.5h pct = %q, want %q", got, "42")

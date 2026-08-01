@@ -17,6 +17,8 @@ import (
 	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
+func ptr[T any](v T) *T { return &v }
+
 // Pin zone golden expectations written in.
 //
 // Rate limit reset format in viewer's local zone: same epoch read 8:00am UTC,
@@ -566,8 +568,8 @@ func TestRowShapeSurvivesMissingUsage(t *testing.T) {
 			TotalLinesAdded: &added, TotalLinesRemoved: &removed,
 		},
 		RateLimits: &schema.RateLimits{
-			FiveHour: &schema.Window{UsedPercentage: 42},
-			SevenDay: &schema.Window{UsedPercentage: 18},
+			FiveHour: &schema.Window{UsedPercentage: ptr(42.0)},
+			SevenDay: &schema.Window{UsedPercentage: ptr(18.0)},
 		},
 	}
 	bare := &schema.Input{Model: schema.Model{DisplayName: "Opus 5"}}

@@ -43,7 +43,7 @@ func TestFullFixtureFields(t *testing.T) {
 	if in.RateLimits == nil || in.RateLimits.FiveHour == nil {
 		t.Fatal("five_hour rate limit missing")
 	}
-	if got := in.RateLimits.FiveHour.UsedPercentage; got != 42.4 {
+	if got := in.RateLimits.FiveHour.UsedPercentage; got == nil || *got != 42.4 {
 		t.Errorf("five_hour used = %v, want 42.4", got)
 	}
 	if in.Effort == nil || in.Effort.Level != "high" {

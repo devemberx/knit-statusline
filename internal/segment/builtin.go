@@ -422,12 +422,14 @@ func limitBuilder(w window) func(Context) Result {
 			// Weekly window reset days out; bare clock time read ambiguous.
 			format = dateTime
 		}
-		if win == nil {
+		// Null percentage carry no more fact than absent window, so both take
+		// same branch. reset_time alone would leave "{bar} %" round nothing.
+		if win == nil || win.UsedPercentage == nil {
 			return limitNoWindow(c)
 		}
 
 		t := c.Thresholds()
-		p := win.UsedPercentage
+		p := *win.UsedPercentage
 		f := render.Fields{
 			"pct":        render.Colored(pct(p), t.Color(p)),
 			"bar":        render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
