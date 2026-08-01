@@ -27,10 +27,6 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
-    ignore:
-      # Claude Code ship no Windows arm64 build.
-      - goos: windows
-        goarch: arm64
 
 archives:
   - id: default

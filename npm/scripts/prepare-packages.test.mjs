@@ -31,6 +31,7 @@ const GO_TARGETS = [
   { pkg: "darwin-x64", goos: "darwin", goarch: "amd64", exe: "knit-statusline" },
   { pkg: "linux-arm64", goos: "linux", goarch: "arm64", exe: "knit-statusline" },
   { pkg: "linux-x64", goos: "linux", goarch: "amd64", exe: "knit-statusline" },
+  { pkg: "win32-arm64", goos: "windows", goarch: "arm64", exe: "knit-statusline.exe" },
   { pkg: "win32-x64", goos: "windows", goarch: "amd64", exe: "knit-statusline.exe" },
 ];
 

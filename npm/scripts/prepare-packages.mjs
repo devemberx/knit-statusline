@@ -23,7 +23,7 @@ if (process.platform === "win32") {
 
 // Tags carry leading v; npm versions do not.
 const version = rawVersion.replace(/^v/, "");
-// npm reject non-semver only at publish, six manifests already stamped by then.
+// npm reject non-semver only at publish, seven manifests already stamped by then.
 // Build metadata rejected too: npm publish strip it with a warning, so registry
 // version diverge from tag and pins.
 if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$/.test(version)) {
@@ -50,6 +50,7 @@ const TARGETS = [
   { pkg: "darwin-x64", goos: "darwin", goarch: "amd64", exe: "knit-statusline" },
   { pkg: "linux-arm64", goos: "linux", goarch: "arm64", exe: "knit-statusline" },
   { pkg: "linux-x64", goos: "linux", goarch: "amd64", exe: "knit-statusline" },
+  { pkg: "win32-arm64", goos: "windows", goarch: "arm64", exe: "knit-statusline.exe" },
   { pkg: "win32-x64", goos: "windows", goarch: "amd64", exe: "knit-statusline.exe" },
 ];
 

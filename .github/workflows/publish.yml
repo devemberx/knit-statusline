@@ -7,7 +7,7 @@ on:
 # Job inherit what it never asked for otherwise.
 permissions: {}
 
-# Cancelled run leave some of six packages published.
+# Cancelled run leave some of seven packages published.
 # npm refuse to reuse version even after unpublish.
 concurrency:
   group: publish

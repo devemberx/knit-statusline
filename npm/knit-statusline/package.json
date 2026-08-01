@@ -33,6 +33,7 @@
     "@devemberx/knit-statusline-darwin-x64": "0.0.0",
     "@devemberx/knit-statusline-linux-arm64": "0.0.0",
     "@devemberx/knit-statusline-linux-x64": "0.0.0",
+    "@devemberx/knit-statusline-win32-arm64": "0.0.0",
     "@devemberx/knit-statusline-win32-x64": "0.0.0"
   }
 }

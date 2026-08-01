@@ -11,8 +11,8 @@ release pipeline (`.goreleaser.yaml`, `npm/`, `publish.yml`), `SECURITY.md` and
 
 Tag is the version; nothing in the tree records it. `publish.yml` fire on `v*`,
 wait for approval in the `release` environment, then GoReleaser cut a draft
-release and six npm packages publish over OIDC — no token anywhere. Draft flip
-public only after all six land. Procedure lives in `.claude/skills/deploy/`.
+release and seven npm packages publish over OIDC — no token anywhere. Draft flip
+public only after all seven land. Procedure lives in `.claude/skills/deploy/`.
 
 ## Commands
 

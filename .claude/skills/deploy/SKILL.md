@@ -35,6 +35,15 @@ gh run list --branch main --workflow ci.yml --limit 1 \
 # Environment existing prove nothing: zero protection rules = no gate.
 gh api repos/:owner/:repo/environments/release \
   -q '.protection_rules[].type'       # MUST contain 'required_reviewers'
+
+# Trusted publishing is per package, and npm attach a publisher only to a package
+# already on the registry. Platform dir added since the last release is unknown
+# there. Unauthenticated on purpose: pre-flight run logged out.
+for dir in npm/platforms/*/ npm/knit-statusline; do
+  pkg=$(node -p \
+    "JSON.parse(require('node:fs').readFileSync('${dir%/}/package.json','utf8')).name")
+  npm view "$pkg" name >/dev/null 2>&1 || echo "NEVER PUBLISHED: $pkg"
+done                                  # MUST print nothing
 ```
 
 - Dirty tree → list offending files, stop. Do NOT auto-stash.
@@ -56,8 +65,14 @@ gh api repos/:owner/:repo/environments/release \
 - No `release` environment (the `gh api` call 404s) **or** `protection_rules` without
   `required_reviewers` → stop, either way. `publish.yml` names the environment, so GitHub creates
   it on first run with no protection rules at all, and an environment with no required reviewer
-  approves itself — the tag would publish six packages to npm with no human in the loop. Fix it
+  approves itself — the tag would publish seven packages to npm with no human in the loop. Fix it
   at Settings → Environments → `release` → Required reviewers, then re-run the check.
+- Any `NEVER PUBLISHED:` line → stop, bootstrap those packages (below), then re-run the check.
+  `publish.yml` walks `npm/platforms/*/` in glob order and the launcher last, so the first
+  unpublished name kills the run *there* — every package sorting after it never publishes, and
+  the release stays a draft. The versions that did publish are burned: npm rejects reusing a
+  version forever, `npm unpublish` included. Recovery is bootstrap-then-rerun and the skip logic
+  makes that work, but it spends a second approval cycle on a tag that is already public.
 
 ### First release only (no tags yet)
 
@@ -65,18 +80,27 @@ The npm side has to be bootstrapped once by hand. Trusted publishing is configur
 package** and npm requires the package to already exist on the registry, so a package that has
 never been published cannot have a trusted publisher attached yet.
 
-Confirm with the user that all six exist and are configured:
+Confirm with the user that every one of them exists and is configured:
 
 ```bash
-npm trust list @devemberx/knit-statusline          # and the five platform packages
+# Names read from the tree: a platform package added later is picked up with no
+# edit here. `npm trust list` need `npm login` first -- logged out it fail on
+# auth, which read like an unconfigured package.
+for dir in npm/platforms/*/ npm/knit-statusline; do
+  pkg=$(node -p \
+    "JSON.parse(require('node:fs').readFileSync('${dir%/}/package.json','utf8')).name")
+  printf '%s ' "$pkg"; npm trust list "$pkg"
+done
 ```
 
-The six are `@devemberx/knit-statusline` plus `@devemberx/knit-statusline-<target>` for
-`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64` and `win32-x64`. Each must point at
-repository `devemberx/knit-statusline`, workflow file `publish.yml`, environment `release`.
+One package per directory under `npm/platforms/`, plus the launcher `npm/knit-statusline` —
+today that is seven: `@devemberx/knit-statusline` plus `@devemberx/knit-statusline-<target>` for
+`darwin-arm64`, `darwin-x64`, `linux-arm64`, `linux-x64`, `win32-arm64` and `win32-x64`. Each
+must point at repository `devemberx/knit-statusline`, workflow file `publish.yml`, environment
+`release`.
 
 Unconfigured → stop, and give the user the bootstrap procedure. `npm trust` attaches one
-publisher to one package, so it runs once per package — six times:
+publisher to one package, so it runs once per package — seven times:
 
 ```bash
 npm install -g npm@11                # npm trust need 11.15.0+; 11.18 run on node 22.9+
@@ -84,8 +108,9 @@ npm login                            # web auth + 2FA, token into ~/.npmrc
 for dir in npm/platforms/*/ npm/knit-statusline; do
   npm publish "./${dir%/}" --access public --tag bootstrap
 done
-for pkg in @devemberx/knit-statusline \
-           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-x64}; do
+for dir in npm/platforms/*/ npm/knit-statusline; do
+  pkg=$(node -p \
+    "JSON.parse(require('node:fs').readFileSync('${dir%/}/package.json','utf8')).name")
   npm trust github "$pkg" --repository devemberx/knit-statusline \
     --file publish.yml --environment release --allow-publish --yes
   sleep 2                            # endpoint rate-limit
@@ -108,8 +133,9 @@ Then verify the placeholders did not claim `latest`:
 ```bash
 # --tag bootstrap unproven here: npm reported to set dist-tags.latest on a
 # package's first publish whatever --tag say.
-for pkg in @devemberx/knit-statusline \
-           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-x64}; do
+for dir in npm/platforms/*/ npm/knit-statusline; do
+  pkg=$(node -p \
+    "JSON.parse(require('node:fs').readFileSync('${dir%/}/package.json','utf8')).name")
   printf '%s ' "$pkg"; npm view "$pkg" dist-tags   # 'latest' MUST be absent
 done
 ```
@@ -122,6 +148,36 @@ tell the user the broken-install window is open until the release lands.
 
 Skip the bootstrap and GoReleaser still cuts the GitHub Release, then every `npm publish` fails
 on auth — a released tag with no packages behind it.
+
+### A platform package added since the last release
+
+Pre-flight printed `NEVER PUBLISHED:` for a package the tree carries and the registry does not —
+a new target shipped between releases. Same problem as a first release, one package wide:
+trusted publishing attaches per package, and only to a name npm already knows.
+
+Bootstrap the missing ones alone. Do **not** rerun the publish loop from the first-release
+section: every other package already holds `0.0.0` on the registry, and npm rejects a duplicate
+version permanently. Run from a clean checkout of `main`, after the branch adding the package has
+merged.
+
+```bash
+npm install -g npm@11                # same reason as above: npm 12 need a newer node
+npm login
+PKG_DIR=npm/platforms/<target>       # one run per missing package
+PKG=$(node -p \
+  "JSON.parse(require('node:fs').readFileSync('$PKG_DIR/package.json','utf8')).name")
+npm publish "./$PKG_DIR" --access public --tag bootstrap
+npm trust github "$PKG" --repository devemberx/knit-statusline \
+  --file publish.yml --environment release --allow-publish --yes
+npm view "$PKG" dist-tags            # 'latest' MUST be absent
+npm logout
+```
+
+`latest` present → `npm dist-tag rm "$PKG" latest`, as in the first-release case. It points at
+the `0.0.0` placeholder, so anyone following the "install directly" hint `bin/cli.js` prints for
+a missing optional dependency installs a package with no binary in it until the next release.
+
+Then re-run the Step 1 pre-flight loop and confirm it prints nothing.
 
 ## Step 2 — Determine new version (interactive)
 
@@ -242,16 +298,18 @@ Tell the user two things:
 
 ## Recovering a partial publish
 
-The job publishes six packages in sequence. If it dies partway — network, a revoked trusted
+The job publishes seven packages in sequence. If it dies partway — network, a revoked trusted
 publisher, an npm outage — some are on the registry and some are not, and the GitHub Release is
 still a draft.
 
 Do not cut a new version to escape this. The run is designed to be repeated:
 
 ```bash
-# 1. See how far run got.
-for pkg in @devemberx/knit-statusline \
-           @devemberx/knit-statusline-{darwin-arm64,darwin-x64,linux-arm64,linux-x64,win32-x64}; do
+# 1. See how far run got. Same order publish.yml walk: platform dirs by glob,
+#    launcher last, so the first "(absent)" mark where it died.
+for dir in npm/platforms/*/ npm/knit-statusline; do
+  pkg=$(node -p \
+    "JSON.parse(require('node:fs').readFileSync('${dir%/}/package.json','utf8')).name")
   printf '%s ' "$pkg"; npm view "${pkg}@${NEW_VERSION}" version 2>/dev/null || echo "(absent)"
 done
 
@@ -264,7 +322,7 @@ Do not delete the draft by hand first. `replace_existing_draft` owns that, and a
 `gh release delete` on a tag with several stacked drafts removes whichever one GitHub
 answers with.
 
-The release only flips public after all six succeed, so a half-finished run never fronts
+The release only flips public after all seven succeed, so a half-finished run never fronts
 packages that do not exist.
 
 ## Hard rules
