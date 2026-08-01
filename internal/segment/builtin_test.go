@@ -230,9 +230,14 @@ func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 	}
 
 	// Unknown level take own slot, never medium's -- absent knowledge and
-	// known-medium are different facts.
-	if icon, color := effortStyle("whatever-ships-next"); icon != "○" || color != render.Dim {
+	// known-medium are different facts. Dim shared with low deliberately, so
+	// only glyph must stay unique.
+	icon, color := effortStyle("whatever-ships-next")
+	if icon != "○" || color != render.Dim {
 		t.Errorf("effortStyle(unknown) = %q %q, want %q %q", icon, color, "○", render.Dim)
+	}
+	if prev, dup := icons[icon]; dup {
+		t.Errorf("level %q took unknown's icon %q", prev, icon)
 	}
 }
 

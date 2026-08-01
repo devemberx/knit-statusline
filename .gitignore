@@ -20,7 +20,7 @@ node_modules/
 !.claude/hooks/
 !.claude/settings.json
 !.claude/skills/
+__pycache__/
 
 # Superpowers scratch: specs and plans belong to one session, not the repo
 /docs/superpowers/
-__pycache__/
