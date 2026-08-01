@@ -68,12 +68,25 @@ func init() {
 			if c.In.Effort == nil || c.In.Effort.Level == "" {
 				return empty
 			}
-			icon, color := effortStyle(c.In.Effort.Level)
+			level := c.In.Effort.Level
+			// Payload collapse ultracode into xhigh (claude-code#69068);
+			// transcript markers carry live state. Gate on xhigh: stale enter
+			// marker after silent drop (claude-code#80901 model switch, no exit
+			// written) must never upgrade another level.
+			if level == "xhigh" && ultracodeOn(c) {
+				level = "ultracode"
+			}
+			icon, color := effortStyle(level)
+			display := level
+			if level == "ultracode" {
+				// Row space tight; "ultra" read same and fit.
+				display = "ultra"
+			}
 			return Result{
 				Base: color,
 				Fields: render.Fields{
 					"icon":  render.Colored(icon, color),
-					"level": render.Colored(c.In.Effort.Level, color),
+					"level": render.Colored(display, color),
 				},
 			}
 		},
@@ -411,6 +424,11 @@ func apiDuration(c Context) (string, bool) {
 // high. Unknown level take empty circle, never medium's glyph.
 func effortStyle(level string) (string, render.Color) {
 	switch level {
+	case "ultracode":
+		// "ultracode" reach here two ways: transcript markers upgrading xhigh, and
+		// claude-code#77812 builds leaking it verbatim in effort.level. Magenta
+		// shared with xhigh on purpose -- same tier, glyph carry difference.
+		return "✺", render.Magenta
 	case "max":
 		return "✦", render.Orange
 	case "xhigh":

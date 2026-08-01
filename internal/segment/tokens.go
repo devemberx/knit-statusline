@@ -160,3 +160,21 @@ func cacheHit(t transcript.Totals) float64 {
 	}
 	return float64(t.CacheRead) * 100 / float64(in)
 }
+
+// ultracodeOn report whether session transcript's last ultracode marker is
+// enter. Session scope always: markers land in session file, and project
+// files' state say nothing about this session.
+func ultracodeOn(c Context) bool {
+	if c.In.TranscriptPath == "" {
+		return false
+	}
+	opts := transcript.Options{
+		TranscriptPath: c.In.TranscriptPath,
+		Scope:          transcript.ScopeSession,
+	}
+	cache := transcript.LoadCache(c.CacheDir, opts)
+	_, cache = transcript.Scan(opts, cache)
+	// Save failure cost one rescan next render. Not worth failing over.
+	_ = transcript.SaveCache(c.CacheDir, opts, cache)
+	return cache.UltracodeOn(c.In.TranscriptPath)
+}

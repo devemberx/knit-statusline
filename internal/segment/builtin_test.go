@@ -243,6 +243,16 @@ func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 	if prev, dup := icons[icon]; dup {
 		t.Errorf("level %q took unknown's icon %q", prev, icon)
 	}
+
+	// Ultracode share xhigh's Magenta on purpose: same effort tier underneath,
+	// glyph alone carry orchestration bit. Same deal as low sharing Dim.
+	icon, color = effortStyle("ultracode")
+	if icon != "✺" || color != render.Magenta {
+		t.Errorf("effortStyle(ultracode) = %q %q, want %q %q", icon, color, "✺", render.Magenta)
+	}
+	if prev, dup := icons[icon]; dup {
+		t.Errorf("level %q took ultracode's icon %q", prev, icon)
+	}
 }
 
 // Rate limit windows go absent one at a time, so each level need its own check.
