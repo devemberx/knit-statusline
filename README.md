@@ -33,6 +33,10 @@ drop, or restyle without touching code.
   effort, rate limits, cost, tokens, lines changed, PR.
 - 🔢 **Cumulative token tracking.** Fresh input, cache writes, cache reads and
   output counted separately, because they are priced separately.
+- ✺ **Ultracode aware.** Claude Code reports ultracode as plain `xhigh`
+  ([claude-code#69068](https://github.com/anthropics/claude-code/issues/69068));
+  the effort segment reads the session transcript's ultracode markers instead
+  and shows `✺ ultra` while one is active.
 - 🔌 **Anything else you want.** A `command` segment runs any shell command, with
   a timeout and a cache.
 - 📦 **No runtime dependencies.** One static binary — no `jq`, no `curl`, no
