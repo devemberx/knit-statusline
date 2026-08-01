@@ -107,7 +107,14 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 	if res.BackupPath != "" {
 		fmt.Fprintf(stdout, "backed up %s\n", res.BackupPath)
 	}
-	fmt.Fprintf(stdout, "removed the status line from %s\n", res.SettingsPath)
+	// Uninstall leave another tool's statusLine sitting there. Reporting removal
+	// anyway send user hunting key that never moved.
+	if res.RemovedStatusLine {
+		fmt.Fprintf(stdout, "removed the status line from %s\n", res.SettingsPath)
+	} else {
+		fmt.Fprintf(stdout, "left the status line in %s: it runs %s, not our copy\n",
+			res.SettingsPath, res.ReplacedCommand)
+	}
 	fmt.Fprintf(stdout, "left %s in place\n", res.ConfigPath)
 	return 0
 }

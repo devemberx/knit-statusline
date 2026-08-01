@@ -379,6 +379,34 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 	}
 }
 
+// Foreign statusLine stay put, so claiming removal is a report user act on and
+// find false. Same output cover ownership check going wrong on windows case or
+// 8.3 short home.
+func TestUninstallReportsAForeignStatusLineLeftAlone(t *testing.T) {
+	home := isolate(t)
+	writeSettings(t, home, `{"statusLine":{"type":"command","command":"/opt/other-tool"}}`)
+
+	var out, errOut bytes.Buffer
+	if code := runUninstall(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d: %s", code, out.String())
+	}
+	got := out.String()
+	if strings.Contains(got, "removed the status line") {
+		t.Errorf("claimed removal of key it left in place:\n%s", got)
+	}
+	if !strings.Contains(got, "/opt/other-tool") {
+		t.Errorf("output should name command it left:\n%s", got)
+	}
+
+	b, err := os.ReadFile(install.SettingsPath(home))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "/opt/other-tool") {
+		t.Errorf("another tool's statusLine was deleted: %s", b)
+	}
+}
+
 // Uninstalling what was never installed is no failure.
 func TestUninstallOnACleanHome(t *testing.T) {
 	isolate(t)

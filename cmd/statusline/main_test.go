@@ -9,6 +9,7 @@ import (
 
 	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
+	"github.com/devemberx/knit-statusline/internal/install"
 )
 
 // isolate point homeDir() at a scratch directory, so no test read or write real
@@ -28,6 +29,17 @@ func writeUserConfig(t *testing.T, home, body string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeSettings(t *testing.T, home, body string) {
+	t.Helper()
+	path := install.SettingsPath(home)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
