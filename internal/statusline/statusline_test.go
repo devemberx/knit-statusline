@@ -14,6 +14,7 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 	"github.com/devemberx/knit-statusline/internal/schema"
 	"github.com/devemberx/knit-statusline/internal/segment"
+	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
 // Pin zone golden expectations written in.
@@ -472,5 +473,42 @@ segments = ["model", "caveman"]
 	// Plugin not installed: segment and its separator both go.
 	if got, want := drawIn(t, cfg, fixtures.Full, t.TempDir()), "Opus 4.8"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Override exist so preview and tests pin a state without a transcript on disk.
+func TestSessionFreshHonoursOverride(t *testing.T) {
+	fresh, live := transcript.StateFresh, transcript.StateLive
+
+	if !sessionFresh(&schema.Input{}, Options{SessionState: &fresh}) {
+		t.Fatal("StateFresh override did not resolve fresh")
+	}
+	if sessionFresh(&schema.Input{}, Options{SessionState: &live}) {
+		t.Fatal("StateLive override resolved fresh")
+	}
+}
+
+// Override beat payload: fixture naming transcript path that happens to
+// exist must not flip pinned state.
+func TestSessionFreshOverrideBeatsProbe(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	live := transcript.StateLive
+	in := &schema.Input{TranscriptPath: path}
+
+	if sessionFresh(in, Options{SessionState: &live}) {
+		t.Fatal("probe overrode the pinned state")
+	}
+	if !sessionFresh(in, Options{}) {
+		t.Fatal("empty transcript did not probe fresh")
+	}
+}
+
+// Nil input probe nothing: live is answer that print no number.
+func TestSessionFreshNilInputIsLive(t *testing.T) {
+	if sessionFresh(nil, Options{}) {
+		t.Fatal("nil input resolved fresh")
 	}
 }

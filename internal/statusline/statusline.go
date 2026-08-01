@@ -12,6 +12,7 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 	"github.com/devemberx/knit-statusline/internal/schema"
 	"github.com/devemberx/knit-statusline/internal/segment"
+	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
 // Options carry what renderer need beyond config and input.
@@ -27,6 +28,11 @@ type Options struct {
 	// Appended to first row when config unusable as written. Terse -- no room
 	// on row; doctor hold full text.
 	Warning string
+
+	// Pin session state instead of probing. Preview and tests use it; a fixture
+	// transcript path exist or not depending on machine running it, and layout
+	// check must not turn on that.
+	SessionState *transcript.State
 }
 
 // Render produce status line text.
@@ -42,6 +48,10 @@ func Render(cfg *config.Config, in *schema.Input, opts Options) string {
 		opts.Now = time.Now()
 	}
 
+	// One probe per render. Segment never call it: eight segments probing
+	// same file eight times differ only in cost.
+	fresh := sessionFresh(in, opts)
+
 	// Same name on two rows otherwise run git and user command twice per redraw.
 	memo := map[string]string{}
 
@@ -56,7 +66,7 @@ func Render(cfg *config.Config, in *schema.Input, opts Options) string {
 		for _, name := range line.Segments {
 			text, done := memo[name]
 			if !done {
-				text = renderSegment(cfg, in, opts, name)
+				text = renderSegment(cfg, in, opts, name, fresh)
 				memo[name] = text
 			}
 			if text != "" {
@@ -85,7 +95,22 @@ func Render(cfg *config.Config, in *schema.Input, opts Options) string {
 	return strings.Join(rows, "\n")
 }
 
-func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name string) string {
+// sessionFresh resolve whether this session has sent anything yet.
+//
+// Nil input probe nothing: no transcript path to read, and live is answer
+// that print no number.
+func sessionFresh(in *schema.Input, opts Options) bool {
+	state := transcript.StateLive
+	switch {
+	case opts.SessionState != nil:
+		state = *opts.SessionState
+	case in != nil:
+		state = transcript.SessionState(in.TranscriptPath)
+	}
+	return state == transcript.StateFresh
+}
+
+func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name string, fresh bool) string {
 	def, ok := segment.Lookup(cfg.Segments[name].Kind(name))
 	if !ok {
 		// Validate catch unknown name up front. One reaching here mean build
@@ -101,6 +126,7 @@ func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name stri
 		Now:       opts.Now,
 		CacheDir:  opts.CacheDir,
 		ConfigDir: opts.ConfigDir,
+		Fresh:     fresh,
 	})
 	if res.Empty {
 		return ""
