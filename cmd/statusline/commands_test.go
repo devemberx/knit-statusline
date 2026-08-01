@@ -52,7 +52,7 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 		t.Fatalf("sparse exit = %d", code)
 	}
 	sparse := out.String()
-	if !strings.Contains(sparse, "degraded data") {
+	if !strings.Contains(sparse, "fresh session") {
 		t.Errorf("sparse preview missing its label:\n%s", sparse)
 	}
 	// limit.5h and limit.7d are Stable: no rate_limits still holds their row
@@ -421,5 +421,51 @@ func TestUninstallOnACleanHome(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "no status line was configured") {
 		t.Errorf("output = %q", out.String())
+	}
+}
+
+func TestDoctorReportsUnknownSetting(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := runDoctor(nil, &stdout, &stderr); code != 0 {
+		t.Fatalf("runDoctor = %d, want 0", code)
+	}
+	if !strings.Contains(stdout.String(), "unknown") {
+		t.Fatal("doctor did not report the unknown setting")
+	}
+}
+
+func TestDoctorMarksStableSegments(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	runDoctor(nil, &stdout, &stderr)
+	out := stdout.String()
+	if !strings.Contains(out, "holds slot") {
+		t.Fatal("doctor did not mark which segments hold their slot")
+	}
+}
+
+func TestPreviewUnknownRendersPlaceholders(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var stdout, stderr bytes.Buffer
+	if code := runPreview([]string{"--preset", "reference", "--unknown"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runPreview = %d, want 0, stderr = %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), config.DefaultUnknown) {
+		t.Fatalf("preview --unknown printed no placeholder: %s", stdout.String())
+	}
+}
+
+// sparse.json carry cost and lines populated with real zeros already, so
+// context is where two preview modes diverge.
+func TestPreviewSparseRendersFreshZeros(t *testing.T) {
+	t.Setenv("NO_COLOR", "1")
+	var stdout, stderr bytes.Buffer
+	if code := runPreview([]string{"--preset", "reference", "--sparse"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("runPreview = %d, want 0, stderr = %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "0%") {
+		t.Fatalf("preview --sparse printed no fresh zero: %s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "✍️ "+config.DefaultUnknown) {
+		t.Fatalf("preview --sparse placeholdered context instead of zeroing it: %s", stdout.String())
 	}
 }

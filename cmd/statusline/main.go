@@ -73,7 +73,8 @@ Install flags:
 
 Preview flags:
   --preset NAME    preview a built-in preset instead of your config
-  --sparse         render the degraded case: no rate limits, no usage yet
+  --sparse         render the fresh-session case: zeros, no rate limits
+  --unknown        render the unknown case: resumed session, nothing reported
 
 Configuration lives in ~/.claude/statusline.toml, with an optional
 per-project override at <project>/.claude/statusline.toml.

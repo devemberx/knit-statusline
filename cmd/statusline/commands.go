@@ -16,6 +16,7 @@ import (
 	"github.com/devemberx/knit-statusline/internal/schema"
 	"github.com/devemberx/knit-statusline/internal/segment"
 	"github.com/devemberx/knit-statusline/internal/statusline"
+	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
 // Subcommands only. Render path exit non-zero never.
@@ -124,9 +125,11 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 func runPreview(args []string, stdout, stderr io.Writer) int {
 	var preset *string
 	var sparse *bool
+	var unknown *bool
 	err := flags("preview", args, func(fs *flag.FlagSet) {
 		preset = fs.String("preset", "", "preview a built-in preset instead of your config")
-		sparse = fs.Bool("sparse", false, "render the degraded case: no rate limits, no usage yet")
+		sparse = fs.Bool("sparse", false, "render the fresh-session case: zeros, no rate limits")
+		unknown = fs.Bool("unknown", false, "render the unknown case: resumed session, nothing reported")
 	})
 	if err != nil {
 		return badFlag(stdout, stderr, err)
@@ -137,11 +140,19 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
+	// Sparse fixture serve both placeholder rows. State decide which: same
+	// payload, opposite answers to "has this session sent anything".
 	doc := fixtures.Full
 	kind := "complete data"
-	if *sparse {
+	state := transcript.StateLive
+	switch {
+	case *unknown:
 		doc = fixtures.Sparse
-		kind = "degraded data: no rate limits, no usage yet"
+		kind = "unknown data: resumed session, nothing reported yet"
+	case *sparse:
+		doc = fixtures.Sparse
+		kind = "fresh session: nothing sent yet, no rate limits"
+		state = transcript.StateFresh
 	}
 	in, err := schema.Parse(doc)
 	if err != nil {
@@ -152,16 +163,17 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, statusline.Render(cfg, in, statusline.Options{
 		Palette: render.NewPalette(),
 		// Fixed instant keep reset times stable, so two previews compare.
-		Now:       time.Unix(fixtures.PreviewEpoch, 0),
-		CacheDir:  cacheDir(),
-		ConfigDir: configDir(),
+		Now:          time.Unix(fixtures.PreviewEpoch, 0),
+		CacheDir:     cacheDir(),
+		ConfigDir:    configDir(),
+		SessionState: &state,
 	}))
 	fmt.Fprintln(stdout)
 
-	if *sparse {
+	if *sparse || *unknown {
 		return 0
 	}
-	fmt.Fprintln(stdout, "Run with --sparse to check the layout when values are missing.")
+	fmt.Fprintln(stdout, "Run with --sparse or --unknown to check the layout when values are missing.")
 	return 0
 }
 
@@ -215,6 +227,9 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Configuration")
 	fmt.Fprintf(stdout, "  sources    %s\n", strings.Join(res.Sources(), " + "))
 	fmt.Fprintf(stdout, "  rows       %d\n", len(res.Config.Lines))
+	// Empty name resolve no segment block, so this report [defaults] layer
+	// alone. Passing "defaults" would pick up a segment somebody named that.
+	fmt.Fprintf(stdout, "  unknown    %q\n", res.Config.Resolve("", "").Unknown)
 
 	problems := len(res.Errors)
 	for _, err := range res.Errors {
@@ -236,7 +251,13 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "Available segments")
 	for _, name := range segment.Names() {
 		def, _ := segment.Lookup(name)
-		fmt.Fprintf(stdout, "  %-14s {%s}\n", name, strings.Join(def.Fields, "} {"))
+		// Slot marker answer question a "…" in row raise: placeholder or
+		// breakage. Doctor read no payload, so live state belong to preview.
+		note := ""
+		if def.Stable {
+			note = "  (holds slot)"
+		}
+		fmt.Fprintf(stdout, "  %-14s {%s}%s\n", name, strings.Join(def.Fields, "} {"), note)
 	}
 
 	// Reporting problems is job. Finding some is no command failure, so exit

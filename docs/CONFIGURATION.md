@@ -7,7 +7,8 @@ After any edit:
 
 ```sh
 knit-statusline preview            # render sample data
-knit-statusline preview --sparse   # how it looks when values are missing
+knit-statusline preview --sparse   # how a fresh session looks: zeros, no rate limits
+knit-statusline preview --unknown  # how a resumed session looks before it reports anything
 knit-statusline doctor             # problems, with line numbers
 ```
 
