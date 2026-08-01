@@ -16,19 +16,21 @@ import (
 // ~/.claude. USERPROFILE set too: os.UserHomeDir read that one on Windows.
 //
 // CLAUDE_CONFIG_DIR pinned too: configDir() read it before HOME, so developer
-// who moved config root otherwise send these tests at real one.
+// who moved config root otherwise send these tests at real one. Return root,
+// not home: every path helper take root now.
 func isolate(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, ".claude"))
-	return home
+	root := filepath.Join(home, ".claude")
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+	return root
 }
 
-func writeUserConfig(t *testing.T, home, body string) {
+func writeUserConfig(t *testing.T, root, body string) {
 	t.Helper()
-	path := config.UserPath(home)
+	path := config.UserPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -37,9 +39,9 @@ func writeUserConfig(t *testing.T, home, body string) {
 	}
 }
 
-func writeSettings(t *testing.T, home, body string) {
+func writeSettings(t *testing.T, root, body string) {
 	t.Helper()
-	path := install.SettingsPath(home)
+	path := install.SettingsPath(root)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -116,8 +118,8 @@ func TestRenderOnBarePayloadShowsStableSlotNotFallback(t *testing.T) {
 // hold its own slot on most layouts. Config here name only a non-stable
 // segment, so bare {} leave Render() with nothing at all.
 func TestRenderFallsBackWhenRowGenuinelyEmpty(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"pr\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"pr\"]\n")
 
 	got := drawStdin(t, []byte(`{}`))
 	if strings.TrimSpace(got) != "Claude" {
@@ -138,8 +140,8 @@ func TestRenderDrawsTheDefaultPreset(t *testing.T) {
 // Segment name this build lack cost only its own slot, so unmarked it vanish and
 // user get no hint which file to open.
 func TestRenderMarksAnUnknownSegment(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
 
 	got := drawStdin(t, fixtures.Full)
 	if !strings.Contains(got, "⚠ statusline.toml") {
@@ -152,8 +154,8 @@ func TestRenderMarksAnUnknownSegment(t *testing.T) {
 
 // Template field that does not exist render blank, so it need marking too.
 func TestRenderMarksAnUnknownTemplateField(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{nope}\"\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{nope}\"\n")
 
 	if got := drawStdin(t, fixtures.Full); !strings.Contains(got, "⚠ statusline.toml") {
 		t.Errorf("unknown field went unmarked:\n%s", got)
@@ -162,8 +164,8 @@ func TestRenderMarksAnUnknownTemplateField(t *testing.T) {
 
 // Broken TOML drop its layer and mark file, never blank row.
 func TestRenderMarksABrokenConfig(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "this is not toml\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "this is not toml\n")
 
 	got := drawStdin(t, fixtures.Full)
 	if !strings.Contains(got, "⚠ statusline.toml") {
@@ -176,8 +178,8 @@ func TestRenderMarksABrokenConfig(t *testing.T) {
 
 // Good config draw clean. Marker on every render would train user to ignore it.
 func TestRenderLeavesAGoodConfigUnmarked(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"version\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\", \"version\"]\n")
 
 	if got := drawStdin(t, fixtures.Full); strings.Contains(got, "⚠") {
 		t.Errorf("clean config was marked:\n%s", got)
@@ -256,9 +258,9 @@ func TestUsageListsEveryPreset(t *testing.T) {
 // segment looking for that flag must resolve root same way or read wrong
 // directory for anyone who moved theirs.
 func TestConfigDirFollowsEnvThenHome(t *testing.T) {
-	home := isolate(t)
-	if got, want := configDir(), filepath.Join(home, ".claude"); got != want {
-		t.Errorf("pinned CLAUDE_CONFIG_DIR gave %q, want %q", got, want)
+	root := isolate(t)
+	if got := configDir(); got != root {
+		t.Errorf("pinned CLAUDE_CONFIG_DIR gave %q, want %q", got, root)
 	}
 
 	moved := t.TempDir()
@@ -267,10 +269,11 @@ func TestConfigDirFollowsEnvThenHome(t *testing.T) {
 		t.Errorf("CLAUDE_CONFIG_DIR=%q gave %q", moved, got)
 	}
 
-	// Empty read same as unset: os.Getenv cannot tell those apart.
+	// Empty read same as unset: os.Getenv cannot tell those apart. isolate put
+	// HOME one level above root, so fallback land back on root.
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	if got, want := configDir(), filepath.Join(home, ".claude"); got != want {
-		t.Errorf("empty CLAUDE_CONFIG_DIR gave %q, want %q", got, want)
+	if got := configDir(); got != root {
+		t.Errorf("empty CLAUDE_CONFIG_DIR gave %q, want %q", got, root)
 	}
 }
 

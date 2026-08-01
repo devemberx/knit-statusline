@@ -107,15 +107,15 @@ func renderFromStdin(stdin io.Reader, stdout io.Writer) {
 		return
 	}
 
-	home := homeDir()
-	res := config.Load(home, projectDir(in))
+	root := configDir()
+	res := config.Load(root, projectDir(in))
 
 	out := statusline.Render(res.Config, in, statusline.Options{
 		Palette:   palette,
 		Now:       time.Now(),
 		CacheDir:  cacheDir(),
 		ConfigDir: configDir(),
-		Warning:   marker(res, home),
+		Warning:   marker(res, root),
 	})
 
 	// Every segment empty: valid document with nothing populated yet, or layout
@@ -137,11 +137,11 @@ func renderFromStdin(stdin io.Reader, stdout io.Writer) {
 // Load hand over bytes it read, so locating problem cost no second read on path
 // that run every redraw. Short() trim to "statusline.toml:7"; doctor hold full
 // prose.
-func marker(res *config.LoadResult, home string) string {
+func marker(res *config.LoadResult, root string) string {
 	if len(res.Errors) > 0 {
 		return short(res.Errors[0])
 	}
-	origin := res.Origin(config.UserPath(home))
+	origin := res.Origin(config.UserPath(root))
 	if errs := config.Validate(res.Config, origin, segment.Known); len(errs) > 0 {
 		return short(errs[0])
 	}

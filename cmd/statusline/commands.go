@@ -67,7 +67,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 
 	res, err := install.Install(install.Options{
-		Home: homeDir(), Binary: binary, Preset: *preset, Force: *force,
+		Root: configDir(), Binary: binary, Preset: *preset, Force: *force,
 	})
 	if err != nil {
 		return fail(stderr, err)
@@ -97,7 +97,7 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 		return badFlag(stdout, stderr, err)
 	}
 
-	res, err := install.Uninstall(homeDir())
+	res, err := install.Uninstall(configDir())
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -193,11 +193,11 @@ func previewConfig(preset string, stderr io.Writer) (*config.Config, string, err
 		return cfg, "preset " + preset, nil
 	}
 
-	res := config.Load(homeDir(), workingDir())
+	res := config.Load(configDir(), workingDir())
 	for _, err := range res.Errors {
 		fmt.Fprintln(stderr, "warning:", err)
 	}
-	for _, err := range config.Validate(res.Config, res.Origin(config.UserPath(homeDir())), segment.Known) {
+	for _, err := range config.Validate(res.Config, res.Origin(config.UserPath(configDir())), segment.Known) {
 		fmt.Fprintln(stderr, "warning:", err)
 	}
 	return res.Config, strings.Join(res.Sources(), " + "), nil
@@ -210,21 +210,21 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		return badFlag(stdout, stderr, err)
 	}
 
-	home := homeDir()
+	root := configDir()
 	project := workingDir()
 	fmt.Fprintln(stdout, "knit-statusline "+version)
 	fmt.Fprintln(stdout)
 
 	fmt.Fprintln(stdout, "Paths")
-	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(home), existsNote(install.SettingsPath(home)))
-	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(home), existsNote(config.UserPath(home)))
+	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(root), existsNote(install.SettingsPath(root)))
+	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(root), existsNote(config.UserPath(root)))
 	if project != "" {
 		fmt.Fprintf(stdout, "  project    %s%s\n", config.ProjectPath(project), existsNote(config.ProjectPath(project)))
 	}
 	fmt.Fprintf(stdout, "  cache      %s\n", cacheDir())
 	fmt.Fprintln(stdout)
 
-	res := config.Load(home, project)
+	res := config.Load(root, project)
 	fmt.Fprintln(stdout, "Configuration")
 	fmt.Fprintf(stdout, "  sources    %s\n", strings.Join(res.Sources(), " + "))
 	fmt.Fprintf(stdout, "  rows       %d\n", len(res.Config.Lines))
@@ -240,7 +240,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	// Origin search every layer, so problem name file that declared it. Load
 	// already hold those bytes. Guessing one file blame whichever layer merged
 	// last, at its innocent rows.
-	for _, e := range config.Validate(res.Config, res.Origin(config.UserPath(home)), segment.Known) {
+	for _, e := range config.Validate(res.Config, res.Origin(config.UserPath(root)), segment.Known) {
 		fmt.Fprintf(stdout, "  ERROR      %v\n", e)
 		problems++
 	}

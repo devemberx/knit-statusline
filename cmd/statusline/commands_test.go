@@ -132,9 +132,9 @@ func TestPreviewErrorsGoToStderr(t *testing.T) {
 // Mistyped segment name cost its slot; render row carry marker, doctor carry
 // prose, preview said nothing at all.
 func TestPreviewReportsConfigProblems(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	t.Setenv("NO_COLOR", "1")
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
 
 	var out, errOut bytes.Buffer
 	if code := runPreview(nil, &out, &errOut); code != 0 {
@@ -151,9 +151,9 @@ func TestPreviewReportsConfigProblems(t *testing.T) {
 // preview draw what this directory render, project override included. Without
 // it, a layout tuned per project is unpreviewable.
 func TestPreviewAppliesTheProjectOverride(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	t.Setenv("NO_COLOR", "1")
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"version\"]\n")
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\", \"version\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n")
@@ -210,8 +210,8 @@ func TestDoctorMarksAbsentFiles(t *testing.T) {
 // Reporting problems is this command's job, so finding some is no failure.
 // Exit stay zero and text carry verdict.
 func TestDoctorReportsProblemsAndStillExitsZero(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, `
+	root := isolate(t)
+	writeUserConfig(t, root, `
 [[lines]]
 segments = ["model", "no-such-segment"]
 
@@ -237,8 +237,8 @@ template = "{nope}"
 // doctor read project override too, else a layout that only fail inside one
 // project look clean from there.
 func TestDoctorSeesTheProjectOverride(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
@@ -260,8 +260,8 @@ func TestDoctorSeesTheProjectOverride(t *testing.T) {
 // sent user to open project override and read its innocent row 2, because both
 // files name segment "model".
 func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n")
@@ -271,7 +271,7 @@ func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
 	runDoctor(nil, &out, &errOut)
 
 	got := out.String()
-	if !strings.Contains(got, config.UserPath(home)+":4") {
+	if !strings.Contains(got, config.UserPath(root)+":4") {
 		t.Errorf("unknown field not located in the user config at line 4:\n%s", got)
 	}
 	if strings.Contains(got, config.ProjectPath(project)+":") {
@@ -281,8 +281,8 @@ func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
 
 // Override own mistake stay its own, line included.
 func TestDoctorLocatesTheOverridesOwnMistake(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
@@ -299,11 +299,11 @@ func TestDoctorLocatesTheOverridesOwnMistake(t *testing.T) {
 // Builtin preset carry no file, so nothing on disk leave fallback path bare of
 // line number rather than pointing at row of file nobody wrote.
 func TestDoctorOnBuiltinPresetNamesNoLine(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	var out, errOut bytes.Buffer
 	runDoctor(nil, &out, &errOut)
 
-	if got := out.String(); strings.Contains(got, config.UserPath(home)+":") {
+	if got := out.String(); strings.Contains(got, config.UserPath(root)+":") {
 		t.Errorf("absent config reported with a line number:\n%s", got)
 	}
 }
@@ -311,8 +311,8 @@ func TestDoctorOnBuiltinPresetNamesNoLine(t *testing.T) {
 // Project layer may not run shell commands. Strip already reported, so
 // "type command but no command" beside it read as second, invented mistake.
 func TestDoctorReportsAStrippedCommandOnce(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"clock\"]\n\n[segments.clock]\ntype = \"command\"\ncommand = \"date\"\n")
@@ -331,7 +331,7 @@ func TestDoctorReportsAStrippedCommandOnce(t *testing.T) {
 }
 
 func TestInstallUninstallRoundTrip(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	var out, errOut bytes.Buffer
 
 	if code := runInstall(nil, &out, &errOut); code != 0 {
@@ -342,7 +342,7 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 			t.Errorf("install output missing %q:\n%s", want, out.String())
 		}
 	}
-	if _, err := os.Stat(install.SettingsPath(home)); err != nil {
+	if _, err := os.Stat(install.SettingsPath(root)); err != nil {
 		t.Errorf("settings not written: %v", err)
 	}
 
@@ -357,8 +357,8 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 
 // Existing statusline.toml is user's own work, so reinstall keep it and say so.
 func TestInstallKeepsAnExistingConfig(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	var out, errOut bytes.Buffer
 	if code := runInstall(nil, &out, &errOut); code != 0 {
@@ -389,8 +389,8 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 // find false. Same output cover ownership check going wrong on windows case or
 // 8.3 short home.
 func TestUninstallReportsAForeignStatusLineLeftAlone(t *testing.T) {
-	home := isolate(t)
-	writeSettings(t, home, `{"statusLine":{"type":"command","command":"/opt/other-tool"}}`)
+	root := isolate(t)
+	writeSettings(t, root, `{"statusLine":{"type":"command","command":"/opt/other-tool"}}`)
 
 	var out, errOut bytes.Buffer
 	if code := runUninstall(nil, &out, &errOut); code != 0 {
@@ -404,7 +404,7 @@ func TestUninstallReportsAForeignStatusLineLeftAlone(t *testing.T) {
 		t.Errorf("output should name command it left:\n%s", got)
 	}
 
-	b, err := os.ReadFile(install.SettingsPath(home))
+	b, err := os.ReadFile(install.SettingsPath(root))
 	if err != nil {
 		t.Fatal(err)
 	}

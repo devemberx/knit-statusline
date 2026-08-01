@@ -1,8 +1,8 @@
 // Package install wire knit-statusline into Claude Code settings.
 //
 // Plugin settings.json take only agent and subagentStatusLine, so user's own
-// ~/.claude/settings.json is only way to set main status line. Same file hold
-// their hooks and permissions, so every write merge, never replace.
+// settings.json in config root is only way to set main status line. Same file
+// hold their hooks and permissions, so every write merge, never replace.
 package install
 
 import (
@@ -17,15 +17,15 @@ import (
 	"github.com/devemberx/knit-statusline/internal/config"
 )
 
-// BinaryPath name installed copy. Windows need .exe: CreateProcess refuse
-// extensionless file, and Claude Code print nothing when status line command
-// fail.
-func BinaryPath(home string) string {
+// BinaryPath name installed copy inside config root. Windows need .exe:
+// CreateProcess refuse extensionless file, and Claude Code print nothing when
+// status line command fail.
+func BinaryPath(root string) string {
 	name := "knit-statusline"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	return filepath.Join(home, ".claude", name)
+	return filepath.Join(root, name)
 }
 
 // CommandString form statusLine.command for binary. Git Bash on Windows eat
@@ -132,7 +132,8 @@ type Result struct {
 }
 
 type Options struct {
-	Home string
+	// Claude Code config root, already resolved. Empty is rejected.
+	Root string
 	// Running executable, copied into place by Install.
 	Binary string
 	Preset string
@@ -146,10 +147,10 @@ type Options struct {
 // Copy because npx run binary out of a package cache npm prune at will, and
 // vanished command render empty row explaining nothing.
 func Install(opts Options) (*Result, error) {
-	// Empty home resolve every path against cwd, dropping a .claude into
-	// whatever directory this ran from.
-	if opts.Home == "" {
-		return nil, errors.New("no home directory")
+	// Empty root resolve every path against cwd, dropping settings.json and a
+	// binary into whatever directory this ran from.
+	if opts.Root == "" {
+		return nil, errors.New("no config directory")
 	}
 	if opts.Preset == "" {
 		opts.Preset = config.DefaultPreset
@@ -160,9 +161,9 @@ func Install(opts Options) (*Result, error) {
 	}
 
 	res := &Result{
-		SettingsPath:    SettingsPath(opts.Home),
-		ConfigPath:      config.UserPath(opts.Home),
-		InstalledBinary: BinaryPath(opts.Home),
+		SettingsPath:    SettingsPath(opts.Root),
+		ConfigPath:      config.UserPath(opts.Root),
+		InstalledBinary: BinaryPath(opts.Root),
 	}
 
 	settings, err := readSettings(res.SettingsPath)
@@ -211,16 +212,16 @@ func Install(opts Options) (*Result, error) {
 // Uninstall drop our statusLine key and installed binary, every other setting
 // untouched. statusline.toml stay: user's own config, and removing it turn
 // reinstall into fresh start instead of resumption.
-func Uninstall(home string) (*Result, error) {
-	// Empty home resolve every path against cwd, so os.Remove below would hunt a
-	// .claude in whatever directory this ran from.
-	if home == "" {
-		return nil, errors.New("no home directory")
+func Uninstall(root string) (*Result, error) {
+	// Empty root resolve every path against cwd, so os.Remove below would hunt a
+	// binary in whatever directory this ran from.
+	if root == "" {
+		return nil, errors.New("no config directory")
 	}
 	res := &Result{
-		SettingsPath:    SettingsPath(home),
-		ConfigPath:      config.UserPath(home),
-		InstalledBinary: BinaryPath(home),
+		SettingsPath:    SettingsPath(root),
+		ConfigPath:      config.UserPath(root),
+		InstalledBinary: BinaryPath(root),
 	}
 
 	settings, err := readSettings(res.SettingsPath)
