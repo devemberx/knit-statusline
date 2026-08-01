@@ -22,6 +22,10 @@ type Context struct {
 
 	// Backs segments that must not recompute every render.
 	CacheDir string
+
+	// Claude Code config root -- settings.json live here, and caveman flag
+	// beside it. Level never reach stdin payload, so file is only source.
+	ConfigDir string
 }
 
 func (c Context) Thresholds() render.Thresholds {
