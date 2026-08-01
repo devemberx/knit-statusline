@@ -4,14 +4,15 @@
 # and "limit.7d" would render nothing at all on this plan. What you pay is
 # metered per token instead, so cost and cumulative counts take that row:
 #
-#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ⏱ 1h15m │ ◕ high
+#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high
 #   ↑62.1k ↓231k  cache ↑1.2M ↓32.4M │ +156 -23 │ $1.23
 #
 # The Claude Code version is left off too -- it says nothing about the session.
-# Add "version" back if you want it.
+# So is elapsed time: "session" counts wall clock including idle. Add "version"
+# or "session" back if you want them.
 
 [[lines]]
-segments = ["model", "context", "dir", "session", "effort"]
+segments = ["model", "context", "dir", "effort"]
 
 [[lines]]
 segments = ["tokens", "lines", "cost"]

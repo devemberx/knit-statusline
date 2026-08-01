@@ -77,7 +77,7 @@ func drawPreset(t *testing.T, preset string, doc []byte) string {
 func TestReferencePresetOnFullData(t *testing.T) {
 	got := drawPreset(t, "reference", fixtures.Full)
 	want := strings.Join([]string{
-		"Opus 4.8 │ ✍️ 42% │ acme │ ⏱ 1h15m │ ◕ high",
+		"Opus 4.8 │ ✍️ 42% │ acme │ ◕ high",
 		"",
 		"current ●●●●○○○○○○  42% ⟳ 8:00am",
 		"weekly  ●●○○○○○○○○  18% ⟳ jul 27, 8:00am",
@@ -99,6 +99,24 @@ func TestMinimalPresetOnFullData(t *testing.T) {
 	}
 }
 
+// Second preset whose first row lost "session". Pinned same reason as
+// reference: header comment and render must not drift apart.
+//
+// tokens read 0, not fixture usage: full.json transcript_path name file that
+// does not exist, which prove session sent nothing rather than fail probe. Row
+// shape is what this guard, not counts.
+func TestAPIPresetOnFullData(t *testing.T) {
+	got := drawPreset(t, "api", fixtures.Full)
+	want := strings.Join([]string{
+		"Opus 4.8 │ ✍️ 42% │ acme │ ◕ high",
+		"↑0 ↓0 │ +156 -23 │ $1.23",
+	}, "\n")
+
+	if got != want {
+		t.Errorf("got:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
 // Case reference bash implementation get wrong: no blank rows left by
 // vanished segments. context differs from limit.5h/limit.7d here: Sparse's
 // transcript_path name file that does not exist, so probe prove session fresh
@@ -108,7 +126,7 @@ func TestMinimalPresetOnFullData(t *testing.T) {
 func TestReferencePresetOnSparseData(t *testing.T) {
 	got := drawPreset(t, "reference", fixtures.Sparse)
 	want := strings.Join([]string{
-		"Sonnet 5 │ ✍️ 0% │ scratch │ ⏱ 1s",
+		"Sonnet 5 │ ✍️ 0% │ scratch",
 		"",
 		"current ○○○○○○○○○○   …%",
 		"weekly  ○○○○○○○○○○   …%",
@@ -127,9 +145,9 @@ func TestReferencePresetOnSparseData(t *testing.T) {
 func TestEmptyDocumentRendersOnlyStableSlots(t *testing.T) {
 	for _, tc := range []struct{ preset, want string }{
 		{"minimal", "✍️ …%"},
-		{"reference", "✍️ …% │ ⏱ …\n\ncurrent ○○○○○○○○○○   …%\nweekly  ○○○○○○○○○○   …%"},
+		{"reference", "✍️ …%\n\ncurrent ○○○○○○○○○○   …%\nweekly  ○○○○○○○○○○   …%"},
 		{"verbose", "✍️ …% │ ⏱ …\ncurrent ○○○○○○○○○○   …%  weekly ○○○○○○○○○○   …%\n↑… ↓… │ +… -… │ $…"},
-		{"api", "✍️ …% │ ⏱ …\n↑… ↓… │ +… -… │ $…"},
+		{"api", "✍️ …%\n↑… ↓… │ +… -… │ $…"},
 	} {
 		if got := drawPreset(t, tc.preset, fixtures.Empty); got != tc.want {
 			t.Errorf("%s: empty document produced %q, want %q", tc.preset, got, tc.want)
