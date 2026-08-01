@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -216,6 +217,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout)
 
 	fmt.Fprintln(stdout, "Paths")
+	fmt.Fprintf(stdout, "  root       %s%s%s\n", rootLabel(root), rootOrigin(), existsNote(root))
 	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(root), existsNote(install.SettingsPath(root)))
 	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(root), existsNote(config.UserPath(root)))
 	if project != "" {
@@ -247,6 +249,28 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	if problems == 0 {
 		fmt.Fprintln(stdout, "  status     ok")
 	}
+	if legacy := strayRoot(root); legacy != "" {
+		strays := [][2]string{
+			{"config", config.UserPath(legacy)},
+			{"binary", install.BinaryPath(legacy)},
+			{"settings", install.SettingsPath(legacy)},
+		}
+		var found [][2]string
+		for _, s := range strays {
+			if _, err := os.Stat(s[1]); err == nil {
+				found = append(found, s)
+			}
+		}
+		if len(found) > 0 {
+			fmt.Fprintln(stdout)
+			fmt.Fprintf(stdout, "Stray files in %s\n", legacy)
+			fmt.Fprintf(stdout, "  Claude Code reads %s now, so nothing below is loaded.\n", root)
+			for _, s := range found {
+				fmt.Fprintf(stdout, "  %-10s %s\n", s[0], s[1])
+			}
+			fmt.Fprintln(stdout, "  Run `knit-statusline install` to set up the new root, then delete these.")
+		}
+	}
 	fmt.Fprintln(stdout)
 
 	fmt.Fprintln(stdout, "Available segments")
@@ -271,4 +295,40 @@ func existsNote(path string) string {
 		return "  (not present)"
 	}
 	return ""
+}
+
+// rootLabel keep root line printable when no home exist. Blank value read as
+// missing output rather than missing home.
+func rootLabel(root string) string {
+	if root == "" {
+		return "(no home directory)"
+	}
+	return root
+}
+
+// rootOrigin say which directory supplied root. Moved root and default one
+// otherwise print alike, and user cannot tell doctor read wrong one.
+func rootOrigin() string {
+	if os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+		return ""
+	}
+	return "  (CLAUDE_CONFIG_DIR)"
+}
+
+// strayRoot name old ~/.claude when CLAUDE_CONFIG_DIR moved root elsewhere.
+// Empty when variable unset, home unknown, or both path name one directory --
+// majority never set it and must see no extra output.
+func strayRoot(root string) string {
+	if os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+		return ""
+	}
+	home := homeDir()
+	if home == "" {
+		return ""
+	}
+	legacy := filepath.Join(home, ".claude")
+	if filepath.Clean(legacy) == filepath.Clean(root) {
+		return ""
+	}
+	return legacy
 }

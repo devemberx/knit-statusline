@@ -181,7 +181,7 @@ func TestDoctorReportsPathsAndSegments(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"knit-statusline", "Paths", "settings", "config", "cache",
+		"knit-statusline", "Paths", "root", "settings", "config", "cache",
 		"Configuration", "sources", "rows", "status     ok", "Available segments",
 	} {
 		if !strings.Contains(got, want) {
@@ -506,5 +506,66 @@ func TestPreviewSparseRendersFreshZeros(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "✍️ "+config.DefaultUnknown) {
 		t.Fatalf("preview --sparse placeholdered context instead of zeroing it: %s", stdout.String())
+	}
+}
+
+// Moved root and default root print identical Paths block without this line, so
+// user cannot tell which directory doctor read.
+func TestDoctorNamesTheConfigRootVariable(t *testing.T) {
+	isolate(t)
+	moved := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, moved) {
+		t.Errorf("doctor omits the moved root %q:\n%s", moved, got)
+	}
+	if !strings.Contains(got, "(CLAUDE_CONFIG_DIR)") {
+		t.Errorf("doctor does not say where the root came from:\n%s", got)
+	}
+}
+
+// File left in old root is read by nobody. Five causes make a segment vanish and
+// all look alike, so doctor name what it found rather than stay silent.
+func TestDoctorListsStrayFilesInTheOldRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orphan := config.UserPath(legacy)
+	if err := os.WriteFile(orphan, []byte("[[lines]]\nsegments = [\"model\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, "Stray files in "+legacy) {
+		t.Errorf("doctor omits the stray block:\n%s", got)
+	}
+	if !strings.Contains(got, orphan) {
+		t.Errorf("doctor omits the stray config %q:\n%s", orphan, got)
+	}
+}
+
+// Default root is not a stray root. Block must not fire for majority who
+// never set variable.
+func TestDoctorSkipsStrayBlockOnTheDefaultRoot(t *testing.T) {
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	if got := out.String(); strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired on the default root:\n%s", got)
 	}
 }
