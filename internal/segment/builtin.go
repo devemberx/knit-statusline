@@ -35,6 +35,7 @@ func init() {
 	register("context", Def{
 		Fields:          []string{"pct", "remaining", "used", "size", "bar"},
 		DefaultTemplate: "✍️ {pct}%",
+		Stable:          true,
 		Build:           buildContext,
 	})
 
@@ -244,11 +245,10 @@ func joinModelName(family, version string) string {
 
 func buildContext(c Context) Result {
 	// Unknown is not zero. Before first API call and after /compact, Claude Code
-	// report no usage at all. 0% there claim empty context where truth is
-	// unreported one.
+	// report no usage at all.
 	p, ok := c.In.ContextPercent()
 	if !ok {
-		return empty
+		return contextNoUsage(c)
 	}
 
 	t := c.Thresholds()
@@ -260,6 +260,43 @@ func buildContext(c Context) Result {
 	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
 		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)
 		f["used"] = render.Colored(count(usedTokens(c)), render.White)
+	}
+	return Result{Base: render.Dim, Fields: f}
+}
+
+// contextNoUsage cover two states carrying no percentage.
+//
+// Fresh session sent nothing, so 0% is fact. Everything else -- resume,
+// /compact, transcript unreadable -- hold occupancy nobody reported, and that
+// is what placeholder say.
+//
+// {size} split off from {used}: nothing was sent, so used is a real zero, while
+// window size was never reported at all and zero would be absurd.
+func contextNoUsage(c Context) Result {
+	if !c.holdsSlot() {
+		return empty
+	}
+	if !c.Fresh {
+		u := c.Cfg.Unknown
+		return Result{Base: render.Dim, Fields: render.Fields{
+			"pct":       render.Colored(u, render.Dim),
+			"remaining": render.Colored(u, render.Dim),
+			"used":      render.Colored(u, render.Dim),
+			"size":      render.Colored(u, render.Dim),
+			"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, render.Thresholds{})),
+		}}
+	}
+
+	t := c.Thresholds()
+	f := render.Fields{
+		"pct":       render.Colored(pct(0), t.Color(0)),
+		"remaining": render.Colored(pct(100), t.Color(0)),
+		"used":      render.Colored(count(0), render.White),
+		"size":      render.Colored(c.Cfg.Unknown, render.Dim),
+		"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, t)),
+	}
+	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
+		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)
 	}
 	return Result{Base: render.Dim, Fields: f}
 }

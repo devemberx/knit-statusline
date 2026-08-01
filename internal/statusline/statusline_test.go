@@ -97,29 +97,32 @@ func TestMinimalPresetOnFullData(t *testing.T) {
 	}
 }
 
-// Case reference bash implementation get wrong. Nothing available, so nothing
-// invented: no "0%" context, no empty rate limit bars, no blank rows left by
-// vanished segments.
+// Case reference bash implementation get wrong. Rate limits invent nothing: no
+// empty bars, no blank rows left by vanished segments. context differ --
+// Sparse's transcript_path name file that does not exist, so probe prove
+// session fresh and 0% is fact, not invention. Stable slot hold that fact.
 func TestReferencePresetOnSparseData(t *testing.T) {
 	got := drawPreset(t, "reference", fixtures.Sparse)
-	want := "Sonnet 5 │ scratch │ ⏱ 1s"
+	want := "Sonnet 5 │ ✍️ 0% │ scratch │ ⏱ 1s"
 
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	for _, forbidden := range []string{"0%", "current", "weekly", "○"} {
+	for _, forbidden := range []string{"current", "weekly", "○"} {
 		if strings.Contains(got, forbidden) {
 			t.Errorf("output invents %q from missing data: %q", forbidden, got)
 		}
 	}
 }
 
-// Every segment come back empty, so Render yield "". Printing Fallback is
-// caller's job.
-func TestEmptyDocumentRendersNothing(t *testing.T) {
+// Every non-stable segment come back empty. context differ: Empty document
+// carry no transcript_path, freshness unprovable rather than proven, so Stable
+// slot hold placeholder rather than a bare zero. Printing Fallback past that
+// remains caller's job.
+func TestEmptyDocumentRendersOnlyTheStableSlot(t *testing.T) {
 	for _, preset := range []string{"minimal", "reference", "verbose", "api"} {
-		if got := drawPreset(t, preset, fixtures.Empty); got != "" {
-			t.Errorf("%s: empty document produced %q", preset, got)
+		if got := drawPreset(t, preset, fixtures.Empty); got != "✍️ …%" {
+			t.Errorf("%s: empty document produced %q, want just the context placeholder", preset, got)
 		}
 	}
 }

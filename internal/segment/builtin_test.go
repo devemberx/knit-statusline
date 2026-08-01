@@ -5,8 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/devemberx/knit-statusline/internal/config"
 	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/render"
+	"github.com/devemberx/knit-statusline/internal/schema"
 )
 
 // Default templates against complete data. Reordering a row inherit these, so
@@ -34,9 +36,10 @@ func TestDefaultTemplatesOnFullData(t *testing.T) {
 
 // Sparse document is non-subscriber on first render. Every segment resting on
 // data that has not arrived must drop out rather than print a placeholder.
+// context excluded: it is Stable now, holding its slot instead of dropping --
+// see TestContextLiveWithoutUsageRendersUnknown.
 func TestSegmentsAbsentOnSparseData(t *testing.T) {
 	for _, kind := range []string{
-		"context",      // used_percentage null, current_usage null
 		"effort",       // model carry no effort parameter
 		"limit.5h",     // rate_limits reach subscribers only
 		"limit.7d",     //
@@ -129,11 +132,12 @@ func TestModelNameNeverRepeatsVersion(t *testing.T) {
 }
 
 // Context percentage unknown is not zero. Before first API call and after
-// /compact Claude Code report no usage at all, and 0% there claim empty context
-// where truth is unreported one.
+// /compact Claude Code report no usage at all, and 0% there claim occupancy
+// nobody reported. context is Stable, so it hold its slot with placeholder
+// rather than drop -- ctx() default to live, unprovable freshness.
 func TestContextDistinguishesUnknownFromZero(t *testing.T) {
-	if res := Build(ctx(t, fixtures.Sparse, "context")); !res.Empty {
-		t.Errorf("unreported usage gave %+v, want empty", res)
+	if got := draw(ctx(t, fixtures.Sparse, "context")); got != "✍️ …%" {
+		t.Errorf("unreported usage rendered %q, want placeholder", got)
 	}
 
 	c := ctx(t, fixtures.Sparse, "context")
@@ -145,14 +149,15 @@ func TestContextDistinguishesUnknownFromZero(t *testing.T) {
 }
 
 // usedTokens back-compute int64(p/100*size), and int64(NaN) is minInt64 on
-// amd64. No guard there, so NaN drop segment like any unknown percentage.
-func TestContextDropsOutOnNaN(t *testing.T) {
+// amd64. No guard there, so NaN fall to placeholder like any unknown
+// percentage, never garbage.
+func TestContextNaNFallsBackToPlaceholder(t *testing.T) {
 	c := ctx(t, fixtures.Sparse, "context")
 	nan := math.NaN()
 	c.In.Context.UsedPercentage = &nan
 
-	if res := Build(c); !res.Empty {
-		t.Errorf("NaN percentage gave %+v, want empty", res)
+	if got := draw(c); got != "✍️ …%" {
+		t.Errorf("NaN percentage rendered %q, want placeholder", got)
 	}
 }
 
@@ -336,3 +341,74 @@ func TestPercentagesCarrySeverityColour(t *testing.T) {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// ctxFor build Context for one segment name with registry's own default
+// template and no-color palette.
+func ctxFor(name string, in *schema.Input, fresh bool) Context {
+	def, _ := Lookup(name)
+	return Context{
+		In:      in,
+		Cfg:     config.Resolved{Kind: name, Name: name, Template: def.DefaultTemplate, Unknown: config.DefaultUnknown, BarWidth: 10},
+		Palette: render.NoColor(),
+		Fresh:   fresh,
+		stable:  def.Stable,
+	}
+}
+
+func TestContextFreshRendersRealZero(t *testing.T) {
+	res := buildContext(ctxFor("context", &schema.Input{}, true))
+	if res.Empty {
+		t.Fatal("fresh context returned empty")
+	}
+	if got := res.Fields["pct"].Text; got != "0" {
+		t.Fatalf("pct = %q, want %q", got, "0")
+	}
+	if got := res.Fields["used"].Text; got != "0" {
+		t.Fatalf("used = %q, want %q", got, "0")
+	}
+}
+
+// Window size was never reported, so zero would be absurd there while used
+// stay a real zero. State resolve per field.
+func TestContextFreshSizeStaysUnknown(t *testing.T) {
+	res := buildContext(ctxFor("context", &schema.Input{}, true))
+	if got := res.Fields["size"].Text; got != config.DefaultUnknown {
+		t.Fatalf("size = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
+func TestContextLiveWithoutUsageRendersUnknown(t *testing.T) {
+	res := buildContext(ctxFor("context", &schema.Input{}, false))
+	if res.Empty {
+		t.Fatal("live context returned empty")
+	}
+	if got := res.Fields["pct"].Text; got != config.DefaultUnknown {
+		t.Fatalf("pct = %q, want %q", got, config.DefaultUnknown)
+	}
+}
+
+// Payload beat freshness: a fresh session reporting occupancy show it.
+func TestContextKnownBeatsFresh(t *testing.T) {
+	p := 42.0
+	in := &schema.Input{Context: &schema.ContextWin{UsedPercentage: &p}}
+	res := buildContext(ctxFor("context", in, true))
+	if got := res.Fields["pct"].Text; got != "42" {
+		t.Fatalf("pct = %q, want %q", got, "42")
+	}
+}
+
+func TestContextOptedOutDropsWhenAbsent(t *testing.T) {
+	c := ctxFor("context", &schema.Input{}, false)
+	c.Cfg.Unknown = ""
+	if !buildContext(c).Empty {
+		t.Fatal("unknown = \"\" did not drop the segment")
+	}
+}
+
+func TestContextOptedOutDropsWhenFresh(t *testing.T) {
+	c := ctxFor("context", &schema.Input{}, true)
+	c.Cfg.Unknown = ""
+	if !buildContext(c).Empty {
+		t.Fatal("unknown = \"\" did not drop the fresh segment")
+	}
+}

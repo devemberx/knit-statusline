@@ -215,8 +215,13 @@ func TestThresholdsComeFromResolvedConfig(t *testing.T) {
 
 // Empty document is floor every segment must survive: valid JSON, nothing
 // populated. None may panic, and none may claim data it does not have.
+// context skipped: it is Stable, so it hold its slot with placeholder rather
+// than drop -- see TestContextLiveWithoutUsageRendersUnknown in builtin_test.go.
 func TestEverySegmentSurvivesEmptyDocument(t *testing.T) {
 	for _, kind := range Names() {
+		if kind == "context" {
+			continue
+		}
 		if got := draw(ctx(t, fixtures.Empty, kind)); got != "" {
 			t.Errorf("%s rendered %q from an empty document", kind, got)
 		}

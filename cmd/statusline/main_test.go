@@ -88,11 +88,12 @@ func TestRenderFallsBackWhenNothingParses(t *testing.T) {
 }
 
 // Valid document with nothing populated: model name is whatever identity remain.
+// context still hold its slot with placeholder -- Contains, not exact match.
 func TestRenderFallsBackToModelName(t *testing.T) {
 	isolate(t)
 	got := drawStdin(t, []byte(`{"model":{"display_name":"Opus","id":"claude-opus-4-8"}}`))
-	if strings.TrimSpace(got) != "Opus 4.8" {
-		t.Errorf("got %q, want Opus 4.8", got)
+	if !strings.Contains(got, "Opus 4.8") {
+		t.Errorf("got %q, want it to contain Opus 4.8", got)
 	}
 }
 
