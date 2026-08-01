@@ -251,19 +251,19 @@ func TestOwnsCommandFoldsWindowsCase(t *testing.T) {
 // symlinked home on unix. No rewrite reconcile those, so stat settle it.
 func TestOwnsCommandMatchesSameFileByAnotherPath(t *testing.T) {
 	root := t.TempDir()
-	real := filepath.Join(root, "real")
-	if err := os.MkdirAll(real, 0o755); err != nil {
+	target := filepath.Join(root, "real")
+	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(root, "link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	if _, err := Install(Options{Home: real, Binary: fakeBinary(t)}); err != nil {
+	if _, err := Install(Options{Home: target, Binary: fakeBinary(t)}); err != nil {
 		t.Fatal(err)
 	}
 
-	if !OwnsCommand(CommandString(BinaryPath(link)), BinaryPath(real)) {
+	if !OwnsCommand(CommandString(BinaryPath(link)), BinaryPath(target)) {
 		t.Error("same binary reached through symlinked home read as another tool")
 	}
 
@@ -272,7 +272,7 @@ func TestOwnsCommandMatchesSameFileByAnotherPath(t *testing.T) {
 	if err := os.WriteFile(other, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if OwnsCommand(other, BinaryPath(real)) {
+	if OwnsCommand(other, BinaryPath(target)) {
 		t.Error("another tool on disk claimed as ours")
 	}
 }
