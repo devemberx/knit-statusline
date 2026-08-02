@@ -60,6 +60,15 @@ const maxHookHops = 2
 // still bound stat calls when stdin carry pathological path.
 const maxAncestorDepth = 40
 
+// Bound import walk. Claude Code stop following at 5 hops, so hop cap match
+// what load. Two budgets under it: file budget bound reads, reference budget
+// bound stat calls. Prose carrying many "@" spend second budget alone.
+const (
+	maxImportHops  = 5
+	maxImportFiles = 200
+	maxImportRefs  = 2000
+)
+
 // Variable Claude Code expand inside plugin paths.
 const pluginRootVar = "${CLAUDE_PLUGIN_ROOT}"
 
@@ -252,16 +261,152 @@ func countClaudeMD(n *configCount, user, project string) {
 		paths = append(paths, ancestorClaudeMD(n, project)...)
 	}
 
+	w := importWalk{
+		n:     n,
+		seen:  map[string]struct{}{},
+		files: maxImportFiles,
+		refs:  maxImportRefs,
+	}
 	for _, p := range paths {
-		fi, err := os.Stat(p)
-		switch {
-		case errors.Is(err, fs.ErrNotExist):
-		case err != nil:
-			n.lost()
-		case fi.Mode().IsRegular() && fi.Size() > 0:
-			n.n++
+		w.count(p, 0)
+	}
+}
+
+// importWalk carry instruction count, files already counted, and both budgets
+// across every root.
+type importWalk struct {
+	n     *configCount
+	seen  map[string]struct{}
+	files int
+	refs  int
+}
+
+// count one instruction file plus every file it import.
+//
+// Empty file is what fresh install leave at <config root>/CLAUDE.md, and it
+// load nothing. Symlink followed on purpose: CLAUDE.md pointed at AGENTS.md is
+// common, and Claude Code read through it.
+//
+// seen key on cleaned path: two roots reaching same file load it once, and file
+// importing its own importer otherwise walk until hop cap.
+func (w *importWalk) count(path string, hop int) {
+	path = filepath.Clean(path)
+	if _, dup := w.seen[path]; dup {
+		return
+	}
+	if w.refs--; w.refs < 0 {
+		w.n.lost()
+		return
+	}
+
+	fi, err := os.Stat(path)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return
+	case err != nil:
+		w.n.lost()
+		return
+	case !fi.Mode().IsRegular() || fi.Size() == 0:
+		return
+	}
+
+	if w.files--; w.files < 0 {
+		w.n.lost()
+		return
+	}
+
+	w.seen[path] = struct{}{}
+	w.n.n++
+
+	// Claude Code stop at same hop, so stopping here match what load -- number
+	// stay a fact, not a truncation.
+	if hop >= maxImportHops {
+		return
+	}
+
+	refs, err := scanImports(path)
+	if err != nil {
+		w.n.lost()
+		return
+	}
+	for _, ref := range refs {
+		w.count(ref, hop+1)
+	}
+}
+
+// scanImports list files one instruction file pull in.
+//
+// Claude Code read "@path/to/file" as import, resolved against directory of
+// file holding it, and leave same text inside fenced block or backtick span
+// alone -- docs showing that syntax must not load anything.
+//
+// Reference that resolve to nothing cost one Stat and count nothing, so "@user"
+// in prose need no rule of its own.
+func scanImports(path string) ([]string, error) {
+	b, err := readCappedFile(path, maxConfigBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	dir := filepath.Dir(path)
+	var out []string
+	var fenced bool
+	for line := range strings.Lines(string(b)) {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			continue
+		}
+		for _, ref := range lineImports(trimmed) {
+			if p := resolveImport(ref, dir); p != "" {
+				out = append(out, p)
+			}
 		}
 	}
+	return out, nil
+}
+
+// lineImports pick references out of one line, backtick span dropped.
+func lineImports(line string) []string {
+	var out []string
+	for i, part := range strings.Split(line, "`") {
+		// Odd field sit between backticks.
+		if i%2 == 1 {
+			continue
+		}
+		for _, field := range strings.Fields(part) {
+			ref, ok := strings.CutPrefix(field, "@")
+			if !ok {
+				continue
+			}
+			// Sentence punctuation ride along: "see @docs/x.md." name no file.
+			if ref = strings.TrimRight(ref, ".,;:)"); ref != "" {
+				out = append(out, ref)
+			}
+		}
+	}
+	return out
+}
+
+// resolveImport turn reference into path.
+//
+// "~" mean home even under CLAUDE_CONFIG_DIR: it is a path somebody typed in
+// their own file, not a config location this program own.
+func resolveImport(ref, dir string) string {
+	switch {
+	case ref == "~" || strings.HasPrefix(ref, "~/"):
+		home, err := os.UserHomeDir()
+		if err != nil || home == "" {
+			return ""
+		}
+		return filepath.Join(home, strings.TrimPrefix(ref, "~"))
+	case filepath.IsAbs(ref):
+		return ref
+	}
+	return filepath.Join(dir, ref)
 }
 
 // ancestorClaudeMD list files every directory above project may hold.
@@ -785,26 +930,35 @@ func readClaudeJSONServers(n *configCount, names *mcpNames, user, project string
 // purpose -- settings.json pointed into dotfiles checkout is normal, and no
 // byte read here reach row.
 func readConfigJSON(path string, limit int64, v any) error {
-	fi, err := os.Stat(path)
+	b, err := readCappedFile(path, limit)
 	if err != nil {
 		return err
 	}
+	return json.Unmarshal(b, v)
+}
+
+// readCappedFile read regular file up to limit.
+func readCappedFile(path string, limit int64) ([]byte, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
 	if !fi.Mode().IsRegular() {
-		return errConfigNotRegular
+		return nil, errConfigNotRegular
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer f.Close()
 
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if int64(len(b)) > limit {
-		return errConfigTooBig
+		return nil, errConfigTooBig
 	}
-	return json.Unmarshal(b, v)
+	return b, nil
 }

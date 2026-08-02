@@ -244,6 +244,113 @@ func TestConfigMarksDeepAncestorPathUnknown(t *testing.T) {
 	}
 }
 
+// "@path" pull another file into context, so counting files named by hand
+// report 1 where 3 load.
+func TestConfigCountsClaudeMdImports(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "root\n@docs/style.md\nsee @docs/testing.md.\n")
+	writeUnder(t, project, "docs/style.md", "style\n")
+	writeUnder(t, project, "docs/testing.md", "testing\n")
+
+	if got, want := draw(c), "📋3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Import chain run 5 hops deep, and every file on it load.
+func TestConfigFollowsImportChain(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "@a.md\n")
+	writeUnder(t, project, "a.md", "@b.md\n")
+	writeUnder(t, project, "b.md", "leaf\n")
+
+	if got, want := draw(c), "📋3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// File importing its own importer otherwise walk until hop cap, counting same
+// two files five times over.
+func TestConfigCountsCyclicImportOnce(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "@a.md\n")
+	writeUnder(t, project, "a.md", "@CLAUDE.md\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Docs showing import syntax must not load what they document.
+func TestConfigSkipsImportsInsideCode(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "write `@fenced.md` inline\n\n```\n@fenced.md\n```\n")
+	writeUnder(t, project, "fenced.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Reference naming no file cost one Stat and count nothing, so "@mention" in
+// prose need no rule of its own.
+func TestConfigIgnoresImportsNamingNoFile(t *testing.T) {
+	c := configCtx(t)
+	writeUnder(t, c.In.Workspace.ProjectDir, "CLAUDE.md", "ping @devemberx about @anthropic-ai/sdk\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Generated CLAUDE.md listing more files than budget stop walk, and stopping
+// prove no zero.
+func TestConfigMarksOversizeImportTreeUnknown(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	var body strings.Builder
+	for i := range maxImportFiles + 10 {
+		name := "part" + strconv.Itoa(i) + ".md"
+		writeUnder(t, project, filepath.Join("parts", name), "x\n")
+		body.WriteString("@parts/" + name + "\n")
+	}
+	writeUnder(t, project, "CLAUDE.md", body.String())
+
+	if got, want := draw(c), "📋…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Prose carrying "@" past reference budget name no file, but resolving each one
+// still cost a stat.
+func TestConfigMarksOversizeReferenceCountUnknown(t *testing.T) {
+	c := configCtx(t)
+	var body strings.Builder
+	for i := range maxImportRefs + 10 {
+		body.WriteString("ping @nobody" + strconv.Itoa(i) + "\n")
+	}
+	writeUnder(t, c.In.Workspace.ProjectDir, "CLAUDE.md", body.String())
+
+	if got, want := draw(c), "📋…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Unreadable instruction file hide its imports, and hidden import prove no
+// count.
+func TestConfigMarksOversizeClaudeMdUnknown(t *testing.T) {
+	c := configCtx(t)
+	writeUnder(t, c.In.Workspace.ProjectDir, "CLAUDE.md", strings.Repeat("x", maxConfigBytes+1))
+
+	if got, want := draw(c), "📋…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 func TestConfigCountsRulesRecursively(t *testing.T) {
 	c := configCtx(t)
 	writeUnder(t, c.ConfigDir, "rules/style.md", "x\n")
