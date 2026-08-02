@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/devemberx/knit-statusline/internal/config"
+	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/install"
 	"github.com/devemberx/knit-statusline/internal/schema"
 )
@@ -64,6 +65,75 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 	}
 	if !strings.Contains(sparse, "weekly  ○○○○○○○○○○   …%") {
 		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
+	}
+}
+
+// Fixture transcript belong to complete-data run alone. --sparse and
+// --unknown exist to show what a row look like with values missing, and todo
+// dropping out is one of those shapes.
+func TestPreviewDegradedRunsDrawNoTodoSlot(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+
+	for _, flag := range []string{"--sparse", "--unknown"} {
+		var out, errOut bytes.Buffer
+		if code := runPreview([]string{flag}, &out, &errOut); code != 0 {
+			t.Fatalf("%s exit = %d, stderr = %q", flag, code, errOut.String())
+		}
+		if strings.Contains(out.String(), "☑") {
+			t.Errorf("%s preview drew a todo slot:\n%s", flag, out.String())
+		}
+	}
+}
+
+// Preview must leave one transcript file however often it run, else cache
+// directory fill with per-run copies and every one keep its own scan cursor.
+func TestPreviewTranscriptPathIsFixed(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := writePreviewTranscript(dir)
+	if err != nil {
+		t.Fatalf("writePreviewTranscript: %v", err)
+	}
+	second, err := writePreviewTranscript(dir)
+	if err != nil {
+		t.Fatalf("writePreviewTranscript: %v", err)
+	}
+	if first != second {
+		t.Errorf("path moved between runs: %q then %q", first, second)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("two runs left %d files, want 1", len(entries))
+	}
+
+	got, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, fixtures.TodosJSONL) {
+		t.Error("written transcript does not match the fixture")
+	}
+}
+
+// Unwritable cache directory must surface as error runPreview can ignore,
+// not a panic and not a half-written path it goes on to scan.
+func TestWritePreviewTranscriptReportsUnwritableDir(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := writePreviewTranscript(filepath.Join(blocked, "cache"))
+	if err == nil {
+		t.Fatal("writing under a file returned no error")
+	}
+	if path != "" {
+		t.Errorf("returned path %q alongside an error, want empty", path)
 	}
 }
 
