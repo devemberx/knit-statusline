@@ -71,6 +71,13 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
 - Config problem name file that declared it. `Load` keep bytes per layer and
   `Origin` search them, table headers before mentions. Guessing one file blame
   whichever layer merged last, pointing at its innocent rows.
+- Report what Claude Code load, never view Claude Code itself never show. File
+  Claude Code read is fair source: count taken off it check against that same
+  file. Rebuilding its resolution to publish new view — hook listed by origin,
+  merged config explained, server attributed to plugin — answer question `grep`
+  answer already, and bet every undocumented key name and path on next Claude
+  Code release. Problem report still name file that declared it, rule above;
+  healthy config get no tour.
 - Subprocess need both a context deadline and `cmd.WaitDelay`. Context kill
   direct child alone; grandchild holding stdout keep `Output()` reading past it.
 - Caches disposable: temp file then rename — two renders may overlap. Corrupt or
