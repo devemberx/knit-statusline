@@ -213,11 +213,12 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 
 	root := configDir()
 	project := workingDir()
+	env := os.Getenv("CLAUDE_CONFIG_DIR")
 	fmt.Fprintln(stdout, "knit-statusline "+version)
 	fmt.Fprintln(stdout)
 
 	fmt.Fprintln(stdout, "Paths")
-	fmt.Fprintf(stdout, "  root       %s%s%s\n", rootLabel(root), rootOrigin(), existsNote(root))
+	fmt.Fprintf(stdout, "  root       %s%s%s\n", rootLabel(root), rootOrigin(env), existsNote(root))
 	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(root), existsNote(install.SettingsPath(root)))
 	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(root), existsNote(config.UserPath(root)))
 	if project != "" {
@@ -249,7 +250,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	if problems == 0 {
 		fmt.Fprintln(stdout, "  status     ok")
 	}
-	if legacy := strayRoot(root); legacy != "" {
+	if legacy := strayRoot(root, env); legacy != "" {
 		strays := [][2]string{
 			{"config", config.UserPath(legacy)},
 			{"binary", install.BinaryPath(legacy)},
@@ -308,8 +309,8 @@ func rootLabel(root string) string {
 
 // rootOrigin say which directory supplied root. Moved root and default one
 // otherwise print alike, and user cannot tell doctor read wrong one.
-func rootOrigin() string {
-	if os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+func rootOrigin(env string) string {
+	if env == "" {
 		return ""
 	}
 	return "  (CLAUDE_CONFIG_DIR)"
@@ -318,8 +319,15 @@ func rootOrigin() string {
 // strayRoot name old ~/.claude when CLAUDE_CONFIG_DIR moved root elsewhere.
 // Empty when variable unset, home unknown, or both path name one directory --
 // majority never set it and must see no extra output.
-func strayRoot(root string) string {
-	if os.Getenv("CLAUDE_CONFIG_DIR") == "" {
+//
+// Identity by stat, not text: filepath.Clean normalise separator and dot
+// segment alone. Symlinked home, macOS /tmp vs /private/tmp, and Windows case
+// all name one directory two strings Clean cannot fold. SameFile settle it
+// when both side stat; SamePathText (case-folded on Windows) fall back when
+// legacy never existed -- common case, and missing directory leaves only text
+// to compare.
+func strayRoot(root, env string) string {
+	if env == "" {
 		return ""
 	}
 	home := homeDir()
@@ -327,7 +335,7 @@ func strayRoot(root string) string {
 		return ""
 	}
 	legacy := filepath.Join(home, ".claude")
-	if filepath.Clean(legacy) == filepath.Clean(root) {
+	if install.SameFile(legacy, root) || install.SamePathText(legacy, root) {
 		return ""
 	}
 	return legacy

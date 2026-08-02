@@ -556,8 +556,10 @@ func TestDoctorListsStrayFilesInTheOldRoot(t *testing.T) {
 	}
 }
 
-// Default root is not a stray root. Block must not fire for majority who
-// never set variable.
+// isolate pins CLAUDE_CONFIG_DIR to default ~/.claude itself -- same
+// directory named two ways, textually equal this time. Exercises strayRoot's
+// identity check, not early return covering majority who never set variable
+// at all.
 func TestDoctorSkipsStrayBlockOnTheDefaultRoot(t *testing.T) {
 	root := isolate(t)
 	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
@@ -567,5 +569,33 @@ func TestDoctorSkipsStrayBlockOnTheDefaultRoot(t *testing.T) {
 
 	if got := out.String(); strings.Contains(got, "Stray files") {
 		t.Errorf("stray block fired on the default root:\n%s", got)
+	}
+}
+
+// Symlinked home name legacy root and CLAUDE_CONFIG_DIR by two different
+// strings for one directory. Text compare alone misreads live config as stray
+// and tells user delete it -- reproduces reviewer's report exactly.
+func TestDoctorSkipsStrayBlockAcrossASymlinkedHome(t *testing.T) {
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	t.Setenv("HOME", link)
+	t.Setenv("USERPROFILE", link)
+
+	root := filepath.Join(real, ".claude")
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	if got := out.String(); strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired across a symlinked home:\n%s", got)
 	}
 }

@@ -65,13 +65,13 @@ func OwnsCommand(command, binary string) bool {
 	if cmd == "" {
 		return false
 	}
-	if samePathText(cmd, binary) {
+	if SamePathText(cmd, binary) {
 		return true
 	}
 	// 8.3 short home (C:\Users\RUNNER~1) and symlinked home name one binary by
 	// two strings no rewrite reconcile. Stat settle it. Uninstall call this
 	// before deleting binary, so file still there to stat.
-	return sameFile(cmd, binary)
+	return SameFile(cmd, binary)
 }
 
 // unquoteCommand undo CommandString quoting. Bash double-quote rule: backslash
@@ -92,9 +92,12 @@ func unquoteCommand(cmd string) string {
 	return b.String()
 }
 
-// samePathText compare path as text. Windows fold case: settings may hold
+// SamePathText compare path as text. Windows fold case: settings may hold
 // c:\users\... while os.UserHomeDir resolve C:\Users\...
-func samePathText(a, b string) bool {
+//
+// Exported: doctor's stray-root check reuse it as fallback when SameFile
+// cannot stat one side.
+func SamePathText(a, b string) bool {
 	a, b = filepath.ToSlash(a), filepath.ToSlash(b)
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(a, b)
@@ -102,9 +105,11 @@ func samePathText(a, b string) bool {
 	return a == b
 }
 
-// sameFile report both path name one file on disk. Stat only, never exec.
+// SameFile report both path name one file on disk. Stat only, never exec.
 // Missing either side mean no.
-func sameFile(a, b string) bool {
+//
+// Exported: doctor's stray-root check reuse it for symlinked-home identity.
+func SameFile(a, b string) bool {
 	fa, err := os.Stat(a)
 	if err != nil {
 		return false
