@@ -41,7 +41,7 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
 - `internal/render/` — `style.go` colors, palette, thresholds; `template.go`
   placeholder expansion.
 - `internal/transcript/` — `scan.go` JSONL scan into `Totals`, `cursor.go` byte
-  offset plus last `message.id`, cached under `~/.claude/statusline-cache/`.
+  offset plus last `message.id`, cached under <config root>/statusline-cache/.
 - `internal/statusline/` — `Render` assemble rows, `Fallback` last resort.
 - `internal/install/` — `install.go` binary copy, `settings.go` merge-safe
   settings.json write.
@@ -75,6 +75,11 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
   direct child alone; grandchild holding stdout keep `Output()` reading past it.
 - Caches disposable: temp file then rename — two renders may overlap. Corrupt or
   version-mismatched cache = discard and rebuild.
+- Every user-scoped path derive from config root, never `$HOME` directly.
+  `CLAUDE_CONFIG_DIR` relocate settings.json, statusline.toml, installed binary
+  and cache together. Resolver return empty when no home: `filepath.Join` on
+  empty string yield relative `.claude`, and that silently disable empty-value
+  guard in `install` and `config.Load`.
 
 Contribution rules — branch names, commit format, PR and merge — live in
 [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md). Not repeated here.

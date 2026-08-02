@@ -132,9 +132,9 @@ func TestPreviewErrorsGoToStderr(t *testing.T) {
 // Mistyped segment name cost its slot; render row carry marker, doctor carry
 // prose, preview said nothing at all.
 func TestPreviewReportsConfigProblems(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	t.Setenv("NO_COLOR", "1")
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
 
 	var out, errOut bytes.Buffer
 	if code := runPreview(nil, &out, &errOut); code != 0 {
@@ -151,9 +151,9 @@ func TestPreviewReportsConfigProblems(t *testing.T) {
 // preview draw what this directory render, project override included. Without
 // it, a layout tuned per project is unpreviewable.
 func TestPreviewAppliesTheProjectOverride(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	t.Setenv("NO_COLOR", "1")
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\", \"version\"]\n")
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\", \"version\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n")
@@ -181,7 +181,7 @@ func TestDoctorReportsPathsAndSegments(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"knit-statusline", "Paths", "settings", "config", "cache",
+		"knit-statusline", "Paths", "  root       ", "settings", "config", "cache",
 		"Configuration", "sources", "rows", "status     ok", "Available segments",
 	} {
 		if !strings.Contains(got, want) {
@@ -210,8 +210,8 @@ func TestDoctorMarksAbsentFiles(t *testing.T) {
 // Reporting problems is this command's job, so finding some is no failure.
 // Exit stay zero and text carry verdict.
 func TestDoctorReportsProblemsAndStillExitsZero(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, `
+	root := isolate(t)
+	writeUserConfig(t, root, `
 [[lines]]
 segments = ["model", "no-such-segment"]
 
@@ -237,8 +237,8 @@ template = "{nope}"
 // doctor read project override too, else a layout that only fail inside one
 // project look clean from there.
 func TestDoctorSeesTheProjectOverride(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
@@ -260,8 +260,8 @@ func TestDoctorSeesTheProjectOverride(t *testing.T) {
 // sent user to open project override and read its innocent row 2, because both
 // files name segment "model".
 func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n")
@@ -271,7 +271,7 @@ func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
 	runDoctor(nil, &out, &errOut)
 
 	got := out.String()
-	if !strings.Contains(got, config.UserPath(home)+":4") {
+	if !strings.Contains(got, config.UserPath(root)+":4") {
 		t.Errorf("unknown field not located in the user config at line 4:\n%s", got)
 	}
 	if strings.Contains(got, config.ProjectPath(project)+":") {
@@ -281,8 +281,8 @@ func TestDoctorBlamesTheFileHoldingTheMistake(t *testing.T) {
 
 // Override own mistake stay its own, line included.
 func TestDoctorLocatesTheOverridesOwnMistake(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"model\"]\n\n[segments.model]\ntemplate = \"{bogus}\"\n")
@@ -299,11 +299,11 @@ func TestDoctorLocatesTheOverridesOwnMistake(t *testing.T) {
 // Builtin preset carry no file, so nothing on disk leave fallback path bare of
 // line number rather than pointing at row of file nobody wrote.
 func TestDoctorOnBuiltinPresetNamesNoLine(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	var out, errOut bytes.Buffer
 	runDoctor(nil, &out, &errOut)
 
-	if got := out.String(); strings.Contains(got, config.UserPath(home)+":") {
+	if got := out.String(); strings.Contains(got, config.UserPath(root)+":") {
 		t.Errorf("absent config reported with a line number:\n%s", got)
 	}
 }
@@ -311,8 +311,8 @@ func TestDoctorOnBuiltinPresetNamesNoLine(t *testing.T) {
 // Project layer may not run shell commands. Strip already reported, so
 // "type command but no command" beside it read as second, invented mistake.
 func TestDoctorReportsAStrippedCommandOnce(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	project := t.TempDir()
 	writeProjectConfig(t, project, "[[lines]]\nsegments = [\"clock\"]\n\n[segments.clock]\ntype = \"command\"\ncommand = \"date\"\n")
@@ -331,7 +331,7 @@ func TestDoctorReportsAStrippedCommandOnce(t *testing.T) {
 }
 
 func TestInstallUninstallRoundTrip(t *testing.T) {
-	home := isolate(t)
+	root := isolate(t)
 	var out, errOut bytes.Buffer
 
 	if code := runInstall(nil, &out, &errOut); code != 0 {
@@ -342,7 +342,7 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 			t.Errorf("install output missing %q:\n%s", want, out.String())
 		}
 	}
-	if _, err := os.Stat(install.SettingsPath(home)); err != nil {
+	if _, err := os.Stat(install.SettingsPath(root)); err != nil {
 		t.Errorf("settings not written: %v", err)
 	}
 
@@ -357,8 +357,8 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 
 // Existing statusline.toml is user's own work, so reinstall keep it and say so.
 func TestInstallKeepsAnExistingConfig(t *testing.T) {
-	home := isolate(t)
-	writeUserConfig(t, home, "[[lines]]\nsegments = [\"model\"]\n")
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 
 	var out, errOut bytes.Buffer
 	if code := runInstall(nil, &out, &errOut); code != 0 {
@@ -389,8 +389,8 @@ func TestInstallRejectsUnknownPreset(t *testing.T) {
 // find false. Same output cover ownership check going wrong on windows case or
 // 8.3 short home.
 func TestUninstallReportsAForeignStatusLineLeftAlone(t *testing.T) {
-	home := isolate(t)
-	writeSettings(t, home, `{"statusLine":{"type":"command","command":"/opt/other-tool"}}`)
+	root := isolate(t)
+	writeSettings(t, root, `{"statusLine":{"type":"command","command":"/opt/other-tool"}}`)
 
 	var out, errOut bytes.Buffer
 	if code := runUninstall(nil, &out, &errOut); code != 0 {
@@ -404,7 +404,7 @@ func TestUninstallReportsAForeignStatusLineLeftAlone(t *testing.T) {
 		t.Errorf("output should name command it left:\n%s", got)
 	}
 
-	b, err := os.ReadFile(install.SettingsPath(home))
+	b, err := os.ReadFile(install.SettingsPath(root))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -506,5 +506,177 @@ func TestPreviewSparseRendersFreshZeros(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "✍️ "+config.DefaultUnknown) {
 		t.Fatalf("preview --sparse placeholdered context instead of zeroing it: %s", stdout.String())
+	}
+}
+
+// Moved root and default root print identical Paths block without this line, so
+// user cannot tell which directory doctor read.
+func TestDoctorNamesTheConfigRootVariable(t *testing.T) {
+	isolate(t)
+	moved := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, moved) {
+		t.Errorf("doctor omits the moved root %q:\n%s", moved, got)
+	}
+	if !strings.Contains(got, "(CLAUDE_CONFIG_DIR)") {
+		t.Errorf("doctor does not say where the root came from:\n%s", got)
+	}
+	// isolate never create ~/.claude, so old root hold nothing of ours. Block
+	// firing here send user to run uninstall against directory with no install
+	// in it. Pin both guards: Stat filter in strays, len(found) in runDoctor.
+	if strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired with nothing left in the old root:\n%s", got)
+	}
+}
+
+// File left in old root is read by nobody. Five causes make a segment vanish and
+// all look alike, so doctor name what it found rather than stay silent.
+func TestDoctorListsStrayFilesInTheOldRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	orphan := config.UserPath(legacy)
+	if err := os.WriteFile(orphan, []byte("[[lines]]\nsegments = [\"model\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	moved := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, "Stray files in "+legacy) {
+		t.Errorf("doctor omits the stray block:\n%s", got)
+	}
+	if !strings.Contains(got, orphan) {
+		t.Errorf("doctor omits the stray config %q:\n%s", orphan, got)
+	}
+	// statusline.toml is user's layout. Naming destination turn report into
+	// migration step; "it is over there" alone leave them to guess.
+	if !strings.Contains(got, "Copy it to "+config.UserPath(moved)) {
+		t.Errorf("doctor does not name where to copy the stray config:\n%s", got)
+	}
+}
+
+// Old settings.json hold user's hooks, permissions and enabled plugins --
+// config this program never owned, and install itself only ever merge into.
+// Blanket "delete these" cost them all of that, and no reinstall bring it back.
+func TestDoctorNeverTellsUserToDeleteStraySettings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := install.SettingsPath(legacy)
+	if err := os.WriteFile(settings, []byte(`{"hooks":{},"permissions":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, settings) {
+		t.Fatalf("doctor omits the stray settings.json:\n%s", got)
+	}
+	if !strings.Contains(got, "Deleting it loses them") {
+		t.Errorf("doctor does not say what deleting settings.json costs:\n%s", got)
+	}
+	if strings.Contains(got, "delete these") {
+		t.Errorf("doctor still tells the user to delete every stray file:\n%s", got)
+	}
+	// uninstall drop our binary and our statusLine key, nothing else -- only
+	// safe way to clear old root wholesale.
+	if !strings.Contains(got, "knit-statusline uninstall") {
+		t.Errorf("doctor does not point at uninstall to clear the old root:\n%s", got)
+	}
+}
+
+// New root already carrying statusline.toml is user who moved root long ago and
+// tuned layout there. Stray one is abandoned copy, so "copy it over" revert live
+// layout to stale -- and install refuse that same overwrite without --force.
+func TestDoctorSaysMergeWhenNewRootAlreadyHasAConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.UserPath(legacy), []byte("[[lines]]\nsegments = [\"model\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	moved := t.TempDir()
+	if err := os.WriteFile(config.UserPath(moved), []byte("[[lines]]\nsegments = [\"version\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if strings.Contains(got, "Copy it to "+config.UserPath(moved)) {
+		t.Errorf("doctor told the user to copy over a live config:\n%s", got)
+	}
+	if !strings.Contains(got, "merge, do not copy over it") {
+		t.Errorf("doctor does not say to merge into the existing config:\n%s", got)
+	}
+}
+
+// isolate pins CLAUDE_CONFIG_DIR to default ~/.claude itself -- same
+// directory named two ways, textually equal this time. Exercises strayRoot's
+// identity check, not early return covering majority who never set variable
+// at all.
+func TestDoctorSkipsStrayBlockOnTheDefaultRoot(t *testing.T) {
+	root := isolate(t)
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	if got := out.String(); strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired on the default root:\n%s", got)
+	}
+}
+
+// Symlinked home name legacy root and CLAUDE_CONFIG_DIR by two different
+// strings for one directory. Text compare alone misreads live config as stray
+// and tells user delete it -- reproduces reviewer's report exactly.
+func TestDoctorSkipsStrayBlockAcrossASymlinkedHome(t *testing.T) {
+	base := t.TempDir()
+	target := filepath.Join(base, "target")
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	t.Setenv("HOME", link)
+	t.Setenv("USERPROFILE", link)
+
+	root := filepath.Join(target, ".claude")
+	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
+	t.Setenv("CLAUDE_CONFIG_DIR", root)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	if got := out.String(); strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired across a symlinked home:\n%s", got)
 	}
 }

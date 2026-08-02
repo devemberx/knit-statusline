@@ -26,10 +26,10 @@ func init() {
 // caveman.go's bone. Fishing pole U+1F3A3 sit in 6.0 and cover more fonts, but
 // read as fishing, not as hook -- glyph nobody decode buy no coverage.
 const (
-	claudeMDIcon = "📋"
-	rulesIcon    = "📏"
-	hooksIcon    = "🪝"
-	mcpIcon      = "🔌"
+	configClaudeMDIcon = "📋"
+	configRulesIcon    = "📏"
+	configHooksIcon    = "🪝"
+	configMCPIcon      = "🔌"
 )
 
 // Bound one settings, manifest or registry read. Nothing legitimate here reach
@@ -129,10 +129,10 @@ type configItem struct {
 
 func configItems(counts configCounts) []configItem {
 	return []configItem{
-		{claudeMDIcon, "CLAUDE.md", counts.claudeMD},
-		{rulesIcon, "rules", counts.rules},
-		{hooksIcon, "hooks", counts.hooks},
-		{mcpIcon, "MCP", counts.mcp},
+		{configClaudeMDIcon, "CLAUDE.md", counts.claudeMD},
+		{configRulesIcon, "rules", counts.rules},
+		{configHooksIcon, "hooks", counts.hooks},
+		{configMCPIcon, "MCP", counts.mcp},
 	}
 }
 

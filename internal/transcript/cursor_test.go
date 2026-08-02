@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -105,5 +106,44 @@ func TestSaveCacheNilIsNoop(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Errorf("nil cache created %s", dir)
+	}
+}
+
+// Empty dir mean no config root resolved. filepath.Join drop empty element, so
+// unguarded LoadCache read bare "tokens-<hash>.json" out of whatever directory
+// process sit in. Unguarded SaveCache never reach that name -- MkdirAll("")
+// fail first -- but it fail every redraw over condition no user can fix.
+func TestCacheWithoutDirectoryStaysOutOfWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	opts := Options{TranscriptPath: "/x/y.jsonl", Scope: ScopeSession}
+
+	// Decoy carry offset no scan produced. Loading it report token totals as
+	// this session's.
+	decoy := NewCache()
+	decoy.Files["/x/y.jsonl"] = FileCursor{Offset: 999, LastMessageID: "msg_decoy"}
+	b, err := json.Marshal(decoy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(CacheKey(opts), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := LoadCache("", opts); len(got.Files) != 0 {
+		t.Errorf(`LoadCache("") read working directory: %+v`, got.Files)
+	}
+	if err := SaveCache("", opts, NewCache()); err != nil {
+		t.Errorf(`SaveCache("") = %v, want nil`, err)
+	}
+
+	// Decoy byte-for-byte after. SaveCache that tolerate "" by skipping
+	// MkdirAll rename over this exact name instead.
+	after, err := os.ReadFile(CacheKey(opts))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, b) {
+		t.Errorf(`SaveCache("") rewrote %s in the working directory`, CacheKey(opts))
 	}
 }

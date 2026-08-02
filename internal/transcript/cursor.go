@@ -35,7 +35,13 @@ func CacheKey(opts Options) string {
 
 // LoadCache read cache file. Missing, unreadable, corrupt or version-mismatched
 // all yield empty cache: full rescan beat totals from unknown rules.
+//
+// Empty dir mean no config root at all. Join would drop directory element and
+// read bare "tokens-<hash>.json" out of whatever directory process sit in.
 func LoadCache(dir string, opts Options) *Cache {
+	if dir == "" {
+		return NewCache()
+	}
 	b, err := os.ReadFile(filepath.Join(dir, CacheKey(opts)))
 	if err != nil {
 		return NewCache()
@@ -56,8 +62,12 @@ func LoadCache(dir string, opts Options) *Cache {
 //
 // No fsync: this run every redraw, and cache lost to crash cost one rescan,
 // same as LoadCache already do for corrupt content.
+//
+// Empty dir mean no config root, so nothing to write and nowhere to write it.
+// Not error: caching optional, and MkdirAll("") fail every redraw over
+// condition no user can fix.
 func SaveCache(dir string, opts Options, c *Cache) error {
-	if c == nil {
+	if c == nil || dir == "" {
 		return nil
 	}
 	c.Version = cacheVersion

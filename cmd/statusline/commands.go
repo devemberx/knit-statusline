@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -67,7 +68,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 	}
 
 	res, err := install.Install(install.Options{
-		Home: homeDir(), Binary: binary, Preset: *preset, Force: *force,
+		Root: configDir(), Binary: binary, Preset: *preset, Force: *force,
 	})
 	if err != nil {
 		return fail(stderr, err)
@@ -97,7 +98,7 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 		return badFlag(stdout, stderr, err)
 	}
 
-	res, err := install.Uninstall(homeDir())
+	res, err := install.Uninstall(configDir())
 	if err != nil {
 		return fail(stderr, err)
 	}
@@ -193,11 +194,11 @@ func previewConfig(preset string, stderr io.Writer) (*config.Config, string, err
 		return cfg, "preset " + preset, nil
 	}
 
-	res := config.Load(homeDir(), workingDir())
+	res := config.Load(configDir(), workingDir())
 	for _, err := range res.Errors {
 		fmt.Fprintln(stderr, "warning:", err)
 	}
-	for _, err := range config.Validate(res.Config, res.Origin(config.UserPath(homeDir())), segment.Known) {
+	for _, err := range config.Validate(res.Config, res.Origin(config.UserPath(configDir())), segment.Known) {
 		fmt.Fprintln(stderr, "warning:", err)
 	}
 	return res.Config, strings.Join(res.Sources(), " + "), nil
@@ -210,21 +211,23 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		return badFlag(stdout, stderr, err)
 	}
 
-	home := homeDir()
+	root := configDir()
 	project := workingDir()
+	env := os.Getenv("CLAUDE_CONFIG_DIR")
 	fmt.Fprintln(stdout, "knit-statusline "+version)
 	fmt.Fprintln(stdout)
 
 	fmt.Fprintln(stdout, "Paths")
-	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(home), existsNote(install.SettingsPath(home)))
-	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(home), existsNote(config.UserPath(home)))
+	fmt.Fprintf(stdout, "  root       %s%s%s\n", rootLabel(root), rootOrigin(env), existsNote(root))
+	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(root), existsNote(install.SettingsPath(root)))
+	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(root), existsNote(config.UserPath(root)))
 	if project != "" {
 		fmt.Fprintf(stdout, "  project    %s%s\n", config.ProjectPath(project), existsNote(config.ProjectPath(project)))
 	}
 	fmt.Fprintf(stdout, "  cache      %s\n", cacheDir())
 	fmt.Fprintln(stdout)
 
-	res := config.Load(home, project)
+	res := config.Load(root, project)
 	fmt.Fprintln(stdout, "Configuration")
 	fmt.Fprintf(stdout, "  sources    %s\n", strings.Join(res.Sources(), " + "))
 	fmt.Fprintf(stdout, "  rows       %d\n", len(res.Config.Lines))
@@ -240,12 +243,26 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	// Origin search every layer, so problem name file that declared it. Load
 	// already hold those bytes. Guessing one file blame whichever layer merged
 	// last, at its innocent rows.
-	for _, e := range config.Validate(res.Config, res.Origin(config.UserPath(home)), segment.Known) {
+	for _, e := range config.Validate(res.Config, res.Origin(config.UserPath(root)), segment.Known) {
 		fmt.Fprintf(stdout, "  ERROR      %v\n", e)
 		problems++
 	}
 	if problems == 0 {
 		fmt.Fprintln(stdout, "  status     ok")
+	}
+	if legacy := strayRoot(root, env); legacy != "" {
+		if found := strays(legacy, root); len(found) > 0 {
+			fmt.Fprintln(stdout)
+			fmt.Fprintf(stdout, "Stray files in %s\n", legacy)
+			fmt.Fprintf(stdout, "  Claude Code reads %s now, so nothing below is loaded.\n", root)
+			for _, s := range found {
+				fmt.Fprintf(stdout, "  %-10s %s\n", s.label, s.path)
+				fmt.Fprintf(stdout, "  %-10s %s\n", "", s.advice)
+			}
+			fmt.Fprintln(stdout, "  Run `knit-statusline install` to populate the new root.")
+			fmt.Fprintln(stdout, "  Then unset CLAUDE_CONFIG_DIR and run `knit-statusline uninstall` to clear")
+			fmt.Fprintln(stdout, "  the old one -- it drops our binary and our statusLine key, nothing else.")
+		}
 	}
 	fmt.Fprintln(stdout)
 
@@ -271,4 +288,87 @@ func existsNote(path string) string {
 		return "  (not present)"
 	}
 	return ""
+}
+
+// rootLabel keep root line printable when no home exist. Blank value read as
+// missing output rather than missing home.
+func rootLabel(root string) string {
+	if root == "" {
+		return "(no home directory)"
+	}
+	return root
+}
+
+// rootOrigin say which directory supplied root. Moved root and default one
+// otherwise print alike, and user cannot tell doctor read wrong one.
+func rootOrigin(env string) string {
+	if env == "" {
+		return ""
+	}
+	return "  (CLAUDE_CONFIG_DIR)"
+}
+
+// stray name one file left in old root, with what to do about it. Advice
+// belong per file, not per block: blanket "delete these" reach settings.json,
+// which hold user's hooks, permissions and enabled plugins -- config this
+// program never owned and install itself only ever merge into.
+type stray struct {
+	label  string
+	path   string
+	advice string
+}
+
+// strays list what survive in old root, in migration order: user's own layout
+// first, our leavings after. Absent file drop out, so block stay silent for
+// anyone who moved root before ever installing.
+func strays(legacy, root string) []stray {
+	candidates := []stray{
+		{"config", config.UserPath(legacy), configAdvice(root)},
+		{"binary", install.BinaryPath(legacy), "Our old copy."},
+		{"settings", install.SettingsPath(legacy), "Your hooks, permissions and plugins. Deleting it loses them."},
+	}
+	var found []stray
+	for _, s := range candidates {
+		if _, err := os.Stat(s.path); err == nil {
+			found = append(found, s)
+		}
+	}
+	return found
+}
+
+// configAdvice say copy only into root holding no statusline.toml yet.
+// install itself refuse to overwrite one without --force, so unconditional
+// "copy it over" advise exactly what install decline to do -- and stray file is
+// by definition abandoned one, so that copy revert live layout to stale.
+func configAdvice(root string) string {
+	dst := config.UserPath(root)
+	if _, err := os.Stat(dst); err == nil {
+		return "Your old layout. " + dst + " already holds one -- merge, do not copy over it."
+	}
+	return "Your layout. Copy it to " + dst + "."
+}
+
+// strayRoot name old ~/.claude when CLAUDE_CONFIG_DIR moved root elsewhere.
+// Empty when variable unset, home unknown, or both path name one directory --
+// majority never set it and must see no extra output.
+//
+// Identity by stat, not text: filepath.Clean normalise separator and dot
+// segment alone. Symlinked home, macOS /tmp vs /private/tmp, and Windows case
+// all name one directory two strings Clean cannot fold. SameFile settle it
+// when both side stat; SamePathText (case-folded on Windows) fall back when
+// legacy never existed -- common case, and missing directory leaves only text
+// to compare.
+func strayRoot(root, env string) string {
+	if env == "" {
+		return ""
+	}
+	home := homeDir()
+	if home == "" {
+		return ""
+	}
+	legacy := filepath.Join(home, ".claude")
+	if install.SameFile(legacy, root) || install.SamePathText(legacy, root) {
+		return ""
+	}
+	return legacy
 }
