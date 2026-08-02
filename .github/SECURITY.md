@@ -31,11 +31,11 @@ looks:
 
 - It reads one JSON object on stdin, from Claude Code.
 - It reads the transcript file that object names — Claude Code puts those under
-  `~/.claude/projects/` — and writes a disposable cache under
-  `~/.claude/statusline-cache/`.
-- `install` copies the binary to `~/.claude/` and merges a `statusLine` key into
-  `~/.claude/settings.json`. `uninstall` removes the binary, and removes that key
-  only while it still points at our copy.
+  `projects/` in its config root (`$CLAUDE_CONFIG_DIR`, else `~/.claude`) —
+  and writes a disposable cache under `statusline-cache/` in that same root.
+- `install` copies the binary into the config root and merges a `statusLine`
+  key into `settings.json` there. `uninstall` removes the binary, and removes
+  that key only while it still points at our copy.
 - Before either writes `settings.json` it copies the file to `settings.json.bak`.
   An existing `.bak` is left alone, so it keeps the file as it stood before the
   first install rather than tracking the newest edit.
@@ -46,6 +46,11 @@ looks:
 - **`statusline.toml` runs shell commands.** The `command` segment executes what
   the config tells it to. That is the feature. Anyone who can write your
   `statusline.toml` can already run code as you.
+- **Pointing `CLAUDE_CONFIG_DIR` at a directory someone else can write.** Config
+  root is the trust boundary behind `command=` — a project config may not run
+  shell commands, a user config may, because normally only you can write your
+  config root. Widening that by pointing the variable elsewhere is your call to
+  make, not a bug here.
 - **Transcript contents reaching the terminal.** Segment output is drawn from
   your own session; the status line does not send it anywhere.
 - **The status line staying silent about an error.** Deliberate. The render path
@@ -53,9 +58,10 @@ looks:
   full diagnostic.
 
 Vulnerabilities do include: a crafted transcript or stdin payload that causes
-code execution, a path that writes outside `~/.claude` or the project directory,
-anything that leaks file contents off the machine, and anything in the release
-pipeline that could ship an artifact we did not build.
+code execution, a path that writes outside the config root (`$CLAUDE_CONFIG_DIR`,
+else `~/.claude`) or the project directory, anything that leaks file contents
+off the machine, and anything in the release pipeline that could ship an
+artifact we did not build.
 
 ## Release integrity
 

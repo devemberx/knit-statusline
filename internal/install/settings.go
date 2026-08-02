@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 )
 
-func SettingsPath(home string) string {
-	return filepath.Join(home, ".claude", "settings.json")
+func SettingsPath(root string) string {
+	return filepath.Join(root, "settings.json")
 }
 
 // readSettings load into generic map, so key we do not understand survive round

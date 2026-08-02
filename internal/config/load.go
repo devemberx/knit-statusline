@@ -111,8 +111,11 @@ func parse(b []byte, name string) (*Config, error) {
 	return &c, nil
 }
 
-func UserPath(home string) string {
-	return filepath.Join(home, ".claude", "statusline.toml")
+// UserPath name user's config inside Claude Code config root. Root already
+// carry ".claude" when it come from $HOME, and carry no such suffix when
+// CLAUDE_CONFIG_DIR name it, so join no directory here.
+func UserPath(root string) string {
+	return filepath.Join(root, "statusline.toml")
 }
 
 func ProjectPath(projectDir string) string {
@@ -180,19 +183,19 @@ func (r *LoadResult) Origin(fallback string) Origin {
 // Load read user config, then apply project override on top.
 //
 // Broken file never blank row: drop offending layer, record error, render from
-// what remain -- other layer, or builtin preset. Empty home skip user layer,
-// else filepath.Join yield relative ".claude/statusline.toml" and read whatever
+// what remain -- other layer, or builtin preset. Empty root skip user layer,
+// else filepath.Join yield relative "statusline.toml" and read whatever
 // directory process happen to sit in.
-func Load(home, projectDir string) *LoadResult {
+func Load(root, projectDir string) *LoadResult {
 	res := &LoadResult{}
 
-	if home != "" {
-		base, raw, err := loadFile(UserPath(home))
+	if root != "" {
+		base, raw, err := loadFile(UserPath(root))
 		if err != nil {
 			res.Errors = append(res.Errors, err)
 		} else if base != nil {
 			res.Config = base
-			res.Layers = append(res.Layers, Layer{Path: UserPath(home), Source: raw})
+			res.Layers = append(res.Layers, Layer{Path: UserPath(root), Source: raw})
 		}
 	}
 
@@ -213,7 +216,7 @@ func Load(home, projectDir string) *LoadResult {
 		if err != nil {
 			res.Errors = append(res.Errors, err)
 		} else if override != nil {
-			res.Errors = append(res.Errors, stripProjectCommands(override, path)...)
+			res.Errors = append(res.Errors, stripProjectCommands(override, path, userHint(root))...)
 			res.Config = Merge(res.Config, override)
 			res.Layers = append(res.Layers, Layer{Path: path, Source: raw})
 		}
@@ -227,8 +230,8 @@ func Load(home, projectDir string) *LoadResult {
 // Project config is repository content, and command segment run its string
 // through a shell. Honouring it there mean cloning a repository and opening it
 // execute whatever that file say -- no prompt, first render. Trust boundary sit
-// at $HOME. Every other project setting still apply.
-func stripProjectCommands(c *Config, path string) []error {
+// at config root: only user write there. Every other project setting still apply.
+func stripProjectCommands(c *Config, path, userPath string) []error {
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(c.Segments)) {
 		seg := c.Segments[name]
@@ -241,10 +244,19 @@ func stripProjectCommands(c *Config, path string) []error {
 			File: path,
 			Msg: fmt.Sprintf(
 				"segment %q: command ignored, project config may not run shell commands; move it to %s",
-				name, filepath.Join("$HOME", ".claude", "statusline.toml")),
+				name, userPath),
 		})
 	}
 	return errs
+}
+
+// userHint name file command belong in. No root mean no path to name, so fall
+// back to conventional one rather than print bare "statusline.toml".
+func userHint(root string) string {
+	if root == "" {
+		return filepath.Join("$HOME", ".claude", "statusline.toml")
+	}
+	return UserPath(root)
 }
 
 // loadFile return parsed config plus bytes it came from, so caller locate

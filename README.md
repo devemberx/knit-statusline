@@ -79,6 +79,11 @@ npx @devemberx/knit-statusline install --preset minimal
 | `~/.claude/settings.json` | One `statusLine` key is merged in |
 | `~/.claude/settings.json.bak` | Backup of your settings as they were before the first install or uninstall — written once, never overwritten |
 
+Set `CLAUDE_CONFIG_DIR` and every path above moves beneath it — that is the
+directory Claude Code itself reads, and `~/.claude` stops being consulted.
+`knit-statusline doctor` prints the root it resolved and names anything left
+behind in the old one.
+
 Your hooks, permissions, plugins and every other setting are read, merged and
 written back untouched. If `statusLine` already pointed at another tool, the
 installer reports what it replaced — and leaves it alone on uninstall.

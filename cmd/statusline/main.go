@@ -76,8 +76,10 @@ Preview flags:
   --sparse         render the fresh-session case: zeros, no rate limits
   --unknown        render the unknown case: resumed session, nothing reported
 
-Configuration lives in ~/.claude/statusline.toml, with an optional
-per-project override at <project>/.claude/statusline.toml.
+Configuration lives in statusline.toml inside the Claude Code config root --
+$CLAUDE_CONFIG_DIR when set, otherwise ~/.claude -- with an optional
+per-project override at <project>/.claude/statusline.toml. The doctor
+subcommand prints the root it resolved.
 `, version, strings.Join(config.PresetNames(), ", "), config.DefaultPreset)
 }
 
@@ -107,15 +109,15 @@ func renderFromStdin(stdin io.Reader, stdout io.Writer) {
 		return
 	}
 
-	home := homeDir()
-	res := config.Load(home, projectDir(in))
+	root := configDir()
+	res := config.Load(root, projectDir(in))
 
 	out := statusline.Render(res.Config, in, statusline.Options{
 		Palette:   palette,
 		Now:       time.Now(),
 		CacheDir:  cacheDir(),
 		ConfigDir: configDir(),
-		Warning:   marker(res, home),
+		Warning:   marker(res, root),
 	})
 
 	// Every segment empty: valid document with nothing populated yet, or layout
@@ -137,11 +139,11 @@ func renderFromStdin(stdin io.Reader, stdout io.Writer) {
 // Load hand over bytes it read, so locating problem cost no second read on path
 // that run every redraw. Short() trim to "statusline.toml:7"; doctor hold full
 // prose.
-func marker(res *config.LoadResult, home string) string {
+func marker(res *config.LoadResult, root string) string {
 	if len(res.Errors) > 0 {
 		return short(res.Errors[0])
 	}
-	origin := res.Origin(config.UserPath(home))
+	origin := res.Origin(config.UserPath(root))
 	if errs := config.Validate(res.Config, origin, segment.Known); len(errs) > 0 {
 		return short(errs[0])
 	}
@@ -181,17 +183,34 @@ func homeDir() string {
 	return os.Getenv("HOME")
 }
 
+// cacheDir hold transcript cursor and command output. Sit under config root,
+// not $HOME: split root read config from one directory and cache to another.
+// Empty root give empty path, which segment and cursor already treat as
+// "no cache" rather than a relative directory under cwd.
 func cacheDir() string {
-	return filepath.Join(homeDir(), ".claude", "statusline-cache")
+	root := configDir()
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, "statusline-cache")
 }
 
-// configDir locate Claude Code config root.
+// configDir locate Claude Code config root. settings.json, statusline.toml, our
+// binary and our cache all live under it.
 //
-// CLAUDE_CONFIG_DIR is what caveman hook read when it write flag, so segment
-// must read same variable or look in wrong directory for people who move it.
+// CLAUDE_CONFIG_DIR relocate whole root, so reading $HOME directly write files
+// Claude Code never open.
+//
+// Empty home give empty root, never ".claude": filepath.Join on empty string
+// yield relative path, and install and Load guard on empty exactly to stop
+// dropping a config directory into whatever directory command ran from.
 func configDir() string {
 	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
 		return d
 	}
-	return filepath.Join(homeDir(), ".claude")
+	h := homeDir()
+	if h == "" {
+		return ""
+	}
+	return filepath.Join(h, ".claude")
 }

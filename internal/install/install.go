@@ -1,8 +1,8 @@
 // Package install wire knit-statusline into Claude Code settings.
 //
 // Plugin settings.json take only agent and subagentStatusLine, so user's own
-// ~/.claude/settings.json is only way to set main status line. Same file hold
-// their hooks and permissions, so every write merge, never replace.
+// settings.json in config root is only way to set main status line. Same file
+// hold their hooks and permissions, so every write merge, never replace.
 package install
 
 import (
@@ -17,15 +17,15 @@ import (
 	"github.com/devemberx/knit-statusline/internal/config"
 )
 
-// BinaryPath name installed copy. Windows need .exe: CreateProcess refuse
-// extensionless file, and Claude Code print nothing when status line command
-// fail.
-func BinaryPath(home string) string {
+// BinaryPath name installed copy inside config root. Windows need .exe:
+// CreateProcess refuse extensionless file, and Claude Code print nothing when
+// status line command fail.
+func BinaryPath(root string) string {
 	name := "knit-statusline"
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
-	return filepath.Join(home, ".claude", name)
+	return filepath.Join(root, name)
 }
 
 // CommandString form statusLine.command for binary. Git Bash on Windows eat
@@ -65,13 +65,13 @@ func OwnsCommand(command, binary string) bool {
 	if cmd == "" {
 		return false
 	}
-	if samePathText(cmd, binary) {
+	if SamePathText(cmd, binary) {
 		return true
 	}
 	// 8.3 short home (C:\Users\RUNNER~1) and symlinked home name one binary by
 	// two strings no rewrite reconcile. Stat settle it. Uninstall call this
 	// before deleting binary, so file still there to stat.
-	return sameFile(cmd, binary)
+	return SameFile(cmd, binary)
 }
 
 // unquoteCommand undo CommandString quoting. Bash double-quote rule: backslash
@@ -92,9 +92,12 @@ func unquoteCommand(cmd string) string {
 	return b.String()
 }
 
-// samePathText compare path as text. Windows fold case: settings may hold
+// SamePathText compare path as text. Windows fold case: settings may hold
 // c:\users\... while os.UserHomeDir resolve C:\Users\...
-func samePathText(a, b string) bool {
+//
+// Exported: doctor's stray-root check reuse it as fallback when SameFile
+// cannot stat one side.
+func SamePathText(a, b string) bool {
 	a, b = filepath.ToSlash(a), filepath.ToSlash(b)
 	if runtime.GOOS == "windows" {
 		return strings.EqualFold(a, b)
@@ -102,9 +105,11 @@ func samePathText(a, b string) bool {
 	return a == b
 }
 
-// sameFile report both path name one file on disk. Stat only, never exec.
+// SameFile report both path name one file on disk. Stat only, never exec.
 // Missing either side mean no.
-func sameFile(a, b string) bool {
+//
+// Exported: doctor's stray-root check reuse it for symlinked-home identity.
+func SameFile(a, b string) bool {
 	fa, err := os.Stat(a)
 	if err != nil {
 		return false
@@ -132,7 +137,8 @@ type Result struct {
 }
 
 type Options struct {
-	Home string
+	// Claude Code config root, already resolved. Empty is rejected.
+	Root string
 	// Running executable, copied into place by Install.
 	Binary string
 	Preset string
@@ -146,10 +152,10 @@ type Options struct {
 // Copy because npx run binary out of a package cache npm prune at will, and
 // vanished command render empty row explaining nothing.
 func Install(opts Options) (*Result, error) {
-	// Empty home resolve every path against cwd, dropping a .claude into
-	// whatever directory this ran from.
-	if opts.Home == "" {
-		return nil, errors.New("no home directory")
+	// Empty root resolve every path against cwd, dropping settings.json and a
+	// binary into whatever directory this ran from.
+	if opts.Root == "" {
+		return nil, errors.New("no config directory")
 	}
 	if opts.Preset == "" {
 		opts.Preset = config.DefaultPreset
@@ -160,9 +166,9 @@ func Install(opts Options) (*Result, error) {
 	}
 
 	res := &Result{
-		SettingsPath:    SettingsPath(opts.Home),
-		ConfigPath:      config.UserPath(opts.Home),
-		InstalledBinary: BinaryPath(opts.Home),
+		SettingsPath:    SettingsPath(opts.Root),
+		ConfigPath:      config.UserPath(opts.Root),
+		InstalledBinary: BinaryPath(opts.Root),
 	}
 
 	settings, err := readSettings(res.SettingsPath)
@@ -211,16 +217,16 @@ func Install(opts Options) (*Result, error) {
 // Uninstall drop our statusLine key and installed binary, every other setting
 // untouched. statusline.toml stay: user's own config, and removing it turn
 // reinstall into fresh start instead of resumption.
-func Uninstall(home string) (*Result, error) {
-	// Empty home resolve every path against cwd, so os.Remove below would hunt a
-	// .claude in whatever directory this ran from.
-	if home == "" {
-		return nil, errors.New("no home directory")
+func Uninstall(root string) (*Result, error) {
+	// Empty root resolve every path against cwd, so os.Remove below would hunt a
+	// binary in whatever directory this ran from.
+	if root == "" {
+		return nil, errors.New("no config directory")
 	}
 	res := &Result{
-		SettingsPath:    SettingsPath(home),
-		ConfigPath:      config.UserPath(home),
-		InstalledBinary: BinaryPath(home),
+		SettingsPath:    SettingsPath(root),
+		ConfigPath:      config.UserPath(root),
+		InstalledBinary: BinaryPath(root),
 	}
 
 	settings, err := readSettings(res.SettingsPath)

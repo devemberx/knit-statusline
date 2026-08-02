@@ -349,4 +349,11 @@ entirely.
 | `~/.claude/knit-statusline` | The installed binary |
 | `~/.claude/statusline-cache/` | Transcript cursors and command output caches |
 
+`CLAUDE_CONFIG_DIR` moves all of these beneath it, matching Claude Code, which
+reads `$CLAUDE_CONFIG_DIR/settings.json` and no longer looks at `~/.claude`.
+That directory is also the trust boundary for `command=`: a project config may
+not run shell commands, and a user config may, because only you can write to
+your config root. Pointing the variable at a directory other people can write
+widens that boundary.
+
 The cache is disposable. Deleting it costs one slower render.
