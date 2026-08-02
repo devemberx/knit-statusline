@@ -76,8 +76,10 @@ Preview flags:
   --sparse         render the fresh-session case: zeros, no rate limits
   --unknown        render the unknown case: resumed session, nothing reported
 
-Configuration lives in ~/.claude/statusline.toml, with an optional
-per-project override at <project>/.claude/statusline.toml.
+Configuration lives in statusline.toml inside the Claude Code config root --
+$CLAUDE_CONFIG_DIR when set, otherwise ~/.claude -- with an optional
+per-project override at <project>/.claude/statusline.toml. The doctor
+subcommand prints the root it resolved.
 `, version, strings.Join(config.PresetNames(), ", "), config.DefaultPreset)
 }
 

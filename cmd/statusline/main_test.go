@@ -254,6 +254,18 @@ func TestUsageListsEveryPreset(t *testing.T) {
 	}
 }
 
+// Usage is first screen anyone read. Naming ~/.claude alone send user who moved
+// root to file nothing loads.
+func TestUsageNamesTheConfigRootVariable(t *testing.T) {
+	var out bytes.Buffer
+	usage(&out)
+	for _, want := range []string{"CLAUDE_CONFIG_DIR", "~/.claude", "statusline.toml"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("usage omits %q:\n%s", want, out.String())
+		}
+	}
+}
+
 // Caveman hook read CLAUDE_CONFIG_DIR before ~/.claude when it write flag, so
 // segment looking for that flag must resolve root same way or read wrong
 // directory for anyone who moved theirs.

@@ -70,30 +70,31 @@ linters:
           - gosec
 
       # G304 file-inclusion taint and G301 dir mode: transcript path arrive from
-      # Claude Code stdin, cache dir sit under $HOME/.claude at conventional
+      # Claude Code stdin, cache dir sit under config root at conventional
       # 0o755. Reading transcripts is what this package do.
       - path: internal/transcript/
         text: G304|G301
         linters:
           - gosec
 
-      # G304 file-inclusion taint: statusline.toml path derive from $HOME and
-      # workspace.project_dir, never from stdin. Reading it is what config do.
+      # G304 file-inclusion taint: statusline.toml path derive from config root
+      # and workspace.project_dir, never from stdin. Reading it is what config do.
       - path: internal/config/
         text: G304
         linters:
           - gosec
 
-      # G304 file-inclusion taint: caveman flag path derive from
-      # CLAUDE_CONFIG_DIR or $HOME, never from stdin. Read sit behind Lstat
-      # regular-file check and 64-byte cap, tighter than taint check ask for.
+      # G304 file-inclusion taint: caveman flag path derive from config root
+      # ($CLAUDE_CONFIG_DIR, else ~/.claude), never from stdin. Read sit behind
+      # Lstat regular-file check and 64-byte cap, tighter than taint check ask
+      # for.
       - path: internal/segment/caveman\.go
         text: G304
         linters:
           - gosec
 
       # G204 subprocess taint: command segment run user's own command by design.
-      # G301 dir mode: command cache sit under $HOME/.claude at conventional
+      # G301 dir mode: command cache sit under config root at conventional
       # 0o755. Scoped per file, so a later segment shelling out get flagged.
       - path: internal/segment/command\.go
         text: G204|G301
@@ -106,16 +107,16 @@ linters:
         linters:
           - gosec
 
-      # G304 read of running executable, G301 ~/.claude at conventional 0o755,
+      # G304 read of running executable, G301 config root at conventional 0o755,
       # G306 statusline.toml user-readable, G302 installed binary must stay
-      # executable. Every path derive from $HOME, never from stdin.
+      # executable. Every path derive from config root, never from stdin.
       - path: internal/install/install\.go
         text: G304|G301|G306|G302
         linters:
           - gosec
 
-      # G304 read of settings.json, G301 ~/.claude at 0o755, G703 backup path
-      # derive from that same $HOME path rather than from any input. No G306:
+      # G304 read of settings.json, G301 config root at 0o755, G703 backup path
+      # derive from that same config root rather than from any input. No G306:
       # backup inherit mode of file it copy, never a literal.
       - path: internal/install/settings\.go
         text: G304|G301|G703
