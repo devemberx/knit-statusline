@@ -8,6 +8,7 @@ import (
 
 	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/render"
+	"github.com/devemberx/knit-statusline/internal/transcript"
 )
 
 // todoCtx point a Context at a transcript on disk. No fixture JSON carry
@@ -160,6 +161,28 @@ func TestTodoReusesItsCache(t *testing.T) {
 
 	if got, want := draw(c), "☑ 2/2"; got != want {
 		t.Errorf("second draw = %q, want %q", got, want)
+	}
+}
+
+// buildTodo must read cache it writes, not only write it. Swapping
+// LoadTodoCursor for a bare TodoCursor{} would make every render rescan cold
+// and stay green, so drawn value proves load path wired in.
+func TestTodoReadsSeededCache(t *testing.T) {
+	lines := `{"type":"user","uuid":"u-1","message":{"role":"user","content":[]}}` + "\n"
+	c := todoCtx(t, lines)
+
+	seed := transcript.TodoCursor{
+		Offset: int64(len(lines)),
+		Todos:  transcript.Todos{Done: 9, Total: 9},
+	}
+	if err := transcript.SaveTodoCursor(c.CacheDir, c.In.TranscriptPath, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	// Offset already covers whole file, so scan reads no line -- "☑ 9/9" can
+	// only come from seeded cache.
+	if got, want := draw(c), "☑ 9/9"; got != want {
+		t.Errorf("draw = %q, want %q", got, want)
 	}
 }
 
