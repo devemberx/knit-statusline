@@ -270,6 +270,35 @@ func TestThinkingRendersBothStates(t *testing.T) {
 	}
 }
 
+// End-to-end over live palette, since field colour alone prove nothing about
+// what Expand emit. Pink reach row through this segment only, so nothing else
+// catch it going missing. NO_COLOR set empty so NewPalette enable regardless of
+// environment running test.
+func TestThinkingEscapesSplitOnAndOff(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	for _, tc := range []struct {
+		enabled  bool
+		icon     string
+		want     render.Color
+		unwanted render.Color
+	}{
+		{true, thinkingOn, render.Pink, render.Dim},
+		{false, thinkingOff, render.Dim, render.Pink},
+	} {
+		c := ctx(t, fixtures.Full, "thinking")
+		c.In.Thinking = &schema.Thinking{Enabled: tc.enabled}
+		c.Palette = render.NewPalette()
+
+		out := draw(c)
+		if !strings.Contains(out, string(tc.want)+tc.icon) {
+			t.Errorf("thinking enabled=%v icon not wrapped in %q: %q", tc.enabled, tc.want, out)
+		}
+		if strings.Contains(out, string(tc.unwanted)) {
+			t.Errorf("thinking enabled=%v leaked %q: %q", tc.enabled, tc.unwanted, out)
+		}
+	}
+}
+
 // Rate limit windows go absent one at a time, so each level need its own check.
 // five_hour going nil no longer empties segment -- limit.5h is Stable, so it
 // holds its slot with placeholder instead of dropping.
