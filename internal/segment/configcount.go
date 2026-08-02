@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -192,8 +193,10 @@ func scanConfig(user, project string) configCounts {
 	for _, d := range docs {
 		counts.hooks.n += countHookCommands(d.Hooks)
 	}
-	countPluginHooks(&counts.hooks, user, docs)
-	countMCPServers(&counts.mcp, user, project, docs)
+
+	names := readMCPNames(&counts.mcp, user, project, docs)
+	scanEnabledPlugins(&counts, names.direct, user, docs)
+	counts.mcp.n += names.total()
 
 	return counts
 }
@@ -309,10 +312,12 @@ type hookGroup struct {
 // settingsDoc is subset of settings.json three counts read. Same shape serve
 // .mcp.json, which carry mcpServers alone.
 type settingsDoc struct {
-	Hooks          map[string][]hookGroup     `json:"hooks"`
-	MCPServers     map[string]json.RawMessage `json:"mcpServers"`
-	EnabledPlugins map[string]bool            `json:"enabledPlugins"`
-	DisabledMCP    []string                   `json:"disabledMcpjsonServers"`
+	Hooks               map[string][]hookGroup     `json:"hooks"`
+	MCPServers          map[string]json.RawMessage `json:"mcpServers"`
+	EnabledPlugins      map[string]bool            `json:"enabledPlugins"`
+	EnabledMCPJSON      []string                   `json:"enabledMcpjsonServers"`
+	DisabledMCPJSON     []string                   `json:"disabledMcpjsonServers"`
+	EnableAllProjectMCP bool                       `json:"enableAllProjectMcpServers"`
 }
 
 // readSettings parse every settings layer once.
@@ -370,13 +375,16 @@ type installedPlugins struct {
 	} `json:"plugins"`
 }
 
-// countPluginHooks add hooks no settings file declare.
+// scanEnabledPlugins add hooks and MCP servers no settings file declare.
 //
-// Plugin hook live inside plugin's own directory, so counting settings.json
-// alone print 0 while every prompt fire them. Roster sit in
+// Both live inside plugin's own directory, so counting settings.json alone
+// print 0 while every prompt fire them. Roster sit in
 // plugins/installed_plugins.json under user config root; enabledPlugins in
 // settings say which of them run.
-func countPluginHooks(n *configCount, user string, docs []settingsDoc) {
+//
+// Registry read once for both counts: two passes cost same file twice and let
+// them disagree on which plugin ran.
+func scanEnabledPlugins(counts *configCounts, servers map[string]struct{}, user string, docs []settingsDoc) {
 	if user == "" {
 		return
 	}
@@ -396,7 +404,8 @@ func countPluginHooks(n *configCount, user string, docs []settingsDoc) {
 	case errors.Is(err, fs.ErrNotExist):
 		return
 	case err != nil:
-		n.lost()
+		counts.hooks.lost()
+		counts.mcp.lost()
 		return
 	}
 
@@ -408,17 +417,19 @@ func countPluginHooks(n *configCount, user string, docs []settingsDoc) {
 			if inst.InstallPath == "" {
 				continue
 			}
-			countManifestHooks(n, inst.InstallPath)
+			countManifestHooks(&counts.hooks, inst.InstallPath)
+			countPluginMCP(&counts.mcp, servers, inst.InstallPath)
 		}
 	}
 }
 
-// hookDoc is hooks key alone, undecoded. Manifest carry mcpServers and commands
-// beside it in shapes settingsDoc do not describe, and one type mismatch
-// anywhere in a file fail whole decode -- plugin lost to "…" over a key nothing
-// here count.
-type hookDoc struct {
-	Hooks json.RawMessage `json:"hooks"`
+// pluginDoc is two keys alone, undecoded. Manifest carry commands, agents and
+// version beside them in shapes settingsDoc do not describe, and one type
+// mismatch anywhere in a file fail whole decode -- plugin lost to "…" over a key
+// nothing here count.
+type pluginDoc struct {
+	Hooks      json.RawMessage `json:"hooks"`
+	MCPServers json.RawMessage `json:"mcpServers"`
 }
 
 // countManifestHooks read one plugin's hook declaration.
@@ -434,7 +445,7 @@ func countManifestHooks(n *configCount, install string) {
 		filepath.Join("hooks", "hooks.json"),
 		"hooks.json",
 	} {
-		var d hookDoc
+		var d pluginDoc
 		switch err := readConfigJSON(filepath.Join(install, rel), maxConfigBytes, &d); {
 		case errors.Is(err, fs.ErrNotExist):
 			continue
@@ -442,7 +453,16 @@ func countManifestHooks(n *configCount, install string) {
 			n.lost()
 			return
 		}
-		c, err := countHookDecl(d.Hooks, install, 0)
+
+		var c int
+		err := walkPluginDecl(d.Hooks, install, "hooks", 0, func(obj json.RawMessage) error {
+			var events map[string][]hookGroup
+			if err := json.Unmarshal(obj, &events); err != nil {
+				return err
+			}
+			c += countHookCommands(events)
+			return nil
+		})
 		if err != nil {
 			n.lost()
 			return
@@ -454,47 +474,82 @@ func countManifestHooks(n *configCount, install string) {
 	}
 }
 
-// countHookDecl resolve one hooks declaration.
+// countPluginMCP union server names one enabled plugin declare.
 //
-// Manifest write it inline, as path to file holding it, or as list of such
-// paths. Reading object form alone make every path-form plugin a type error,
-// and one of them drag row's whole hook count to "…".
-func countHookDecl(raw json.RawMessage, install string, hop int) (int, error) {
+// Servers ship two ways: mcpServers key in .claude-plugin/plugin.json, same
+// three shapes hooks take, and .mcp.json at plugin root. Both candidates read,
+// not first hit alone -- plugin splitting servers across them run all of them.
+//
+// Plugin's own servers need no project approval: switching plugin on approve
+// them already, and no prompt ask twice.
+func countPluginMCP(n *configCount, seen map[string]struct{}, install string) {
+	for _, rel := range []string{
+		filepath.Join(".claude-plugin", "plugin.json"),
+		".mcp.json",
+	} {
+		var d pluginDoc
+		switch err := readConfigJSON(filepath.Join(install, rel), maxConfigBytes, &d); {
+		case errors.Is(err, fs.ErrNotExist):
+			continue
+		case err != nil:
+			n.lost()
+			return
+		}
+
+		err := walkPluginDecl(d.MCPServers, install, "mcpServers", 0, func(obj json.RawMessage) error {
+			var servers map[string]json.RawMessage
+			if err := json.Unmarshal(obj, &servers); err != nil {
+				return err
+			}
+			for name := range servers {
+				seen[name] = struct{}{}
+			}
+			return nil
+		})
+		if err != nil {
+			n.lost()
+			return
+		}
+	}
+}
+
+// walkPluginDecl resolve one manifest declaration, handing each inline object
+// to fn.
+//
+// Manifest write declaration inline, as path to file holding it, or as list of
+// such paths. Reading object form alone make every path-form plugin a type
+// error, and one of them drag row's whole count to "…".
+//
+// key name what pointed-at file wrap its object in: hooks file carry "hooks",
+// .mcp.json carry "mcpServers".
+func walkPluginDecl(raw json.RawMessage, install, key string, hop int, fn func(json.RawMessage) error) error {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
-		return 0, nil
+		return nil
 	}
 
 	switch raw[0] {
 	case '{':
-		var events map[string][]hookGroup
-		if err := json.Unmarshal(raw, &events); err != nil {
-			return 0, err
-		}
-		return countHookCommands(events), nil
+		return fn(raw)
 	case '"':
 		var p string
 		if err := json.Unmarshal(raw, &p); err != nil {
-			return 0, err
+			return err
 		}
-		return countHookPath(p, install, hop)
+		return walkPluginPath(p, install, key, hop, fn)
 	case '[':
 		var paths []json.RawMessage
 		if err := json.Unmarshal(raw, &paths); err != nil {
-			return 0, err
+			return err
 		}
-		var n int
 		for _, p := range paths {
-			c, err := countHookDecl(p, install, hop)
-			if err != nil {
-				return 0, err
+			if err := walkPluginDecl(p, install, key, hop, fn); err != nil {
+				return err
 			}
-			n += c
 		}
-		return n, nil
 	}
-	// Number or bool declare no hook, and neither prove file unreadable.
-	return 0, nil
+	// Number or bool declare nothing, and neither prove file unreadable.
+	return nil
 }
 
 // countHookPath read hooks file manifest point at.
@@ -502,9 +557,9 @@ func countHookDecl(raw json.RawMessage, install string, hop int) (int, error) {
 // Resolved path stay inside plugin: manifest reaching out of its own install
 // directory is not that plugin's hook file, whatever sit at other end. Declared
 // file missing is 0 -- plugin ship broken path, not unreadable bytes.
-func countHookPath(p, install string, hop int) (int, error) {
+func walkPluginPath(p, install, key string, hop int, fn func(json.RawMessage) error) error {
 	if hop >= maxHookHops || p == "" {
-		return 0, nil
+		return nil
 	}
 
 	p = strings.ReplaceAll(p, pluginRootVar, install)
@@ -514,17 +569,17 @@ func countHookPath(p, install string, hop int) (int, error) {
 	p = filepath.Clean(p)
 	rel, err := filepath.Rel(install, p)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return 0, nil
+		return nil
 	}
 
-	var d hookDoc
+	var d map[string]json.RawMessage
 	switch err := readConfigJSON(p, maxConfigBytes, &d); {
 	case errors.Is(err, fs.ErrNotExist):
-		return 0, nil
+		return nil
 	case err != nil:
-		return 0, err
+		return err
 	}
-	return countHookDecl(d.Hooks, install, hop+1)
+	return walkPluginDecl(d[key], install, key, hop+1, fn)
 }
 
 // claudeJSONDoc is subset of .claude.json MCP count read. `claude mcp add`
@@ -536,12 +591,37 @@ type claudeJSONDoc struct {
 
 type claudeJSONProject struct {
 	MCPServers      map[string]json.RawMessage `json:"mcpServers"`
+	EnabledMCPJSON  []string                   `json:"enabledMcpjsonServers"`
 	DisabledMCPJSON []string                   `json:"disabledMcpjsonServers"`
 	DisabledMCP     []string                   `json:"disabledMcpServers"`
 }
 
-// countMCPServers union names across every file declaring servers, minus ones
-// switched off.
+// mcpNames keep server names apart by origin.
+//
+// Project .mcp.json arrive with checkout, somebody else's file, so Claude Code
+// hold its servers until answered. Counting them on sight print number for
+// servers that never start.
+type mcpNames struct {
+	// User settings, .claude.json and plugins. Run as written.
+	direct map[string]struct{}
+	// Project .mcp.json. Run once approved.
+	project map[string]struct{}
+
+	approved map[string]struct{}
+	off      map[string]struct{}
+	all      bool
+}
+
+func newMCPNames() *mcpNames {
+	return &mcpNames{
+		direct:   map[string]struct{}{},
+		project:  map[string]struct{}{},
+		approved: map[string]struct{}{},
+		off:      map[string]struct{}{},
+	}
+}
+
+// total count servers this session reach.
 //
 // Same server named twice is one server: later layer override earlier rather
 // than add beside it. Summing print 3 where 2 connect.
@@ -549,13 +629,29 @@ type claudeJSONProject struct {
 // Off list carry names, not origins, so server named in two files and disabled
 // in one drop from both. Rejecting a .mcp.json server and running your own by
 // same name is a collision nobody arrange on purpose.
-func countMCPServers(n *configCount, user, project string, docs []settingsDoc) {
-	seen, off := map[string]struct{}{}, map[string]struct{}{}
+func (m *mcpNames) total() int {
+	live := maps.Clone(m.direct)
+	for name := range m.project {
+		if _, ok := m.approved[name]; ok || m.all {
+			live[name] = struct{}{}
+		}
+	}
+	for name := range m.off {
+		delete(live, name)
+	}
+	return len(live)
+}
+
+// readMCPNames gather server names off every file declaring them.
+func readMCPNames(n *configCount, user, project string, docs []settingsDoc) *mcpNames {
+	names := newMCPNames()
 	for _, d := range docs {
 		for name := range d.MCPServers {
-			seen[name] = struct{}{}
+			names.direct[name] = struct{}{}
 		}
-		addNames(off, d.DisabledMCP)
+		addNames(names.approved, d.EnabledMCPJSON)
+		addNames(names.off, d.DisabledMCPJSON)
+		names.all = names.all || d.EnableAllProjectMCP
 	}
 
 	if project != "" {
@@ -566,17 +662,13 @@ func countMCPServers(n *configCount, user, project string, docs []settingsDoc) {
 			n.lost()
 		default:
 			for name := range d.MCPServers {
-				seen[name] = struct{}{}
+				names.project[name] = struct{}{}
 			}
 		}
 	}
 
-	countClaudeJSONServers(n, seen, off, user, project)
-
-	for name := range off {
-		delete(seen, name)
-	}
-	n.n += len(seen)
+	readClaudeJSONServers(n, names, user, project)
+	return names
 }
 
 func addNames(set map[string]struct{}, names []string) {
@@ -585,12 +677,13 @@ func addNames(set map[string]struct{}, names []string) {
 	}
 }
 
-// countClaudeJSONServers add servers `claude mcp add` register.
+// readClaudeJSONServers add servers `claude mcp add` register, plus answer given
+// to this project's .mcp.json prompt.
 //
 // CLAUDE_CONFIG_DIR move file inside config root; default install leave it
 // beside, at ~/.claude.json. First hit win -- both exist only when somebody
 // moved config root and left old file behind.
-func countClaudeJSONServers(n *configCount, seen, off map[string]struct{}, user, project string) {
+func readClaudeJSONServers(n *configCount, names *mcpNames, user, project string) {
 	if user == "" {
 		return
 	}
@@ -608,15 +701,16 @@ func countClaudeJSONServers(n *configCount, seen, off map[string]struct{}, user,
 			return
 		}
 		for name := range d.MCPServers {
-			seen[name] = struct{}{}
+			names.direct[name] = struct{}{}
 		}
 		// Other projects' servers never reach this session.
 		proj := d.Projects[project]
 		for name := range proj.MCPServers {
-			seen[name] = struct{}{}
+			names.direct[name] = struct{}{}
 		}
-		addNames(off, proj.DisabledMCPJSON)
-		addNames(off, proj.DisabledMCP)
+		addNames(names.approved, proj.EnabledMCPJSON)
+		addNames(names.off, proj.DisabledMCPJSON)
+		addNames(names.off, proj.DisabledMCP)
 		return
 	}
 }
