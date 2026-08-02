@@ -28,6 +28,16 @@ func fail(stderr io.Writer, err error) int {
 	return 1
 }
 
+// rootHint name knob that supplied relative root. install package read no
+// environment, so only caller know value came from CLAUDE_CONFIG_DIR rather
+// than from relative $HOME, and remedy differ per source.
+func rootHint(err error) error {
+	if errors.Is(err, install.ErrRelativeRoot) && os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+		return fmt.Errorf("%w; set CLAUDE_CONFIG_DIR to an absolute path", err)
+	}
+	return err
+}
+
 // flags parse args with flag package's own output suppressed, so message and
 // exit code both come from here instead of arriving twice.
 func flags(name string, args []string, bind func(*flag.FlagSet)) error {
@@ -71,7 +81,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		Root: configDir(), Binary: binary, Preset: *preset, Force: *force,
 	})
 	if err != nil {
-		return fail(stderr, err)
+		return fail(stderr, rootHint(err))
 	}
 
 	// Literal compare call own slashed or quoted entry "replaced" on reinstall.
@@ -100,7 +110,7 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 
 	res, err := install.Uninstall(configDir())
 	if err != nil {
-		return fail(stderr, err)
+		return fail(stderr, rootHint(err))
 	}
 	if res.ReplacedCommand == "" {
 		fmt.Fprintf(stdout, "no status line was configured in %s\n", res.SettingsPath)
@@ -224,7 +234,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	if project != "" {
 		fmt.Fprintf(stdout, "  project    %s%s\n", config.ProjectPath(project), existsNote(config.ProjectPath(project)))
 	}
-	fmt.Fprintf(stdout, "  cache      %s\n", cacheDir())
+	fmt.Fprintf(stdout, "  cache      %s\n", cacheLabel(cacheDir()))
 	fmt.Fprintln(stdout)
 
 	res := config.Load(root, project)
@@ -252,7 +262,8 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	// nothing to fix.
 	if root != "" && !filepath.IsAbs(root) {
 		fmt.Fprintf(stdout, "  ERROR      config root %q is relative; it resolves against whichever\n", root)
-		fmt.Fprintln(stdout, "             directory reads it, so install and uninstall refuse it")
+		fmt.Fprintln(stdout, "             directory reads it, so install and uninstall refuse it and")
+		fmt.Fprintln(stdout, "             rendering caches nothing")
 		problems++
 	}
 	if problems == 0 {
@@ -296,6 +307,16 @@ func existsNote(path string) string {
 		return "  (not present)"
 	}
 	return ""
+}
+
+// cacheLabel keep cache line printable when cacheDir resolve nothing. Blank
+// value read as doctor breaking rather than as caching off. Reason belong to
+// ERROR above: relative root is only one user can act on.
+func cacheLabel(dir string) string {
+	if dir == "" {
+		return "(disabled)"
+	}
+	return dir
 }
 
 // rootLabel keep root line printable when no home exist. Blank value read as
@@ -376,7 +397,7 @@ func configAdvice(root string) string {
 // legacy never existed -- common case, and missing directory leaves only text
 // to compare.
 func strayRoot(root, env string) string {
-	if env == "" || !filepath.IsAbs(root) {
+	if env == "" || !filepath.IsAbs(env) {
 		return ""
 	}
 	home := homeDir()

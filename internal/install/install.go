@@ -137,7 +137,7 @@ type Result struct {
 }
 
 type Options struct {
-	// Claude Code config root, already resolved. Empty is rejected.
+	// Claude Code config root, already resolved. Empty and relative rejected.
 	Root string
 	// Running executable, copied into place by Install.
 	Binary string
@@ -146,6 +146,11 @@ type Options struct {
 	Force bool
 }
 
+// ErrRelativeRoot let caller name knob that supplied root. This package read no
+// environment: relative value reach it from CLAUDE_CONFIG_DIR and from relative
+// $HOME alike, so remedy is not ours to print.
+var ErrRelativeRoot = errors.New("config root is relative")
+
 // checkAbs refuse relative root. Empty root already rejected, but relative one
 // resolve too -- against cwd of whichever process read it. Claude Code resolve
 // CLAUDE_CONFIG_DIR against its own directory, install against user's shell,
@@ -153,13 +158,13 @@ type Options struct {
 // Written command inherit that: settings.json record relative path Claude Code
 // resolve for itself again.
 //
-// Render path take no such check. It only read, matching Claude Code exactly,
-// and refusing there blank row over config Claude Code accept.
+// Render path take no such check. It must resolve root exactly as Claude Code
+// do, and never-blank rule forbid refusing config Claude Code itself load.
 func checkAbs(root string) error {
 	if filepath.IsAbs(root) {
 		return nil
 	}
-	return fmt.Errorf("config root %q is relative; set CLAUDE_CONFIG_DIR to an absolute path", root)
+	return fmt.Errorf("%w: %q resolves against whichever directory reads it", ErrRelativeRoot, root)
 }
 
 // Install copy this binary beside user's settings, point statusLine at copy,

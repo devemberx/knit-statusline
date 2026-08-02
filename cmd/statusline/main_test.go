@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -177,8 +178,8 @@ func TestRenderMarksABrokenConfig(t *testing.T) {
 }
 
 // Render take relative CLAUDE_CONFIG_DIR as it stand. install and uninstall
-// refuse that value and doctor report it, but render only read, and Claude
-// Code honour same value -- refusing here blank row over config Claude Code
+// refuse that value and doctor report it, but render must resolve root exactly
+// as Claude Code do, and never-blank rule forbid refusing config Claude Code
 // itself load. Marker prove user layer got read: builtin preset name no
 // unknown segment, so it render clean.
 func TestRenderReadsARelativeConfigRoot(t *testing.T) {
@@ -193,6 +194,33 @@ func TestRenderReadsARelativeConfigRoot(t *testing.T) {
 	}
 	if strings.TrimSpace(got) == "" {
 		t.Error("render printed nothing")
+	}
+}
+
+// Reading such root is one thing, writing under it another: cache path resolve
+// against cwd, so every project Claude Code open collect own statusline-cache/.
+// Transcript real here on purpose -- absent one skip scan entirely, and test
+// then pass with cache write still live.
+func TestRenderCachesNothingUnderARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeUserConfig(t, "myconf", "[[lines]]\nsegments = [\"model\", \"tokens\"]\n")
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	path := filepath.Join(dir, "session.jsonl")
+	line := `{"type":"assistant","message":{"id":"msg_1","usage":{"input_tokens":10,"output_tokens":3}}}` + "\n"
+	if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc := fmt.Sprintf(`{"model":{"display_name":"Opus"},"session_id":"abc","transcript_path":%q}`, path)
+
+	got := drawStdin(t, []byte(doc))
+	if !strings.Contains(got, "10") {
+		t.Errorf("tokens segment never read the transcript:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myconf", "statusline-cache")); !os.IsNotExist(err) {
+		t.Errorf("render cached under the relative root, stat error = %v", err)
 	}
 }
 
@@ -326,6 +354,19 @@ func TestCacheDirFollowsTheConfigRoot(t *testing.T) {
 	want := filepath.Join(home, ".claude", "statusline-cache")
 	if got := cacheDir(); got != want {
 		t.Errorf("default root gave %q, want %q", got, want)
+	}
+}
+
+// Relative root name no fixed directory, so cache would follow cwd instead.
+// Empty path is "no cache" state cursor and command segment already handle.
+func TestCacheDirIsEmptyForARelativeRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	if got := cacheDir(); got != "" {
+		t.Errorf("cacheDir() = %q, want empty", got)
 	}
 }
 

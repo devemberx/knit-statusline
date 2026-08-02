@@ -394,8 +394,14 @@ It has to be an absolute path. A relative value resolves against the working
 directory of whichever process reads it — Claude Code resolves it against the
 directory you started Claude Code in, `install` would resolve it against your
 shell's — so one value names two different roots. Rendering takes the value as
-it stands, matching Claude Code exactly; `install` and `uninstall` refuse it,
-and `doctor` reports it as a problem.
+it stands, because it has to resolve the root exactly the way Claude Code does
+and the row must never blank over a config Claude Code itself loads; `install`
+and `uninstall` refuse it, and `doctor` reports it as a problem.
+
+Rendering from a relative root caches nothing. The cache lives under the config
+root, so a relative one would drop a `statusline-cache/` into every project
+directory you open Claude Code in, none of them shared. Losing the cache costs
+a full transcript rescan per render, which is the cheaper half of that trade.
 
 That directory is also the trust boundary for `command=`: a project config may
 not run shell commands, and a user config may, because only you can write to

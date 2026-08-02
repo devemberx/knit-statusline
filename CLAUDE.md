@@ -83,7 +83,9 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
 - Relative root refused by `install` and `uninstall`, taken as-is by render.
   Relative value resolve against cwd of whichever process read it, and Claude
   Code's cwd is not user's shell — one value name two roots. Write command must
-  not guess which; render must match Claude Code, so it never refuse.
+  not guess which; render must match Claude Code, so it never refuse. Render
+  still write nothing under such root: `cacheDir` return empty, else every
+  project Claude Code open collect own `statusline-cache/`.
 
 Contribution rules — branch names, commit format, PR and merge — live in
 [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md). Not repeated here.

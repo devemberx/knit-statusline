@@ -2,6 +2,7 @@ package install
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -819,8 +820,13 @@ func TestInstallRejectsARelativeRoot(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), "relative") {
-		t.Errorf("error %q does not say the root is relative", err)
+	// Sentinel, not text: caller match on it to add remedy this package cannot
+	// know, since relative root reach here from CLAUDE_CONFIG_DIR or from $HOME.
+	if !errors.Is(err, ErrRelativeRoot) {
+		t.Errorf("error %q is not ErrRelativeRoot", err)
+	}
+	if !strings.Contains(err.Error(), "myconf") {
+		t.Errorf("error %q does not name the root", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "myconf")); !os.IsNotExist(err) {
 		t.Errorf("install created a directory under cwd, stat error = %v", err)
