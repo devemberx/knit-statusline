@@ -42,8 +42,13 @@ var Empty []byte
 //
 // Last non-sidechain TodoWrite hold 7 entries, 3 completed. Sidechain line carry
 // different counts -- bad skip logic shows wrong count in output, not only a
-// failing test. No usage key on any line: tokens scan same path, a usage figure
-// would move its preview output.
+// failing test.
+//
+// transcript_path is one field, so preview point every transcript-reading
+// segment here, todo or not. Lines stay bare for that reason: no usage key, so
+// tokens still draw its no-usage shape, and no deferred_tools_delta, so mcp
+// still drop. Segment added later inherit this file -- give it what it need or
+// its preview go silent.
 //
 //go:embed todos.jsonl
 var TodosJSONL []byte

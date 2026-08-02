@@ -171,14 +171,18 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
-	// Fixture JSON carry no transcript_path, so todo have nothing to open, and
-	// any edit to it would preview as silence rather than signal. Complete-data
-	// run alone: --sparse and --unknown exist to draw shape values leave when
-	// missing.
+	// Fixture JSON carry no transcript_path, so segments reading transcript off
+	// disk -- todo, tokens, mcp -- have nothing to open, and any edit to them
+	// would preview as silence rather than signal. Complete-data run alone:
+	// --sparse and --unknown exist to draw shape values leave when missing.
 	//
-	// Todo slot pay for failure, not preview run. Preview is what catch bad edit.
+	// Todo slot pay for failure, not preview run. Warning still reach stderr:
+	// silent drop is exactly what preview exist to tell apart from empty list.
 	if !*sparse && !*unknown {
-		if path, err := writePreviewTranscript(cacheDir()); err == nil {
+		path, err := writePreviewTranscript(cacheDir())
+		if err != nil {
+			fmt.Fprintln(stderr, "warning: preview transcript:", err)
+		} else {
 			in.TranscriptPath = path
 		}
 	}

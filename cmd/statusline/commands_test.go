@@ -86,6 +86,36 @@ func TestPreviewDegradedRunsDrawNoTodoSlot(t *testing.T) {
 	}
 }
 
+// Unwritable cache directory drop todo slot, and dropped slot read as "no
+// list" -- exactly what fixture transcript was added to rule out. Preview exist
+// to catch bad edit, so problem go to stderr and row still draw.
+func TestPreviewWarnsWhenFixtureTranscriptFails(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+
+	// Regular file where config root belong. MkdirAll under it fail on every
+	// platform, unlike chmod 000, which root ignore.
+	blocked := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(blocked, "root"))
+
+	var out, errOut bytes.Buffer
+	if code := runPreview(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "preview transcript") {
+		t.Errorf("fixture write failed in silence, stderr:\n%s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Opus 4.8") {
+		t.Errorf("preview lost the row over one slot:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "☑") {
+		t.Errorf("todo drew without a transcript:\n%s", out.String())
+	}
+}
+
 // Preview must leave one transcript file however often it run, else cache
 // directory fill with per-run copies and every one keep its own scan cursor.
 func TestPreviewTranscriptPathIsFixed(t *testing.T) {
