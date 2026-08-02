@@ -9,11 +9,17 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 )
 
-// Icon sit in field, not template literal: literal take Result.Base, Base is
-// Dim for both segments, and SGR 2 over emoji glyph fade it past reading.
+// context and session icon sit in field, not template literal: literal take
+// Result.Base, Base is Dim for both, and SGR 2 over emoji glyph fade it past
+// reading.
 const (
 	contextIcon = "✍️"
 	sessionIcon = "⏱"
+
+	// Fill state carry meaning without color, so NO_COLOR terminal still
+	// separate thinking on from off.
+	thinkingOn  = "●"
+	thinkingOff = "○"
 )
 
 func init() {
@@ -231,14 +237,22 @@ func init() {
 	})
 
 	register("thinking", Def{
-		Fields:          []string{"state"},
-		DefaultTemplate: "{state}",
+		Fields:          []string{"state", "icon"},
+		DefaultTemplate: "{icon} {state}",
 		Build: func(c Context) Result {
-			if c.In.Thinking == nil || !c.In.Thinking.Enabled {
+			// Absent only on payload predating field. Claude Code send
+			// thinking unconditionally, off state included, so nil mean
+			// missing knowledge -- not thinking turned off.
+			if c.In.Thinking == nil {
 				return empty
 			}
-			return Result{Base: render.Magenta, Fields: render.Fields{
-				"state": render.Colored("think", render.Magenta),
+			icon, color := thinkingOff, render.Dim
+			if c.In.Thinking.Enabled {
+				icon, color = thinkingOn, render.Pink
+			}
+			return Result{Base: color, Fields: render.Fields{
+				"icon":  render.Colored(icon, color),
+				"state": render.Colored("thinking", color),
 			}}
 		},
 	})

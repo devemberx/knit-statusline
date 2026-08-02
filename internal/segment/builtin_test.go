@@ -26,7 +26,7 @@ func TestDefaultTemplatesOnFullData(t *testing.T) {
 		{"output_style", "default"},
 		{"repo", "acme/acme"},
 		{"pr", "#42"},
-		{"thinking", "think"},
+		{"thinking", "● thinking"},
 	} {
 		if got := draw(ctx(t, fixtures.Full, tc.kind)); got != tc.want {
 			t.Errorf("%s rendered %q, want %q", tc.kind, got, tc.want)
@@ -242,6 +242,60 @@ func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 	}
 	if prev, dup := icons[icon]; dup {
 		t.Errorf("level %q took unknown's icon %q", prev, icon)
+	}
+}
+
+// Thinking off is fact worth printing, not nothing: user who disabled it in
+// settings.json get no other reminder, and silence read same as segment
+// dropped. Absent field stay dropped -- see TestSegmentsAbsentOnSparseData.
+func TestThinkingRendersBothStates(t *testing.T) {
+	for _, tc := range []struct {
+		enabled bool
+		want    string
+		color   render.Color
+	}{
+		{true, "● thinking", render.Pink},
+		{false, "○ thinking", render.Dim},
+	} {
+		c := ctx(t, fixtures.Full, "thinking")
+		c.In.Thinking = &schema.Thinking{Enabled: tc.enabled}
+		if got := draw(c); got != tc.want {
+			t.Errorf("thinking enabled=%v rendered %q, want %q", tc.enabled, got, tc.want)
+		}
+
+		res := Build(c)
+		if res.Base != tc.color {
+			t.Errorf("thinking enabled=%v base %q, want %q", tc.enabled, res.Base, tc.color)
+		}
+	}
+}
+
+// End-to-end over live palette, since field colour alone prove nothing about
+// what Expand emit. Pink reach row through this segment only, so nothing else
+// catch it going missing. NO_COLOR set empty so NewPalette enable regardless of
+// environment running test.
+func TestThinkingEscapesSplitOnAndOff(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	for _, tc := range []struct {
+		enabled  bool
+		icon     string
+		want     render.Color
+		unwanted render.Color
+	}{
+		{true, thinkingOn, render.Pink, render.Dim},
+		{false, thinkingOff, render.Dim, render.Pink},
+	} {
+		c := ctx(t, fixtures.Full, "thinking")
+		c.In.Thinking = &schema.Thinking{Enabled: tc.enabled}
+		c.Palette = render.NewPalette()
+
+		out := draw(c)
+		if !strings.Contains(out, string(tc.want)+tc.icon) {
+			t.Errorf("thinking enabled=%v icon not wrapped in %q: %q", tc.enabled, tc.want, out)
+		}
+		if strings.Contains(out, string(tc.unwanted)) {
+			t.Errorf("thinking enabled=%v leaked %q: %q", tc.enabled, tc.unwanted, out)
+		}
 	}
 }
 
