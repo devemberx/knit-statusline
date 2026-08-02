@@ -20,7 +20,17 @@ func configCtx(t *testing.T) Context {
 	project := t.TempDir()
 	c.In.Workspace.ProjectDir = project
 	c.In.Workspace.CurrentDir = project
+	pointManagedSettings(t, filepath.Join(t.TempDir(), "managed-settings.json"))
 	return c
+}
+
+// pointManagedSettings move enterprise policy path off /etc, so machine
+// carrying real one do not leak its hooks into assertion here.
+func pointManagedSettings(t *testing.T, path string) {
+	t.Helper()
+	prev := managedSettings
+	managedSettings = path
+	t.Cleanup(func() { managedSettings = prev })
 }
 
 // quotePath render path as JSON string, quotes included. Windows path carry
@@ -243,6 +253,49 @@ func TestConfigApprovesEveryProjectMCPServerAtOnce(t *testing.T) {
 		`{"mcpServers": {"github": {}, "postgres": {}}}`)
 
 	if got, want := draw(c), "🔌2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// MDM drop policy outside config root, and its hooks fire for every session on
+// that machine. Counting config root alone print 0 where three run.
+func TestConfigCountsManagedSettings(t *testing.T) {
+	c := configCtx(t)
+	managed := filepath.Join(t.TempDir(), "managed-settings.json")
+	pointManagedSettings(t, managed)
+	if err := os.WriteFile(managed, []byte(threeCommandSettings), 0o644); err != nil {
+		t.Fatalf("write managed settings: %v", err)
+	}
+
+	if got, want := draw(c), "🪝3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Policy declare servers too, and those need no project approval.
+func TestConfigCountsManagedMCPServers(t *testing.T) {
+	c := configCtx(t)
+	managed := filepath.Join(t.TempDir(), "managed-settings.json")
+	pointManagedSettings(t, managed)
+	if err := os.WriteFile(managed, []byte(`{"mcpServers": {"audit": {}}}`), 0o644); err != nil {
+		t.Fatalf("write managed settings: %v", err)
+	}
+
+	if got, want := draw(c), "🔌1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Unreadable policy cost same two counts unreadable settings.json cost.
+func TestConfigMarksUnreadableManagedSettingsUnknown(t *testing.T) {
+	c := configCtx(t)
+	managed := filepath.Join(t.TempDir(), "managed-settings.json")
+	pointManagedSettings(t, managed)
+	if err := os.WriteFile(managed, []byte("{ this is not json"), 0o644); err != nil {
+		t.Fatalf("write managed settings: %v", err)
+	}
+
+	if got, want := draw(c), "🪝… · 🔌…"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
 	}
 }

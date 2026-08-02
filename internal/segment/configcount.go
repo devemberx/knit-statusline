@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,31 @@ const pluginRootVar = "${CLAUDE_PLUGIN_ROOT}"
 
 // Separator between items on row, both templates.
 const configSep = " · "
+
+// managedSettings hold enterprise policy layer. It sit outside config root, at
+// fixed absolute path per OS, so CLAUDE_CONFIG_DIR never move it and test
+// override this variable rather than plant file at /etc.
+var managedSettings = defaultManagedSettings()
+
+// defaultManagedSettings name path MDM drop policy at.
+//
+// Hooks and MCP servers declared there fire for every session on that machine,
+// and nothing under config root mention them.
+func defaultManagedSettings() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "/Library/Application Support/ClaudeCode/managed-settings.json"
+	case "windows":
+		// ProgramData relocate on some images; literal is fallback, not truth.
+		dir := os.Getenv("PROGRAMDATA")
+		if dir == "" {
+			dir = `C:\ProgramData`
+		}
+		return filepath.Join(dir, "ClaudeCode", "managed-settings.json")
+	default:
+		return "/etc/claude-code/managed-settings.json"
+	}
+}
 
 var (
 	errConfigTooBig     = errors.New("config file over size cap")
@@ -339,6 +365,9 @@ func readSettings(counts *configCounts, user, project string) []settingsDoc {
 			filepath.Join(project, ".claude", "settings.local.json"),
 		)
 	}
+	// Last: enterprise policy override every layer above, and enabledPlugins
+	// merge later-wins.
+	paths = append(paths, managedSettings)
 
 	var docs []settingsDoc
 	for _, p := range paths {
