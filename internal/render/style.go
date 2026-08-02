@@ -11,7 +11,9 @@ import (
 // render hand out empty Colors instead of branching at every call site.
 type Color string
 
-// Reference palette, 24-bit foreground escapes.
+// Reference palette, 24-bit foreground escapes. New entry clear CIEDE2000 18.4
+// against every other, distance Orange and Yellow already sit at -- closer pair
+// stop reading as two colors in one row.
 const (
 	Blue    Color = "\033[38;2;0;153;255m"
 	Orange  Color = "\033[38;2;255;176;85m"
@@ -21,6 +23,7 @@ const (
 	Yellow  Color = "\033[38;2;230;200;0m"
 	White   Color = "\033[38;2;220;220;220m"
 	Magenta Color = "\033[38;2;180;140;255m"
+	Pink    Color = "\033[38;2;230;60;170m"
 	Dim     Color = "\033[2m"
 
 	reset = "\033[0m"

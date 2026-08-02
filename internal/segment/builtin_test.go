@@ -26,7 +26,7 @@ func TestDefaultTemplatesOnFullData(t *testing.T) {
 		{"output_style", "default"},
 		{"repo", "acme/acme"},
 		{"pr", "#42"},
-		{"thinking", "think"},
+		{"thinking", "● thinking"},
 	} {
 		if got := draw(ctx(t, fixtures.Full, tc.kind)); got != tc.want {
 			t.Errorf("%s rendered %q, want %q", tc.kind, got, tc.want)
@@ -242,6 +242,31 @@ func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 	}
 	if prev, dup := icons[icon]; dup {
 		t.Errorf("level %q took unknown's icon %q", prev, icon)
+	}
+}
+
+// Thinking off is fact worth printing, not nothing: user who disabled it in
+// settings.json get no other reminder, and silence read same as segment
+// dropped. Absent field stay dropped -- see TestSegmentsAbsentOnSparseData.
+func TestThinkingRendersBothStates(t *testing.T) {
+	for _, tc := range []struct {
+		enabled bool
+		want    string
+		color   render.Color
+	}{
+		{true, "● thinking", render.Pink},
+		{false, "○ thinking", render.Dim},
+	} {
+		c := ctx(t, fixtures.Full, "thinking")
+		c.In.Thinking = &schema.Thinking{Enabled: tc.enabled}
+		if got := draw(c); got != tc.want {
+			t.Errorf("thinking enabled=%v rendered %q, want %q", tc.enabled, got, tc.want)
+		}
+
+		res := Build(c)
+		if res.Base != tc.color {
+			t.Errorf("thinking enabled=%v base %q, want %q", tc.enabled, res.Base, tc.color)
+		}
 	}
 }
 
