@@ -88,6 +88,24 @@ func TestInstallCreatesSettingsAndConfig(t *testing.T) {
 	}
 }
 
+// CLAUDE_CONFIG_DIR pointed at a directory nobody created yet is first run for
+// anyone who moves config root, not edge case. Every MkdirAll along path
+// (copyBinary, writeJSON, config write) must fire, else this silently regress
+// to working only when root already exists.
+func TestInstallCreatesTheRootWhenMissing(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "moved-root")
+
+	if _, err := Install(Options{Root: root, Binary: fakeBinary(t)}); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	for _, path := range []string{BinaryPath(root), SettingsPath(root), config.UserPath(root)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("%s not created: %v", path, err)
+		}
+	}
+}
+
 // Git Bash eat unquoted backslash: C:\Users\... command render blank row.
 // Real coverage on windows runner, where TempDir hold backslashes.
 func TestInstallWritesCommandWithForwardSlashes(t *testing.T) {
