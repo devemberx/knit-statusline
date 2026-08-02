@@ -3,6 +3,8 @@ package segment
 import (
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/devemberx/knit-statusline/internal/fixtures"
@@ -320,18 +322,173 @@ func TestConfigFieldsAddressableIndividually(t *testing.T) {
 	}
 }
 
-// Rules directory symlinked at / would walk whole filesystem every render.
-func TestConfigRefusesSymlinkedRuleDirectory(t *testing.T) {
+// Rules root symlinked into dotfiles checkout is normal setup, and Claude Code
+// read through it. Refusing print 0 where rules load.
+func TestConfigFollowsSymlinkedRulesRoot(t *testing.T) {
 	c := configCtx(t)
 	real := t.TempDir()
-	writeUnder(t, real, "planted.md", "x\n")
+	writeUnder(t, real, "style.md", "x\n")
+	writeUnder(t, real, "go/errors.md", "x\n")
 
-	link := filepath.Join(c.ConfigDir, "rules")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(real, filepath.Join(c.ConfigDir, "rules")); err != nil {
 		t.Skipf("symlink unsupported here: %v", err)
 	}
 
+	if got, want := draw(c), "📏2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Link planted below root walk wherever it aim, so entries stay Lstat.
+func TestConfigSkipsSymlinkedRuleEntries(t *testing.T) {
+	c := configCtx(t)
+	real := t.TempDir()
+	writeUnder(t, real, "planted.md", "x\n")
+	writeUnder(t, c.ConfigDir, "rules/own.md", "x\n")
+
+	if err := os.Symlink(real, filepath.Join(c.ConfigDir, "rules", "linked")); err != nil {
+		t.Skipf("symlink unsupported here: %v", err)
+	}
+
+	if got, want := draw(c), "📏1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Root followed through symlink mean rules pointed at / reach whole filesystem.
+// Budget bound walk whatever shape tree take -- count past it is unknown, not
+// number that stop where patience did.
+func TestConfigMarksOversizeRuleTreeUnknown(t *testing.T) {
+	c := configCtx(t)
+	for d := range 5 {
+		dir := filepath.Join(c.ConfigDir, "rules", strconv.Itoa(d))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		for i := range maxRuleEntries - 50 {
+			if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(i)+".md"), []byte("x"), 0o644); err != nil {
+				t.Fatalf("write rule: %v", err)
+			}
+		}
+	}
+
+	if got, want := draw(c), "📏…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Directory nested past depth cap stop walk, and stopping is not proof of zero.
+func TestConfigMarksDeepRuleTreeUnknown(t *testing.T) {
+	c := configCtx(t)
+	deep := filepath.Join(c.ConfigDir, "rules")
+	for range maxRuleDepth + 2 {
+		deep = filepath.Join(deep, "down")
+	}
+	writeUnder(t, deep, "buried.md", "x\n")
+
+	if got, want := draw(c), "📏…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Manifest declare hooks as path to file holding them, not object alone. Reading
+// only object form make every such plugin a type error, and one plugin shipping
+// it drag whole row's hook count to "…".
+func TestConfigCountsHooksFromManifestPath(t *testing.T) {
+	for name, decl := range map[string]string{
+		"relative path":   `"./hooks/hooks.json"`,
+		"plugin root var": `"${CLAUDE_PLUGIN_ROOT}/hooks/hooks.json"`,
+		"path list":       `["./hooks/hooks.json", "./extra/more.json"]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := configCtx(t)
+			install := enablePlugin(t, c, "p@m", true)
+			writeUnder(t, install, ".claude-plugin/plugin.json", `{"name": "p", "hooks": `+decl+`}`)
+			writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+			writeUnder(t, install, "extra/more.json", `{`+oneHookBody+`}`)
+
+			want := "🪝1"
+			if strings.HasPrefix(decl, "[") {
+				want = "🪝2"
+			}
+			if got := draw(c); got != want {
+				t.Errorf("rendered %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Path reaching out of plugin directory is not that plugin's hook file, whatever
+// sit at other end.
+func TestConfigIgnoresManifestHookPathOutsidePlugin(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	outside := t.TempDir()
+	writeUnder(t, outside, "hooks.json", `{`+oneHookBody+`}`)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": "`+filepath.ToSlash(filepath.Join(outside, "hooks.json"))+`"}`)
+
 	if got := draw(c); got != "" {
-		t.Errorf("followed symlink and rendered %q, want nothing", got)
+		t.Errorf("rendered %q, want nothing", got)
+	}
+}
+
+// mcpServers carry path form same way hooks do. Manifest read through settings
+// shape turn that into type error, losing hooks declared right beside it.
+func TestConfigCountsManifestHooksBesideMCPPath(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "mcpServers": "./.mcp.json", `+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Server switched off never connect. Counting it print number no client back.
+func TestConfigSkipsDisabledMCPServers(t *testing.T) {
+	c := configCtx(t)
+	writeUnder(t, c.In.Workspace.ProjectDir, ".mcp.json",
+		`{"mcpServers": {"github": {}, "postgres": {}}}`)
+	writeUnder(t, c.ConfigDir, ".claude.json", `{
+	  "projects": {
+	    "`+c.In.Workspace.ProjectDir+`": {
+	      "mcpServers": {"sentry": {}},
+	      "disabledMcpjsonServers": ["postgres"],
+	      "disabledMcpServers": ["sentry"]
+	    }
+	  }
+	}`)
+
+	if got, want := draw(c), "🔌1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// .claude.json hold per-project session metrics beside mcpServers, so it outgrow
+// settings cap on machine carrying many projects. Same cap there print "…" for
+// every one of them.
+func TestConfigCountsMCPServersInLargeClaudeJSON(t *testing.T) {
+	c := configCtx(t)
+	pad := strings.Repeat("x", maxConfigBytes)
+	writeUnder(t, filepath.Dir(c.ConfigDir), ".claude.json",
+		`{"history": "`+pad+`", "mcpServers": {"sentry": {}}}`)
+
+	if got, want := draw(c), "🔌1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Past its own cap, parse cost more than row's whole budget. Unknown, not
+// number bought by stalling render.
+func TestConfigMarksOversizeClaudeJSONUnknown(t *testing.T) {
+	c := configCtx(t)
+	pad := strings.Repeat("x", maxClaudeJSONBytes)
+	writeUnder(t, filepath.Dir(c.ConfigDir), ".claude.json",
+		`{"history": "`+pad+`", "mcpServers": {"sentry": {}}}`)
+
+	if got, want := draw(c), "🔌…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
 	}
 }
