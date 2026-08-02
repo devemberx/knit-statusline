@@ -1,6 +1,8 @@
 package segment
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -66,20 +68,38 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 	}
 }
 
+// fixtureDocs enumerate documents that sweep every build path a segment can
+// take.
+var fixtureDocs = []struct {
+	name string
+	doc  []byte
+}{
+	{"full", fixtures.Full},
+	{"sparse", fixtures.Sparse},
+	{"unknown", fixtures.Unknown},
+	{"empty", fixtures.Empty},
+}
+
+// cavemanConfigDir seed temp dir with active flag file, so caveman escape its
+// ConfigDir=="" guard for tests whose ctx() leaves ConfigDir unset.
+func cavemanConfigDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, cavemanFlagFile), []byte("full"), 0o644); err != nil {
+		t.Fatalf("seed caveman flag file: %v", err)
+	}
+	return dir
+}
+
 // CLAUDE.md rule, checked rather than trusted: field Build populate but
 // Def.Fields omit is invisible to doctor and to config validation, so user meet
 // placeholder that expand to nothing. Run across all three fixtures, since which
 // fields appear depend on input.
+//
+// caveman read flag file off disk, which no fixture carry, so seed one.
 func TestProducedFieldsAreDeclared(t *testing.T) {
-	for _, f := range []struct {
-		name string
-		doc  []byte
-	}{
-		{"full", fixtures.Full},
-		{"sparse", fixtures.Sparse},
-		{"unknown", fixtures.Unknown},
-		{"empty", fixtures.Empty},
-	} {
+	cavemanDir := cavemanConfigDir(t)
+	for _, f := range fixtureDocs {
 		// Fresh branch build own field set, so live pass alone check half of
 		// what stable segment produce.
 		for _, fresh := range []bool{false, true} {
@@ -87,6 +107,9 @@ func TestProducedFieldsAreDeclared(t *testing.T) {
 				def, _ := Lookup(kind)
 				c := ctx(t, f.doc, kind)
 				c.Fresh = fresh
+				if kind == "caveman" {
+					c.ConfigDir = cavemanDir
+				}
 				for name := range Build(c).Fields {
 					if !slices.Contains(def.Fields, name) {
 						t.Errorf("%s/%s fresh=%v: Build produce {%s}, absent from Def.Fields %v",
@@ -279,5 +302,50 @@ func TestBuildInjectsStableFromRegistry(t *testing.T) {
 	Build(Context{Cfg: config.Resolved{Kind: "test.stable-probe", Unknown: "…"}})
 	if !seen {
 		t.Fatal("Build did not inject Def.Stable into Context")
+	}
+}
+
+// Opposite direction from TestProducedFieldsAreDeclared: declared field that one
+// path omit expand to nothing, so slot narrow mid-session and read as crash.
+// Icon is fixed part of segment shape, so any row drawn at all carry one.
+//
+// caveman read flag file off disk, which no fixture carry, so seed one.
+func TestDeclaredIconAlwaysProduced(t *testing.T) {
+	cavemanDir := cavemanConfigDir(t)
+	drawn := map[string]int{}
+
+	for _, f := range fixtureDocs {
+		for _, fresh := range []bool{false, true} {
+			for _, kind := range Names() {
+				def, _ := Lookup(kind)
+				if !slices.Contains(def.Fields, "icon") {
+					continue
+				}
+				c := ctx(t, f.doc, kind)
+				c.Fresh = fresh
+				if kind == "caveman" {
+					c.ConfigDir = cavemanDir
+				}
+				res := Build(c)
+				// Dropped slot draw nothing, so no shape to hold.
+				if res.Empty {
+					continue
+				}
+				drawn[kind]++
+				if res.Fields["icon"].Text == "" {
+					t.Errorf("%s/%s fresh=%v: drew row with empty {icon}",
+						f.name, kind, fresh)
+				}
+			}
+		}
+	}
+
+	// Segment no fixture reach assert nothing, and loop above stay green while
+	// covering it zero times. Count instead of trust.
+	for _, kind := range Names() {
+		def, _ := Lookup(kind)
+		if slices.Contains(def.Fields, "icon") && drawn[kind] == 0 {
+			t.Errorf("%s declare {icon}, no fixture draw it", kind)
+		}
 	}
 }

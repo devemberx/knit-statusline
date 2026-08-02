@@ -184,6 +184,11 @@ them vanish cleanly when the value is absent, instead of leaving a stray `⟳ ` 
 `()` behind. Write the pieces yourself — `⟳ {reset_time}`, `({branch})` — only if
 you accept that orphan.
 
+Text you type into a template is a label, and renders in the segment's muted
+color. Only `{field}` placeholders carry a color of their own — which is why the
+icons are fields. Write `{icon}` to keep the glyph colored; paste the glyph in as
+plain text and it comes out muted.
+
 Every segment has a default template, so a row that only reorders names needs no
 `[segments.*]` blocks at all. `doctor` lists the fields each segment offers, and
 an unknown field name is reported there rather than silently rendering blank.
@@ -253,9 +258,9 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | Segment | Fields | Notes |
 | --- | --- | --- |
 | `model` | `name` `family` `version` `id` | `{name}` is `Opus 4.8`; `{family}` and `{version}` are its halves, and `{version}` is empty when the id carries no release number |
-| `context` | `pct` `remaining` `used` `size` `bar` | Absent before the first API call and after `/compact` |
+| `context` | `pct` `remaining` `used` `size` `bar` `icon` | Absent before the first API call and after `/compact`; `{icon}` is `✍️` |
 | `dir` | `name` `path` `project` `worktree` `git` `branch` `dirty` | `{git}` is a preformatted ` (branch*)`, empty outside a repo |
-| `session` | `duration` `id` `name` | |
+| `session` | `duration` `id` `name` `icon` | `{icon}` is `⏱` |
 | `effort` | `level` `icon` | Absent on models without an effort parameter; `{icon}` tracks the level — see [Colors](#colors) |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
@@ -308,6 +313,10 @@ never leaves red.
 Thresholds escalate green → orange → yellow → red as a percentage climbs past
 `warn`, `high` and `crit`. Filled bar segments carry that color and the
 remainder is dimmed.
+
+`{icon}` carries its own color rather than a label's muted weight: `context` and
+`session` render theirs in white, `caveman` in orange, and `effort` colors its
+icon by level.
 
 The `effort` segment has its own scale. Claude Code defines five levels, and each
 gets a distinct glyph and color:

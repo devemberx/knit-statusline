@@ -9,6 +9,13 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 )
 
+// Icon sit in field, not template literal: literal take Result.Base, Base is
+// Dim for both segments, and SGR 2 over emoji glyph fade it past reading.
+const (
+	contextIcon = "✍️"
+	sessionIcon = "⏱"
+)
+
 func init() {
 	register("model", Def{
 		Fields:          []string{"name", "family", "version", "id"},
@@ -33,15 +40,15 @@ func init() {
 	})
 
 	register("context", Def{
-		Fields:          []string{"pct", "remaining", "used", "size", "bar"},
-		DefaultTemplate: "✍️ {pct}%",
+		Fields:          []string{"pct", "remaining", "used", "size", "bar", "icon"},
+		DefaultTemplate: "{icon} {pct}%",
 		Stable:          true,
 		Build:           buildContext,
 	})
 
 	register("session", Def{
-		Fields:          []string{"duration", "id", "name"},
-		DefaultTemplate: "⏱ {duration}",
+		Fields:          []string{"duration", "id", "name", "icon"},
+		DefaultTemplate: "{icon} {duration}",
 		Stable:          true,
 		Build: func(c Context) Result {
 			text, ok := sessionDuration(c)
@@ -49,6 +56,7 @@ func init() {
 				return empty
 			}
 			f := render.Fields{
+				"icon":     render.Colored(sessionIcon, render.White),
 				"duration": render.Colored(text, render.White),
 				"id":       render.Colored(c.In.SessionID, render.Dim),
 			}
@@ -260,6 +268,7 @@ func buildContext(c Context) Result {
 
 	t := c.Thresholds()
 	f := render.Fields{
+		"icon":      render.Colored(contextIcon, render.White),
 		"pct":       render.Colored(pct(p), t.Color(p)),
 		"remaining": render.Colored(pct(100-p), t.Color(p)),
 		"bar":       render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
@@ -316,6 +325,7 @@ func contextNoUsage(c Context) Result {
 			"bar":       render.Plain(c.Palette.Bar(0, c.Cfg.BarWidth, t)),
 		}
 	}
+	f["icon"] = render.Colored(contextIcon, render.White)
 	if cw := c.In.Context; cw != nil && cw.ContextWindowSize != nil {
 		f["size"] = render.Colored(count(*cw.ContextWindowSize), render.Dim)
 	}

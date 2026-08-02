@@ -345,6 +345,64 @@ func TestPercentagesCarrySeverityColour(t *testing.T) {
 	}
 }
 
+func TestContextIconIsWhiteField(t *testing.T) {
+	f := Build(ctx(t, fixtures.Full, "context")).Fields["icon"]
+	if f.Text != contextIcon {
+		t.Errorf("context {icon} text = %q, want %q", f.Text, contextIcon)
+	}
+	if f.Color != render.White {
+		t.Errorf("context {icon} color = %q, want White %q", f.Color, render.White)
+	}
+}
+
+// Three build paths, three separate field maps. Icon missing from one expand to
+// nothing and shrink slot mid-session, which read as crash.
+//
+// wantPct pin which path each case land on: fixtures.Unknown gaining context
+// block would fold every case onto known-percentage path unnoticed.
+func TestContextIconSurvivesEveryPath(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		doc     []byte
+		fresh   bool
+		wantPct string
+	}{
+		{"known", fixtures.Full, false, "42"},
+		{"fresh zero", fixtures.Unknown, true, "0"},
+		{"unknown", fixtures.Unknown, false, config.DefaultUnknown},
+	} {
+		c := ctx(t, tc.doc, "context")
+		c.Fresh = tc.fresh
+		res := Build(c)
+		if res.Empty {
+			t.Fatalf("%s: context dropped its slot", tc.name)
+		}
+		if got := res.Fields["pct"].Text; got != tc.wantPct {
+			t.Fatalf("%s: fixture no longer exercise its path: {pct} = %q, want %q",
+				tc.name, got, tc.wantPct)
+		}
+		if got := res.Fields["icon"].Text; got != contextIcon {
+			t.Errorf("%s: context {icon} = %q, want %q", tc.name, got, contextIcon)
+		}
+	}
+}
+
+// End-to-end over live palette, since field colour alone prove nothing about
+// what Expand emit. NO_COLOR set empty so NewPalette enable regardless of
+// environment running test.
+func TestContextIconEscapesDim(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	c := ctx(t, fixtures.Full, "context")
+	c.Palette = render.NewPalette()
+	out := draw(c)
+	if strings.Contains(out, "\033[2m"+contextIcon) {
+		t.Errorf("context icon still under dim: %q", out)
+	}
+	if !strings.Contains(out, string(render.White)+contextIcon) {
+		t.Errorf("context icon not wrapped in White: %q", out)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
 
 // ctxFor build Context for one segment name with registry's own default
@@ -747,5 +805,43 @@ func TestStableSegmentSet(t *testing.T) {
 		if def.Stable != want[name] {
 			t.Errorf("%s Stable = %v, want %v", name, def.Stable, want[name])
 		}
+	}
+}
+
+func TestSessionIconIsWhiteField(t *testing.T) {
+	f := Build(ctx(t, fixtures.Full, "session")).Fields["icon"]
+	if f.Text != sessionIcon {
+		t.Errorf("session {icon} text = %q, want %q", f.Text, sessionIcon)
+	}
+	if f.Color != render.White {
+		t.Errorf("session {icon} color = %q, want White %q", f.Color, render.White)
+	}
+}
+
+// Unknown branch is where slot width matter, so pin icon on that path too.
+func TestSessionIconSurvivesUnknownDuration(t *testing.T) {
+	c := ctx(t, fixtures.Unknown, "session")
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("session dropped its slot on unknown duration")
+	}
+	if got := res.Fields["duration"].Text; got != config.DefaultUnknown {
+		t.Fatalf("fixture no longer exercise unknown path: {duration} = %q", got)
+	}
+	if got := res.Fields["icon"].Text; got != sessionIcon {
+		t.Errorf("session {icon} = %q, want %q", got, sessionIcon)
+	}
+}
+
+func TestSessionIconEscapesDim(t *testing.T) {
+	t.Setenv("NO_COLOR", "")
+	c := ctx(t, fixtures.Full, "session")
+	c.Palette = render.NewPalette()
+	out := draw(c)
+	if strings.Contains(out, "\033[2m"+sessionIcon) {
+		t.Errorf("session icon still under dim: %q", out)
+	}
+	if !strings.Contains(out, string(render.White)+sessionIcon) {
+		t.Errorf("session icon not wrapped in White: %q", out)
 	}
 }
