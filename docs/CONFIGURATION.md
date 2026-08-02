@@ -273,7 +273,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `vim` | `mode` | Only when vim mode is on |
 | `output_style` | `name` | |
 | `fast_mode` | `state` | Only rendered when enabled |
-| `thinking` | `state` | Only rendered when enabled |
+| `thinking` | `state` `icon` | `●` when on, dim `○` when off; set with `alwaysThinkingEnabled` in settings.json |
 | `caveman` | `mode` `icon` `savings` | Only while the [caveman](https://github.com/juliusbrussee/caveman) plugin is active; `{savings}` needs `/caveman-stats` and is out of the default template |
 | `command` | `out` | Your own shell command |
 
@@ -315,8 +315,8 @@ Thresholds escalate green → orange → yellow → red as a percentage climbs p
 remainder is dimmed.
 
 `{icon}` carries its own color rather than a label's muted weight: `context` and
-`session` render theirs in white, `caveman` in orange, and `effort` colors its
-icon by level.
+`session` render theirs in white, `caveman` in orange, `thinking` pink when on
+and dim when off, and `effort` colors its icon by level.
 
 The `effort` segment has its own scale. Claude Code defines five levels, and each
 gets a distinct glyph and color:
