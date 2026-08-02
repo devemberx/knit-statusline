@@ -28,6 +28,16 @@ func fail(stderr io.Writer, err error) int {
 	return 1
 }
 
+// rootHint name knob that supplied relative root. install package read no
+// environment, so only caller know value came from CLAUDE_CONFIG_DIR rather
+// than from relative $HOME, and remedy differ per source.
+func rootHint(err error) error {
+	if errors.Is(err, install.ErrRelativeRoot) && os.Getenv("CLAUDE_CONFIG_DIR") != "" {
+		return fmt.Errorf("%w; set CLAUDE_CONFIG_DIR to an absolute path", err)
+	}
+	return err
+}
+
 // flags parse args with flag package's own output suppressed, so message and
 // exit code both come from here instead of arriving twice.
 func flags(name string, args []string, bind func(*flag.FlagSet)) error {
@@ -71,7 +81,7 @@ func runInstall(args []string, stdout, stderr io.Writer) int {
 		Root: configDir(), Binary: binary, Preset: *preset, Force: *force,
 	})
 	if err != nil {
-		return fail(stderr, err)
+		return fail(stderr, rootHint(err))
 	}
 
 	// Literal compare call own slashed or quoted entry "replaced" on reinstall.
@@ -100,7 +110,7 @@ func runUninstall(args []string, stdout, stderr io.Writer) int {
 
 	res, err := install.Uninstall(configDir())
 	if err != nil {
-		return fail(stderr, err)
+		return fail(stderr, rootHint(err))
 	}
 	if res.ReplacedCommand == "" {
 		fmt.Fprintf(stdout, "no status line was configured in %s\n", res.SettingsPath)
@@ -227,7 +237,7 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		settingsPath, configPath := install.SettingsPath(root), config.UserPath(root)
 		settings = settingsPath + existsNote(settingsPath)
 		userConfig = configPath + existsNote(configPath)
-		cache = cachePath(root)
+		cache = cacheLabel(cachePath(root))
 	}
 
 	fmt.Fprintln(stdout, "Paths")
@@ -258,6 +268,15 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	// last, at its innocent rows.
 	for _, e := range config.Validate(res.Config, res.Origin(config.UserPath(root)), segment.Known) {
 		fmt.Fprintf(stdout, "  ERROR      %v\n", e)
+		problems++
+	}
+	// Counted, not merely noted: install and uninstall refuse this value, and
+	// "status ok" printed beside a root nobody can install into read as
+	// nothing to fix.
+	if root != "" && !filepath.IsAbs(root) {
+		fmt.Fprintf(stdout, "  ERROR      config root %q is relative; it resolves against whichever\n", root)
+		fmt.Fprintln(stdout, "             directory reads it, so install and uninstall refuse it and")
+		fmt.Fprintln(stdout, "             rendering caches nothing")
 		problems++
 	}
 	if problems == 0 {
@@ -308,6 +327,16 @@ func existsNote(path string) string {
 // rather than as home missing.
 const noHome = "(no home directory)"
 
+// cacheLabel keep cache line printable when root exist but cachePath resolve
+// nothing. Blank value read as doctor breaking rather than as caching off.
+// Reason belong to ERROR below: relative root is only one user can act on.
+func cacheLabel(dir string) string {
+	if dir == "" {
+		return "(disabled)"
+	}
+	return dir
+}
+
 // rootLabel keep root line printable when no home exist. Blank value read as
 // missing output rather than missing home.
 func rootLabel(root string) string {
@@ -328,10 +357,15 @@ func rootNote(root string) string {
 }
 
 // rootOrigin say which directory supplied root. Moved root and default one
-// otherwise print alike, and user cannot tell doctor read wrong one.
+// otherwise print alike, and user cannot tell doctor read wrong one. Relative
+// value called out on same line: path printed beside it resolve against cwd of
+// whoever read it, so it name no fixed directory at all.
 func rootOrigin(env string) string {
 	if env == "" {
 		return ""
+	}
+	if !filepath.IsAbs(env) {
+		return "  (CLAUDE_CONFIG_DIR, relative)"
 	}
 	return "  (CLAUDE_CONFIG_DIR)"
 }
@@ -377,8 +411,12 @@ func configAdvice(root string) string {
 }
 
 // strayRoot name old ~/.claude when CLAUDE_CONFIG_DIR moved root elsewhere.
-// Empty when variable unset, home unknown, or both path name one directory --
-// majority never set it and must see no extra output.
+// Empty when variable unset, home unknown, relative, or both path name one
+// directory -- majority never set it and must see no extra output.
+//
+// Relative root silence whole block: its remedy is running install, which
+// refuse that same value, and its copy destination resolve against cwd. ERROR
+// above already name only fix there is.
 //
 // Identity by stat, not text: filepath.Clean normalise separator and dot
 // segment alone. Symlinked home, macOS /tmp vs /private/tmp, and Windows case
@@ -387,7 +425,7 @@ func configAdvice(root string) string {
 // legacy never existed -- common case, and missing directory leaves only text
 // to compare.
 func strayRoot(root, env string) string {
-	if env == "" {
+	if env == "" || !filepath.IsAbs(env) {
 		return ""
 	}
 	home := homeDir()

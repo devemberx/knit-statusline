@@ -81,6 +81,12 @@ npx @devemberx/knit-statusline install --preset minimal
 
 Set `CLAUDE_CONFIG_DIR` and every path above moves beneath it — that is the
 directory Claude Code itself reads, and `~/.claude` stops being consulted.
+Give it an absolute path: a relative one resolves against the working directory
+of whichever process reads it, and Claude Code's is not your shell's, so
+`install` and `uninstall` refuse it rather than write somewhere nothing reads.
+The row still draws from a relative root — Claude Code loads that config, so we
+do too — but nothing is cached, since the cache would land in each project you
+open rather than under one root.
 `knit-statusline doctor` prints the root it resolved and names anything left
 behind in the old one.
 
