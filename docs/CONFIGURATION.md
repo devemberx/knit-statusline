@@ -274,11 +274,49 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `output_style` | `name` | |
 | `fast_mode` | `state` | Only rendered when enabled |
 | `thinking` | `state` `icon` | `●` when on, dim `○` when off; set with `alwaysThinkingEnabled` in settings.json |
+| `mcp` | `icon` `count` `warn` `tools` `auth` `pending` `servers` | MCP servers attached to this session, read from the transcript; `{icon}` is `⛁` and `{warn}` is a preformatted ` ⚠3` counting servers reconnecting or awaiting authorization. Only rendered once something is attached or waiting — see [MCP servers](#mcp-servers) |
 | `caveman` | `mode` `icon` `savings` | Only while the [caveman](https://github.com/juliusbrussee/caveman) plugin is active; `{savings}` needs `/caveman-stats` and is out of the default template |
+| `config` | `summary` `labeled` `claude_md` `rules` `hooks` `mcp` | What this session loaded, counted off disk: non-empty `CLAUDE.md` files, `.claude/rules/*.md`, hook commands (plugin hooks included), MCP servers declared and not disabled. `{summary}` is `📋1 · 🪝6`, `{labeled}` is `📋 CLAUDE.md 1 · 🪝 hooks 6` — both drop every zero. The individual fields always print a number. Its `{mcp}` counts what is configured; `mcp` above counts what actually attached, so the two disagree when a server fails to start. Out of every preset — add it yourself |
 | `command` | `out` | Your own shell command |
 
 Abbreviated counts read as `62.1k`, `1.2M`, `364.9M`. The `_raw` fields give
 exact digits.
+
+### MCP servers
+
+The status line payload carries no MCP field, so `mcp` reads the roster out of
+the session transcript, where Claude Code records every change to the deferred
+tool set. That makes it a live figure: a server that drops mid-session leaves
+`{count}`, and the reconnect puts it back.
+
+`{count}` counts servers whose tools are loaded. `{warn}` adds together the two
+kinds of server that are not usable — one reconnecting, one waiting for you to
+authorize it — because both mean the same thing to a reader. `{pending}` and
+`{auth}` split them apart if you want the distinction.
+
+`{tools}` counts the tools those servers contribute, and nothing else: a session
+loads plenty of built-in tools the same way, and none of them are counted here.
+`{servers}` lists the names, sorted, in the form the tool names carry them —
+`claude_ai_TickTick`, not the `claude.ai TickTick` you configured. Neither is in
+the default template; add them yourself if you want them:
+
+```toml
+[segments.mcp]
+template = "{icon} {count}{warn} {servers}"
+```
+
+The segment is dropped entirely when nothing is attached and nothing is
+waiting, so a setup with no MCP servers never spends a slot on saying so. It is
+also dropped for the first moments of a session, before Claude Code has written
+the first tool-set record, and in sessions where deferred tool loading is off —
+those leave no record to read.
+
+Add it to a row like anything else:
+
+```toml
+[[lines]]
+segments = ["model", "dir", "mcp"]
+```
 
 ---
 
