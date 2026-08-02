@@ -142,6 +142,24 @@ func TestScanTodosRescansShrunkFile(t *testing.T) {
 	}
 }
 
+// Reset must clear stale Todos before any replacement line applies. Without
+// it a shrink to a document with no TodoWrite at all leaves old counts on
+// screen forever, since a non-TodoWrite line has nothing to overwrite them.
+func TestScanTodosClearsCountsOnShrinkWithoutTodoWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		todoLine(false, "completed", "completed", "completed", "pending"),
+	})
+	cur := scanTodosOnce(t, path, TodoCursor{})
+
+	writeLines(t, path, []string{`{"type":"user","uuid":"u-r","message":{"role":"user","content":[]}}`})
+	got := scanTodosOnce(t, path, cur).Todos
+
+	if want := (Todos{}); got != want {
+		t.Errorf("Todos = %+v, want %+v", got, want)
+	}
+}
+
 // Emptied list is a real answer, not a missing one. Segment read Total==0 and
 // drop, same as a session that never called tool.
 func TestScanTodosReadsClearedList(t *testing.T) {

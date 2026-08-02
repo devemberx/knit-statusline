@@ -15,7 +15,9 @@ import (
 // before any line, else first lines of new file fold into old state.
 //
 // Error return leave offset where caller had it, so a transient EMFILE or
-// permission blip resume rather than rescan cold.
+// permission blip resume rather than rescan cold. Exception: error after
+// shrink hit, offset already 0 and reset() already fired, so that path
+// rescans cold on next call regardless.
 func scanAppended(path string, offset int64, reset func(), apply func(line []byte)) (int64, error) {
 	info, err := os.Stat(path)
 	if err != nil {
