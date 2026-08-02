@@ -351,6 +351,14 @@ entirely.
 
 `CLAUDE_CONFIG_DIR` moves all of these beneath it, matching Claude Code, which
 reads `$CLAUDE_CONFIG_DIR/settings.json` and no longer looks at `~/.claude`.
+
+It has to be an absolute path. A relative value resolves against the working
+directory of whichever process reads it — Claude Code resolves it against the
+directory you started Claude Code in, `install` would resolve it against your
+shell's — so one value names two different roots. Rendering takes the value as
+it stands, matching Claude Code exactly; `install` and `uninstall` refuse it,
+and `doctor` reports it as a problem.
+
 That directory is also the trust boundary for `command=`: a project config may
 not run shell commands, and a user config may, because only you can write to
 your config root. Pointing the variable at a directory other people can write

@@ -247,6 +247,14 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "  ERROR      %v\n", e)
 		problems++
 	}
+	// Counted, not merely noted: install and uninstall refuse this value, and
+	// "status ok" printed beside a root nobody can install into read as
+	// nothing to fix.
+	if root != "" && !filepath.IsAbs(root) {
+		fmt.Fprintf(stdout, "  ERROR      config root %q is relative; it resolves against whichever\n", root)
+		fmt.Fprintln(stdout, "             directory reads it, so install and uninstall refuse it")
+		problems++
+	}
 	if problems == 0 {
 		fmt.Fprintln(stdout, "  status     ok")
 	}
@@ -300,10 +308,15 @@ func rootLabel(root string) string {
 }
 
 // rootOrigin say which directory supplied root. Moved root and default one
-// otherwise print alike, and user cannot tell doctor read wrong one.
+// otherwise print alike, and user cannot tell doctor read wrong one. Relative
+// value called out on same line: path printed beside it resolve against cwd of
+// whoever read it, so it name no fixed directory at all.
 func rootOrigin(env string) string {
 	if env == "" {
 		return ""
+	}
+	if !filepath.IsAbs(env) {
+		return "  (CLAUDE_CONFIG_DIR, relative)"
 	}
 	return "  (CLAUDE_CONFIG_DIR)"
 }
@@ -349,8 +362,12 @@ func configAdvice(root string) string {
 }
 
 // strayRoot name old ~/.claude when CLAUDE_CONFIG_DIR moved root elsewhere.
-// Empty when variable unset, home unknown, or both path name one directory --
-// majority never set it and must see no extra output.
+// Empty when variable unset, home unknown, relative, or both path name one
+// directory -- majority never set it and must see no extra output.
+//
+// Relative root silence whole block: its remedy is running install, which
+// refuse that same value, and its copy destination resolve against cwd. ERROR
+// above already name only fix there is.
 //
 // Identity by stat, not text: filepath.Clean normalise separator and dot
 // segment alone. Symlinked home, macOS /tmp vs /private/tmp, and Windows case
@@ -359,7 +376,7 @@ func configAdvice(root string) string {
 // legacy never existed -- common case, and missing directory leaves only text
 // to compare.
 func strayRoot(root, env string) string {
-	if env == "" {
+	if env == "" || !filepath.IsAbs(root) {
 		return ""
 	}
 	home := homeDir()

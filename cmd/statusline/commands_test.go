@@ -680,3 +680,81 @@ func TestDoctorSkipsStrayBlockAcrossASymlinkedHome(t *testing.T) {
 		t.Errorf("stray block fired across a symlinked home:\n%s", got)
 	}
 }
+
+// Relative CLAUDE_CONFIG_DIR name no fixed directory: it resolve against cwd
+// of whichever process read it, and Claude Code's differ from shell's. doctor
+// must say so and count it, else "status ok" sit beside root install refuse.
+func TestDoctorFlagsARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	t.Chdir(t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("doctor exited %d: %s", code, errOut.String())
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "(CLAUDE_CONFIG_DIR, relative)") {
+		t.Errorf("root line does not mark the value relative:\n%s", got)
+	}
+	if !strings.Contains(got, `config root "myconf" is relative`) {
+		t.Errorf("doctor does not report the relative root:\n%s", got)
+	}
+	if strings.Contains(got, "status     ok") {
+		t.Errorf("doctor called a root install refuses ok:\n%s", got)
+	}
+}
+
+// Stray block tell user run install and copy files into new root. Relative
+// root make both impossible: install refuse that value, and destination
+// resolve against cwd. Two instructions contradicting each other read as
+// doctor confused rather than as one thing to fix.
+func TestDoctorSkipsTheStrayBlockOnARelativeRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{config.UserPath(legacy), install.SettingsPath(legacy), install.BinaryPath(legacy)} {
+		if err := os.WriteFile(path, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired on a relative root:\n%s", got)
+	}
+	// Silence hold only while ERROR still name what to fix.
+	if !strings.Contains(got, `config root "myconf" is relative`) {
+		t.Errorf("doctor went quiet without reporting the relative root:\n%s", got)
+	}
+}
+
+// Refusal must reach command, not package alone, and land before anything
+// written.
+func TestInstallRefusesARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	if code := runInstall(nil, &out, &errOut); code == 0 {
+		t.Fatalf("install exited 0 with a relative root:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "relative") {
+		t.Errorf("stderr does not say the root is relative:\n%s", errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myconf")); !os.IsNotExist(err) {
+		t.Errorf("install created a directory under cwd, stat error = %v", err)
+	}
+}

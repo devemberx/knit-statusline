@@ -176,6 +176,26 @@ func TestRenderMarksABrokenConfig(t *testing.T) {
 	}
 }
 
+// Render take relative CLAUDE_CONFIG_DIR as it stand. install and uninstall
+// refuse that value and doctor report it, but render only read, and Claude
+// Code honour same value -- refusing here blank row over config Claude Code
+// itself load. Marker prove user layer got read: builtin preset name no
+// unknown segment, so it render clean.
+func TestRenderReadsARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	t.Chdir(t.TempDir())
+	writeUserConfig(t, "myconf", "[[lines]]\nsegments = [\"model\", \"no-such-segment\"]\n")
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	got := drawStdin(t, fixtures.Full)
+	if !strings.Contains(got, "⚠ statusline.toml") {
+		t.Errorf("render skipped the relative config root:\n%s", got)
+	}
+	if strings.TrimSpace(got) == "" {
+		t.Error("render printed nothing")
+	}
+}
+
 // Good config draw clean. Marker on every render would train user to ignore it.
 func TestRenderLeavesAGoodConfigUnmarked(t *testing.T) {
 	root := isolate(t)

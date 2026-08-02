@@ -146,6 +146,22 @@ type Options struct {
 	Force bool
 }
 
+// checkAbs refuse relative root. Empty root already rejected, but relative one
+// resolve too -- against cwd of whichever process read it. Claude Code resolve
+// CLAUDE_CONFIG_DIR against its own directory, install against user's shell,
+// so one value name two roots and row point at binary nobody installed.
+// Written command inherit that: settings.json record relative path Claude Code
+// resolve for itself again.
+//
+// Render path take no such check. It only read, matching Claude Code exactly,
+// and refusing there blank row over config Claude Code accept.
+func checkAbs(root string) error {
+	if filepath.IsAbs(root) {
+		return nil
+	}
+	return fmt.Errorf("config root %q is relative; set CLAUDE_CONFIG_DIR to an absolute path", root)
+}
+
 // Install copy this binary beside user's settings, point statusLine at copy,
 // lay down starting config.
 //
@@ -156,6 +172,9 @@ func Install(opts Options) (*Result, error) {
 	// binary into whatever directory this ran from.
 	if opts.Root == "" {
 		return nil, errors.New("no config directory")
+	}
+	if err := checkAbs(opts.Root); err != nil {
+		return nil, err
 	}
 	if opts.Preset == "" {
 		opts.Preset = config.DefaultPreset
@@ -222,6 +241,9 @@ func Uninstall(root string) (*Result, error) {
 	// binary in whatever directory this ran from.
 	if root == "" {
 		return nil, errors.New("no config directory")
+	}
+	if err := checkAbs(root); err != nil {
+		return nil, err
 	}
 	res := &Result{
 		SettingsPath:    SettingsPath(root),

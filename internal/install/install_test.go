@@ -805,3 +805,48 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// Relative root resolve against cwd of whichever process read it. Claude Code
+// resolve CLAUDE_CONFIG_DIR against its own directory, install against user's
+// shell, so install would write config Claude Code never open -- and drop our
+// binary plus settings.json into whatever directory user happen to sit in.
+func TestInstallRejectsARelativeRoot(t *testing.T) {
+	binary := fakeBinary(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	_, err := Install(Options{Root: "myconf", Binary: binary})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "relative") {
+		t.Errorf("error %q does not say the root is relative", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myconf")); !os.IsNotExist(err) {
+		t.Errorf("install created a directory under cwd, stat error = %v", err)
+	}
+}
+
+// Uninstall reach os.Remove, so relative root hunt a binary under cwd.
+func TestUninstallRejectsARelativeRoot(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll("myconf", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoy := BinaryPath("myconf")
+	if err := os.WriteFile(decoy, []byte("not ours\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Uninstall("myconf")
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "relative") {
+		t.Errorf("error %q does not say the root is relative", err)
+	}
+	if _, err := os.Stat(decoy); err != nil {
+		t.Errorf("cwd binary touched: %v", err)
+	}
+}

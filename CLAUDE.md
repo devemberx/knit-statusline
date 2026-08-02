@@ -79,6 +79,10 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
   and cache together. Resolver return empty when no home: `filepath.Join` on
   empty string yield relative `.claude`, and that silently disable empty-value
   guard in `install` and `config.Load`.
+- Relative root refused by `install` and `uninstall`, taken as-is by render.
+  Relative value resolve against cwd of whichever process read it, and Claude
+  Code's cwd is not user's shell — one value name two roots. Write command must
+  not guess which; render must match Claude Code, so it never refuse.
 
 Contribution rules — branch names, commit format, PR and merge — live in
 [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md). Not repeated here.
