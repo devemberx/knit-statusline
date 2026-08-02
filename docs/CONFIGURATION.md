@@ -262,6 +262,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `dir` | `name` `path` `project` `worktree` `git` `branch` `dirty` | `{git}` is a preformatted ` (branch*)`, empty outside a repo |
 | `session` | `duration` `id` `name` `icon` | `{icon}` is `⏱` |
 | `effort` | `level` `icon` | Absent on models without an effort parameter; `{icon}` tracks the level — see [Colors](#colors) |
+| `todo` | `icon` `ratio` `done` `total` `pending` | Read from the transcript's last `TodoWrite` call; absent until the session writes one, and `{icon}` is `☑` — green once `{done}` reaches `{total}` |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
 | `tokens` | `io` `cache` `cache_hit` `input` `cache_write` `cache_read` `output` `total` `input_raw` `output_raw` | Read from the transcript, so the totals are cumulative |
@@ -389,6 +390,20 @@ entirely.
 
 `CLAUDE_CONFIG_DIR` moves all of these beneath it, matching Claude Code, which
 reads `$CLAUDE_CONFIG_DIR/settings.json` and no longer looks at `~/.claude`.
+
+It has to be an absolute path. A relative value resolves against the working
+directory of whichever process reads it — Claude Code resolves it against the
+directory you started Claude Code in, `install` would resolve it against your
+shell's — so one value names two different roots. Rendering takes the value as
+it stands, because it has to resolve the root exactly the way Claude Code does
+and the row must never blank over a config Claude Code itself loads; `install`
+and `uninstall` refuse it, and `doctor` reports it as a problem.
+
+Rendering from a relative root caches nothing. The cache lives under the config
+root, so a relative one would drop a `statusline-cache/` into every project
+directory you open Claude Code in, none of them shared. Losing the cache costs
+a full transcript rescan per render, which is the cheaper half of that trade.
+
 That directory is also the trust boundary for `command=`: a project config may
 not run shell commands, and a user config may, because only you can write to
 your config root. Pointing the variable at a directory other people can write

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/devemberx/knit-statusline/internal/config"
+	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/install"
 	"github.com/devemberx/knit-statusline/internal/schema"
 )
@@ -43,7 +44,7 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
 	}
 	full := out.String()
-	for _, want := range []string{"config:", "sample: complete data", "Opus 4.8", "current", "--sparse"} {
+	for _, want := range []string{"config:", "sample: complete data", "Opus 4.8", "current", "--sparse", "☑ 3/7"} {
 		if !strings.Contains(full, want) {
 			t.Errorf("preview missing %q:\n%s", want, full)
 		}
@@ -64,6 +65,105 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 	}
 	if !strings.Contains(sparse, "weekly  ○○○○○○○○○○   …%") {
 		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
+	}
+}
+
+// Fixture transcript belong to complete-data run alone. --sparse and
+// --unknown exist to show what a row look like with values missing, and todo
+// dropping out is one of those shapes.
+func TestPreviewDegradedRunsDrawNoTodoSlot(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+
+	for _, flag := range []string{"--sparse", "--unknown"} {
+		var out, errOut bytes.Buffer
+		if code := runPreview([]string{flag}, &out, &errOut); code != 0 {
+			t.Fatalf("%s exit = %d, stderr = %q", flag, code, errOut.String())
+		}
+		if strings.Contains(out.String(), "☑") {
+			t.Errorf("%s preview drew a todo slot:\n%s", flag, out.String())
+		}
+	}
+}
+
+// Unwritable cache directory drop todo slot, and dropped slot read as "no
+// list" -- exactly what fixture transcript was added to rule out. Preview exist
+// to catch bad edit, so problem go to stderr and row still draw.
+func TestPreviewWarnsWhenFixtureTranscriptFails(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+
+	// Regular file where config root belong. MkdirAll under it fail on every
+	// platform, unlike chmod 000, which root ignore.
+	blocked := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(blocked, "root"))
+
+	var out, errOut bytes.Buffer
+	if code := runPreview(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "preview transcript") {
+		t.Errorf("fixture write failed in silence, stderr:\n%s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Opus 4.8") {
+		t.Errorf("preview lost the row over one slot:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "☑") {
+		t.Errorf("todo drew without a transcript:\n%s", out.String())
+	}
+}
+
+// Preview must leave one transcript file however often it run, else cache
+// directory fill with per-run copies and every one keep its own scan cursor.
+func TestPreviewTranscriptPathIsFixed(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := writePreviewTranscript(dir)
+	if err != nil {
+		t.Fatalf("writePreviewTranscript: %v", err)
+	}
+	second, err := writePreviewTranscript(dir)
+	if err != nil {
+		t.Fatalf("writePreviewTranscript: %v", err)
+	}
+	if first != second {
+		t.Errorf("path moved between runs: %q then %q", first, second)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("two runs left %d files, want 1", len(entries))
+	}
+
+	got, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, fixtures.TodosJSONL) {
+		t.Error("written transcript does not match the fixture")
+	}
+}
+
+// Unwritable cache directory must surface as error runPreview can ignore,
+// not a panic and not a half-written path it goes on to scan.
+func TestWritePreviewTranscriptReportsUnwritableDir(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := writePreviewTranscript(filepath.Join(blocked, "cache"))
+	if err == nil {
+		t.Fatal("writing under a file returned no error")
+	}
+	if path != "" {
+		t.Errorf("returned path %q alongside an error, want empty", path)
 	}
 }
 
@@ -330,6 +430,68 @@ func TestDoctorReportsAStrippedCommandOnce(t *testing.T) {
 	}
 }
 
+// Relative CLAUDE_CONFIG_DIR name no fixed directory: it resolve against cwd
+// of whichever process read it, and Claude Code's differ from shell's. doctor
+// must say so and count it, else "status ok" sit beside root install refuse.
+func TestDoctorFlagsARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	t.Chdir(t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("doctor exited %d: %s", code, errOut.String())
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "(CLAUDE_CONFIG_DIR, relative)") {
+		t.Errorf("root line does not mark the value relative:\n%s", got)
+	}
+	if !strings.Contains(got, `config root "myconf" is relative`) {
+		t.Errorf("doctor does not report the relative root:\n%s", got)
+	}
+	if strings.Contains(got, "status     ok") {
+		t.Errorf("doctor called a root install refuses ok:\n%s", got)
+	}
+	// Cache line blank on such root read as doctor breaking, not as caching off.
+	if !strings.Contains(got, "cache      (disabled)") {
+		t.Errorf("cache line does not say caching is off:\n%s", got)
+	}
+}
+
+// Stray block tell user run install and copy files into new root. Relative
+// root make both impossible: install refuse that value, and destination
+// resolve against cwd. Two instructions contradicting each other read as
+// doctor confused rather than as one thing to fix.
+func TestDoctorSkipsTheStrayBlockOnARelativeRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{config.UserPath(legacy), install.SettingsPath(legacy), install.BinaryPath(legacy)} {
+		if err := os.WriteFile(path, []byte("x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired on a relative root:\n%s", got)
+	}
+	// Silence hold only while ERROR still name what to fix.
+	if !strings.Contains(got, `config root "myconf" is relative`) {
+		t.Errorf("doctor went quiet without reporting the relative root:\n%s", got)
+	}
+}
+
 func TestInstallUninstallRoundTrip(t *testing.T) {
 	root := isolate(t)
 	var out, errOut bytes.Buffer
@@ -352,6 +514,58 @@ func TestInstallUninstallRoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "removed the status line") {
 		t.Errorf("uninstall output = %q", out.String())
+	}
+}
+
+// Refusal must reach command, not package alone, and land before anything
+// written.
+func TestInstallRefusesARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	if code := runInstall(nil, &out, &errOut); code == 0 {
+		t.Fatalf("install exited 0 with a relative root:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "relative") {
+		t.Errorf("stderr does not say the root is relative:\n%s", errOut.String())
+	}
+	// install package read no environment, so command layer own this half of
+	// message. Without it user learn root is wrong and no way to fix it.
+	if !strings.Contains(errOut.String(), "CLAUDE_CONFIG_DIR") {
+		t.Errorf("stderr does not name the variable to fix:\n%s", errOut.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "myconf")); !os.IsNotExist(err) {
+		t.Errorf("install created a directory under cwd, stat error = %v", err)
+	}
+}
+
+// Uninstall reach os.Remove, so relative root hunt our binary under cwd. Guard
+// live in install package, but only command layer prove it reach user.
+func TestUninstallRefusesARelativeConfigRoot(t *testing.T) {
+	isolate(t)
+	dir := t.TempDir()
+	t.Chdir(dir)
+	if err := os.MkdirAll("myconf", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	decoy := install.BinaryPath("myconf")
+	if err := os.WriteFile(decoy, []byte("not ours\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "myconf")
+
+	var out, errOut bytes.Buffer
+	if code := runUninstall(nil, &out, &errOut); code == 0 {
+		t.Fatalf("uninstall exited 0 with a relative root:\n%s", out.String())
+	}
+	if !strings.Contains(errOut.String(), "relative") {
+		t.Errorf("stderr does not say the root is relative:\n%s", errOut.String())
+	}
+	if _, err := os.Stat(decoy); err != nil {
+		t.Errorf("cwd binary touched: %v", err)
 	}
 }
 

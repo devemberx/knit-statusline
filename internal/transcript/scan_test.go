@@ -146,7 +146,10 @@ func TestTruncationTriggersRescan(t *testing.T) {
 	})
 	_, cache := scanOnce(t, path, nil)
 
-	writeLines(t, path, []string{assistantLine("msg_c", "claude-opus-4-8", 50, 0, 0, 1)})
+	// Reuse msg_b, id pre-truncation cursor already saw as LastMessageID:
+	// proves reset clears that id, not only Totals. Left stale, this line
+	// reads as duplicate and its tokens go uncounted.
+	writeLines(t, path, []string{assistantLine("msg_b", "claude-opus-4-8", 50, 0, 0, 1)})
 
 	got, _ := scanOnce(t, path, cache)
 	if got.Input != 50 || got.Output != 1 {

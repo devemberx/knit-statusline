@@ -137,13 +137,34 @@ type Result struct {
 }
 
 type Options struct {
-	// Claude Code config root, already resolved. Empty is rejected.
+	// Claude Code config root, already resolved. Empty and relative rejected.
 	Root string
 	// Running executable, copied into place by Install.
 	Binary string
 	Preset string
 	// Overwrite existing statusline.toml.
 	Force bool
+}
+
+// ErrRelativeRoot let caller name knob that supplied root. This package read no
+// environment: relative value reach it from CLAUDE_CONFIG_DIR and from relative
+// $HOME alike, so remedy is not ours to print.
+var ErrRelativeRoot = errors.New("config root is relative")
+
+// checkAbs refuse relative root. Empty root already rejected, but relative one
+// resolve too -- against cwd of whichever process read it. Claude Code resolve
+// CLAUDE_CONFIG_DIR against its own directory, install against user's shell,
+// so one value name two roots and row point at binary nobody installed.
+// Written command inherit that: settings.json record relative path Claude Code
+// resolve for itself again.
+//
+// Render path take no such check. It must resolve root exactly as Claude Code
+// do, and never-blank rule forbid refusing config Claude Code itself load.
+func checkAbs(root string) error {
+	if filepath.IsAbs(root) {
+		return nil
+	}
+	return fmt.Errorf("%w: %q resolves against whichever directory reads it", ErrRelativeRoot, root)
 }
 
 // Install copy this binary beside user's settings, point statusLine at copy,
@@ -156,6 +177,9 @@ func Install(opts Options) (*Result, error) {
 	// binary into whatever directory this ran from.
 	if opts.Root == "" {
 		return nil, errors.New("no config directory")
+	}
+	if err := checkAbs(opts.Root); err != nil {
+		return nil, err
 	}
 	if opts.Preset == "" {
 		opts.Preset = config.DefaultPreset
@@ -222,6 +246,9 @@ func Uninstall(root string) (*Result, error) {
 	// binary in whatever directory this ran from.
 	if root == "" {
 		return nil, errors.New("no config directory")
+	}
+	if err := checkAbs(root); err != nil {
+		return nil, err
 	}
 	res := &Result{
 		SettingsPath:    SettingsPath(root),

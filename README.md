@@ -15,7 +15,7 @@
 </div>
 
 ```
-Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high
+Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high │ ☑ 3/7
 
 current ●●●●○○○○○○  42% ⟳ 5:00pm
 weekly  ●●○○○○○○○○  18% ⟳ jul 27, 5:00pm
@@ -29,8 +29,8 @@ drop, or restyle without touching code.
 
 - 🧶 **Compose your own rows.** Reorder segments, drop what you do not want, put
   two on one line — a config edit, not a code edit.
-- 🧱 **19 built-in segments.** Model, context, directory and git, session,
-  effort, rate limits, cost, tokens, lines changed, PR.
+- 🧱 **22 built-in segments.** Model, context, directory and git, session,
+  effort, todo lists, MCP servers, rate limits, cost, tokens, lines changed, PR.
 - 🔢 **Cumulative token tracking.** Fresh input, cache writes, cache reads and
   output counted separately, because they are priced separately.
 - 🔌 **Anything else you want.** A `command` segment runs any shell command, with
@@ -81,6 +81,12 @@ npx @devemberx/knit-statusline install --preset minimal
 
 Set `CLAUDE_CONFIG_DIR` and every path above moves beneath it — that is the
 directory Claude Code itself reads, and `~/.claude` stops being consulted.
+Give it an absolute path: a relative one resolves against the working directory
+of whichever process reads it, and Claude Code's is not your shell's, so
+`install` and `uninstall` refuse it rather than write somewhere nothing reads.
+The row still draws from a relative root — Claude Code loads that config, so we
+do too — but nothing is cached, since the cache would land in each project you
+open rather than under one root.
 `knit-statusline doctor` prints the root it resolved and names anything left
 behind in the old one.
 
@@ -160,7 +166,7 @@ example.
 
 ## 📚 Documentation
 
-- **[Configuration](docs/CONFIGURATION.md)** — the layout model, all 19 segments
+- **[Configuration](docs/CONFIGURATION.md)** — the layout model, all 22 segments
   and their fields, templates and alignment, every option, presets, and
   per-project overrides.
 - **[Contributing](.github/CONTRIBUTING.md)** — setup, commit format, and the
