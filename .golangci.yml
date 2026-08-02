@@ -93,6 +93,14 @@ linters:
         linters:
           - gosec
 
+      # G304 file-inclusion taint: settings, manifest and registry paths derive
+      # from CLAUDE_CONFIG_DIR, $HOME or workspace.project_dir, never from
+      # stdin. Every read sit behind Stat regular-file check and size cap.
+      - path: internal/segment/configcount\.go
+        text: G304
+        linters:
+          - gosec
+
       # G204 subprocess taint: command segment run user's own command by design.
       # G301 dir mode: command cache sit under config root at conventional
       # 0o755. Scoped per file, so a later segment shelling out get flagged.
