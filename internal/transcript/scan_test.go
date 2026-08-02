@@ -491,10 +491,12 @@ func TestLastSkillSurvivesIncrementalScan(t *testing.T) {
 }
 
 // Every other tool_use share block shape. Only Skill name a skill.
+// Grep pattern value "Skill" trips skillUseProbe on raw bytes same as a real
+// invocation would, so decode runs -- guard rejects on name, not on probe.
 func TestOtherToolUseDoesNotSetLastSkill(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeLines(t, path, []string{
-		`{"type":"assistant","message":{"id":"msg_a","model":"claude-opus-4-8","content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"echo Skill"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}`,
+		`{"type":"assistant","message":{"id":"msg_a","model":"claude-opus-4-8","content":[{"type":"tool_use","id":"toolu_01","name":"Grep","input":{"pattern":"Skill"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}`,
 	})
 
 	sum, _ := scanOnce(t, path, nil)
