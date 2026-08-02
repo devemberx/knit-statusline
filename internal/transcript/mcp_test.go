@@ -10,21 +10,37 @@ import (
 // Line shaped like attachment Claude Code write when deferred tool set change.
 // addedNames/removedNames are deltas; two server lists are whole snapshots
 // taken at that moment.
+//
+// Empty list, never null: recorded attachments carry key with [] when nobody
+// wait, and leave it out altogether otherwise. Marshalling nil slice would
+// write null, third shape no transcript hold.
 func deltaLine(t *testing.T, added, removed, pending, auth []string) string {
 	t.Helper()
 	att := map[string]any{
 		"type":                "deferred_tools_delta",
-		"addedNames":          added,
-		"removedNames":        removed,
+		"addedNames":          orEmpty(added),
+		"removedNames":        orEmpty(removed),
 		"readdedNames":        []string{},
-		"pendingMcpServers":   pending,
-		"needsAuthMcpServers": auth,
+		"pendingMcpServers":   orEmpty(pending),
+		"needsAuthMcpServers": orEmpty(auth),
 	}
+	return marshalDelta(t, att)
+}
+
+func marshalDelta(t *testing.T, att map[string]any) string {
+	t.Helper()
 	b, err := json.Marshal(map[string]any{"type": "system", "attachment": att})
 	if err != nil {
 		t.Fatalf("marshal delta: %v", err)
 	}
 	return string(b)
+}
+
+func orEmpty(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func scanMCPFile(t *testing.T, lines []string) (MCPState, bool) {
@@ -125,6 +141,55 @@ func TestScanMCPTakesLastServerListSnapshot(t *testing.T) {
 	}
 }
 
+// Recorded attachments leave needsAuthMcpServers out entirely -- measured in
+// three sessions, one of them reporting three such servers on later delta.
+// Absent list is no proof of zero, and reading it as one drop ⚠ off row while
+// servers still wait for OAuth.
+func TestScanMCPKeepsCountsWhenServerListAbsent(t *testing.T) {
+	full := deltaLine(t, []string{"mcp__srv__a"}, nil,
+		[]string{"claude.ai TickTick"},
+		[]string{"claude.ai Gmail", "claude.ai Notion"})
+	// Same attachment minus both server lists.
+	bare := marshalDelta(t, map[string]any{
+		"type":         "deferred_tools_delta",
+		"addedNames":   []string{},
+		"removedNames": []string{},
+		"readdedNames": []string{},
+	})
+
+	got, ok := scanMCPFile(t, []string{full, bare})
+	if !ok {
+		t.Fatal("ScanMCP reported unknown, want state")
+	}
+	if got.Pending != 1 {
+		t.Errorf("Pending = %d, want 1", got.Pending)
+	}
+	if got.NeedsAuth != 2 {
+		t.Errorf("NeedsAuth = %d, want 2", got.NeedsAuth)
+	}
+}
+
+// readdedNames measured empty in every recorded session, its names repeating in
+// addedNames. Folding it in cost nothing and outlive writer that stop repeating
+// them, which would else strand reconnected server at zero.
+func TestScanMCPFoldsReaddedNames(t *testing.T) {
+	tools := []string{"mcp__srv__a"}
+	readd := marshalDelta(t, map[string]any{
+		"type":         "deferred_tools_delta",
+		"addedNames":   []string{},
+		"removedNames": []string{},
+		"readdedNames": tools,
+	})
+	got, _ := scanMCPFile(t, []string{
+		deltaLine(t, tools, nil, nil, nil),
+		deltaLine(t, nil, tools, []string{"srv"}, nil),
+		readd,
+	})
+	if len(got.Servers) != 1 || got.Tools != 1 {
+		t.Errorf("Servers = %v Tools = %d, want [srv] and 1", got.Servers, got.Tools)
+	}
+}
+
 // No attachment reached yet -- session younger than first delta, which sit some
 // 16KB in. Unknown, never zero: fresh session claiming no servers contradict
 // roster it is about to print.
@@ -156,6 +221,50 @@ func TestScanMCPReadsLinePastScannerLimit(t *testing.T) {
 	got, ok := scanMCPFile(t, []string{line})
 	if !ok || len(got.Servers) != 1 {
 		t.Errorf("Servers = %v ok = %v, want [srv] and true", got.Servers, ok)
+	}
+}
+
+// Line past mcpReadBuffer arrive in pieces and get stitched back together.
+// Longest recorded transcript line ran 2.7MB, so this path carry real traffic
+// beyond this test.
+//
+// Delta name sit in first piece and tool name in last, so scan that decode
+// pieces separately report no server and fail here.
+func TestScanMCPReadsLinePastReadBuffer(t *testing.T) {
+	filler := make([]string, 0, 12000)
+	for i := range 12000 {
+		filler = append(filler, "pad__"+strings.Repeat("x", 20)+string(rune('a'+i%26)))
+	}
+	line := deltaLine(t, append(filler, "mcp__srv__a"), nil, nil, nil)
+	if len(line) <= mcpReadBuffer {
+		t.Fatalf("test line is %d bytes, need over %d to overflow buffer",
+			len(line), mcpReadBuffer)
+	}
+	got, ok := scanMCPFile(t, []string{line, deltaLine(t, nil, nil, nil, nil)})
+	if !ok || len(got.Servers) != 1 || got.Servers[0] != "srv" {
+		t.Errorf("Servers = %v ok = %v, want [srv] and true", got.Servers, ok)
+	}
+}
+
+// Oversized line stop at its newline. Recorded transcript carry 2.7MB line with
+// ordinary lines behind it, and reader losing that boundary glue two together
+// and break both.
+func TestScanMCPKeepsLinesApartPastReadBuffer(t *testing.T) {
+	pad := make([]string, 0, 12000)
+	for i := range 12000 {
+		pad = append(pad, "pad__"+strings.Repeat("x", 20)+string(rune('a'+i%26)))
+	}
+	long := deltaLine(t, append(pad, "mcp__first__a"), nil, nil, nil)
+	if len(long) <= mcpReadBuffer {
+		t.Fatalf("first line is %d bytes, need over %d", len(long), mcpReadBuffer)
+	}
+	got, ok := scanMCPFile(t, []string{
+		long,
+		deltaLine(t, []string{"mcp__second__a"}, nil, nil, nil),
+	})
+	want := []string{"first", "second"}
+	if !ok || strings.Join(got.Servers, ",") != strings.Join(want, ",") {
+		t.Errorf("Servers = %v ok = %v, want %v and true", got.Servers, ok, want)
 	}
 }
 

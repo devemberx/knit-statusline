@@ -11,14 +11,24 @@ import (
 )
 
 // mcpDelta mirror attachment Claude Code write when deferred tool set change.
+//
+// Server lists go out as [] rather than null: recorded attachments carry key
+// with [] when nobody wait, and omit it altogether otherwise. Null is third
+// shape no transcript hold, and scan read it as unreported.
 func mcpDelta(t *testing.T, added, removed, pending, auth []string) string {
 	t.Helper()
+	orEmpty := func(s []string) []string {
+		if s == nil {
+			return []string{}
+		}
+		return s
+	}
 	b, err := json.Marshal(map[string]any{"attachment": map[string]any{
 		"type":                "deferred_tools_delta",
-		"addedNames":          added,
-		"removedNames":        removed,
-		"pendingMcpServers":   pending,
-		"needsAuthMcpServers": auth,
+		"addedNames":          orEmpty(added),
+		"removedNames":        orEmpty(removed),
+		"pendingMcpServers":   orEmpty(pending),
+		"needsAuthMcpServers": orEmpty(auth),
 	}})
 	if err != nil {
 		t.Fatalf("marshal delta: %v", err)
@@ -112,8 +122,8 @@ func TestMCPExposesEveryField(t *testing.T) {
 	c := mcpCtx(t, mcpDelta(t,
 		[]string{"mcp__srv_a__go", "mcp__srv_a__stop", "mcp__srv_b__go"}, nil,
 		[]string{"claude.ai TickTick"}, []string{"claude.ai Gmail"}))
-	c.Cfg.Template = "{icon}|{count}|{tools}|{pending}|{auth}|{servers}"
-	if want := "⛁|2|3|1|1|srv_a srv_b"; draw(c) != want {
+	c.Cfg.Template = "{icon}|{count}|{warn}|{tools}|{pending}|{auth}|{servers}"
+	if want := "⛁|2| ⚠2|3|1|1|srv_a srv_b"; draw(c) != want {
 		t.Errorf("rendered %q, want %q", draw(c), want)
 	}
 }

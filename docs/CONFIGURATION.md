@@ -293,6 +293,17 @@ kinds of server that are not usable — one reconnecting, one waiting for you to
 authorize it — because both mean the same thing to a reader. `{pending}` and
 `{auth}` split them apart if you want the distinction.
 
+`{tools}` counts the tools those servers contribute, and nothing else: a session
+loads plenty of built-in tools the same way, and none of them are counted here.
+`{servers}` lists the names, sorted, in the form the tool names carry them —
+`claude_ai_TickTick`, not the `claude.ai TickTick` you configured. Neither is in
+the default template; add them yourself if you want them:
+
+```toml
+[segments.mcp]
+template = "{icon} {count}{warn} {servers}"
+```
+
 The segment is dropped entirely when nothing is attached and nothing is
 waiting, so a setup with no MCP servers never spends a slot on saying so. It is
 also dropped for the first moments of a session, before Claude Code has written
