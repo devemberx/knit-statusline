@@ -217,14 +217,27 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout, "knit-statusline "+version)
 	fmt.Fprintln(stdout)
 
+	// No root mean every path below join to bare filename -- "settings.json",
+	// "statusline.toml" -- naming file in whatever directory doctor ran from.
+	// Printing that invite user to edit stranger, and existsNote stat it too,
+	// so their absent config lose its "(not present)" marker while
+	// Configuration block below correctly report builtin.
+	settings, userConfig, cache := noHome, noHome, noHome
+	if root != "" {
+		settingsPath, configPath := install.SettingsPath(root), config.UserPath(root)
+		settings = settingsPath + existsNote(settingsPath)
+		userConfig = configPath + existsNote(configPath)
+		cache = cachePath(root)
+	}
+
 	fmt.Fprintln(stdout, "Paths")
-	fmt.Fprintf(stdout, "  root       %s%s%s\n", rootLabel(root), rootOrigin(env), existsNote(root))
-	fmt.Fprintf(stdout, "  settings   %s%s\n", install.SettingsPath(root), existsNote(install.SettingsPath(root)))
-	fmt.Fprintf(stdout, "  config     %s%s\n", config.UserPath(root), existsNote(config.UserPath(root)))
+	fmt.Fprintf(stdout, "  root       %s%s%s\n", rootLabel(root), rootOrigin(env), rootNote(root))
+	fmt.Fprintf(stdout, "  settings   %s\n", settings)
+	fmt.Fprintf(stdout, "  config     %s\n", userConfig)
 	if project != "" {
 		fmt.Fprintf(stdout, "  project    %s%s\n", config.ProjectPath(project), existsNote(config.ProjectPath(project)))
 	}
-	fmt.Fprintf(stdout, "  cache      %s\n", cacheDir())
+	fmt.Fprintf(stdout, "  cache      %s\n", cache)
 	fmt.Fprintln(stdout)
 
 	res := config.Load(root, project)
@@ -290,13 +303,28 @@ func existsNote(path string) string {
 	return ""
 }
 
+// noHome stand for every path doctor cannot name. One wording across all four
+// lines: four blanks, or four bare filenames, both read as doctor breaking
+// rather than as home missing.
+const noHome = "(no home directory)"
+
 // rootLabel keep root line printable when no home exist. Blank value read as
 // missing output rather than missing home.
 func rootLabel(root string) string {
 	if root == "" {
-		return "(no home directory)"
+		return noHome
 	}
 	return root
+}
+
+// rootNote skip presence marker when no root. existsNote("") stat empty path,
+// fail, and print "(not present)" beside "(no home directory)" -- two answers
+// to one question, second one about file nobody named.
+func rootNote(root string) string {
+	if root == "" {
+		return ""
+	}
+	return existsNote(root)
 }
 
 // rootOrigin say which directory supplied root. Moved root and default one
