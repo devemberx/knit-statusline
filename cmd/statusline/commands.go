@@ -251,25 +251,17 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "  status     ok")
 	}
 	if legacy := strayRoot(root, env); legacy != "" {
-		strays := [][2]string{
-			{"config", config.UserPath(legacy)},
-			{"binary", install.BinaryPath(legacy)},
-			{"settings", install.SettingsPath(legacy)},
-		}
-		var found [][2]string
-		for _, s := range strays {
-			if _, err := os.Stat(s[1]); err == nil {
-				found = append(found, s)
-			}
-		}
-		if len(found) > 0 {
+		if found := strays(legacy, root); len(found) > 0 {
 			fmt.Fprintln(stdout)
 			fmt.Fprintf(stdout, "Stray files in %s\n", legacy)
 			fmt.Fprintf(stdout, "  Claude Code reads %s now, so nothing below is loaded.\n", root)
 			for _, s := range found {
-				fmt.Fprintf(stdout, "  %-10s %s\n", s[0], s[1])
+				fmt.Fprintf(stdout, "  %-10s %s\n", s.label, s.path)
+				fmt.Fprintf(stdout, "  %-10s %s\n", "", s.advice)
 			}
-			fmt.Fprintln(stdout, "  Run `knit-statusline install` to set up the new root, then delete these.")
+			fmt.Fprintln(stdout, "  Run `knit-statusline install` to populate the new root.")
+			fmt.Fprintln(stdout, "  Then unset CLAUDE_CONFIG_DIR and run `knit-statusline uninstall` to clear")
+			fmt.Fprintln(stdout, "  the old one -- it drops our binary and our statusLine key, nothing else.")
 		}
 	}
 	fmt.Fprintln(stdout)
@@ -314,6 +306,46 @@ func rootOrigin(env string) string {
 		return ""
 	}
 	return "  (CLAUDE_CONFIG_DIR)"
+}
+
+// stray name one file left in old root, with what to do about it. Advice
+// belong per file, not per block: blanket "delete these" reach settings.json,
+// which hold user's hooks, permissions and enabled plugins -- config this
+// program never owned and install itself only ever merge into.
+type stray struct {
+	label  string
+	path   string
+	advice string
+}
+
+// strays list what survive in old root, in migration order: user's own layout
+// first, our leavings after. Absent file drop out, so block stay silent for
+// anyone who moved root before ever installing.
+func strays(legacy, root string) []stray {
+	candidates := []stray{
+		{"config", config.UserPath(legacy), configAdvice(root)},
+		{"binary", install.BinaryPath(legacy), "Our old copy."},
+		{"settings", install.SettingsPath(legacy), "Your hooks, permissions and plugins. Deleting it loses them."},
+	}
+	var found []stray
+	for _, s := range candidates {
+		if _, err := os.Stat(s.path); err == nil {
+			found = append(found, s)
+		}
+	}
+	return found
+}
+
+// configAdvice say copy only into root holding no statusline.toml yet.
+// install itself refuse to overwrite one without --force, so unconditional
+// "copy it over" advise exactly what install decline to do -- and stray file is
+// by definition abandoned one, so that copy revert live layout to stale.
+func configAdvice(root string) string {
+	dst := config.UserPath(root)
+	if _, err := os.Stat(dst); err == nil {
+		return "Your old layout. " + dst + " already holds one -- merge, do not copy over it."
+	}
+	return "Your layout. Copy it to " + dst + "."
 }
 
 // strayRoot name old ~/.claude when CLAUDE_CONFIG_DIR moved root elsewhere.

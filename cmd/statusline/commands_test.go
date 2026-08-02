@@ -526,6 +526,12 @@ func TestDoctorNamesTheConfigRootVariable(t *testing.T) {
 	if !strings.Contains(got, "(CLAUDE_CONFIG_DIR)") {
 		t.Errorf("doctor does not say where the root came from:\n%s", got)
 	}
+	// isolate never create ~/.claude, so old root hold nothing of ours. Block
+	// firing here send user to run uninstall against directory with no install
+	// in it. Pin both guards: Stat filter in strays, len(found) in runDoctor.
+	if strings.Contains(got, "Stray files") {
+		t.Errorf("stray block fired with nothing left in the old root:\n%s", got)
+	}
 }
 
 // File left in old root is read by nobody. Five causes make a segment vanish and
@@ -542,7 +548,8 @@ func TestDoctorListsStrayFilesInTheOldRoot(t *testing.T) {
 	if err := os.WriteFile(orphan, []byte("[[lines]]\nsegments = [\"model\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	moved := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
 
 	var out, errOut bytes.Buffer
 	runDoctor(nil, &out, &errOut)
@@ -553,6 +560,80 @@ func TestDoctorListsStrayFilesInTheOldRoot(t *testing.T) {
 	}
 	if !strings.Contains(got, orphan) {
 		t.Errorf("doctor omits the stray config %q:\n%s", orphan, got)
+	}
+	// statusline.toml is user's layout. Naming destination turn report into
+	// migration step; "it is over there" alone leave them to guess.
+	if !strings.Contains(got, "Copy it to "+config.UserPath(moved)) {
+		t.Errorf("doctor does not name where to copy the stray config:\n%s", got)
+	}
+}
+
+// Old settings.json hold user's hooks, permissions and enabled plugins --
+// config this program never owned, and install itself only ever merge into.
+// Blanket "delete these" cost them all of that, and no reinstall bring it back.
+func TestDoctorNeverTellsUserToDeleteStraySettings(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settings := install.SettingsPath(legacy)
+	if err := os.WriteFile(settings, []byte(`{"hooks":{},"permissions":{}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if !strings.Contains(got, settings) {
+		t.Fatalf("doctor omits the stray settings.json:\n%s", got)
+	}
+	if !strings.Contains(got, "Deleting it loses them") {
+		t.Errorf("doctor does not say what deleting settings.json costs:\n%s", got)
+	}
+	if strings.Contains(got, "delete these") {
+		t.Errorf("doctor still tells the user to delete every stray file:\n%s", got)
+	}
+	// uninstall drop our binary and our statusLine key, nothing else -- only
+	// safe way to clear old root wholesale.
+	if !strings.Contains(got, "knit-statusline uninstall") {
+		t.Errorf("doctor does not point at uninstall to clear the old root:\n%s", got)
+	}
+}
+
+// New root already carrying statusline.toml is user who moved root long ago and
+// tuned layout there. Stray one is abandoned copy, so "copy it over" revert live
+// layout to stale -- and install refuse that same overwrite without --force.
+func TestDoctorSaysMergeWhenNewRootAlreadyHasAConfig(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	legacy := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(legacy, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.UserPath(legacy), []byte("[[lines]]\nsegments = [\"model\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	moved := t.TempDir()
+	if err := os.WriteFile(config.UserPath(moved), []byte("[[lines]]\nsegments = [\"version\"]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", moved)
+
+	var out, errOut bytes.Buffer
+	runDoctor(nil, &out, &errOut)
+
+	got := out.String()
+	if strings.Contains(got, "Copy it to "+config.UserPath(moved)) {
+		t.Errorf("doctor told the user to copy over a live config:\n%s", got)
+	}
+	if !strings.Contains(got, "merge, do not copy over it") {
+		t.Errorf("doctor does not say to merge into the existing config:\n%s", got)
 	}
 }
 
@@ -577,18 +658,18 @@ func TestDoctorSkipsStrayBlockOnTheDefaultRoot(t *testing.T) {
 // and tells user delete it -- reproduces reviewer's report exactly.
 func TestDoctorSkipsStrayBlockAcrossASymlinkedHome(t *testing.T) {
 	base := t.TempDir()
-	real := filepath.Join(base, "real")
-	if err := os.MkdirAll(real, 0o755); err != nil {
+	target := filepath.Join(base, "target")
+	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(base, "link")
-	if err := os.Symlink(real, link); err != nil {
+	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
 	t.Setenv("HOME", link)
 	t.Setenv("USERPROFILE", link)
 
-	root := filepath.Join(real, ".claude")
+	root := filepath.Join(target, ".claude")
 	writeUserConfig(t, root, "[[lines]]\nsegments = [\"model\"]\n")
 	t.Setenv("CLAUDE_CONFIG_DIR", root)
 
