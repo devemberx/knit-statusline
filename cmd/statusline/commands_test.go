@@ -181,7 +181,7 @@ func TestDoctorReportsPathsAndSegments(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"knit-statusline", "Paths", "root", "settings", "config", "cache",
+		"knit-statusline", "Paths", "  root       ", "settings", "config", "cache",
 		"Configuration", "sources", "rows", "status     ok", "Available segments",
 	} {
 		if !strings.Contains(got, want) {
