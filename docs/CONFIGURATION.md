@@ -275,6 +275,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `fast_mode` | `state` | Only rendered when enabled |
 | `thinking` | `state` `icon` | `●` when on, dim `○` when off; set with `alwaysThinkingEnabled` in settings.json |
 | `caveman` | `mode` `icon` `savings` | Only while the [caveman](https://github.com/juliusbrussee/caveman) plugin is active; `{savings}` needs `/caveman-stats` and is out of the default template |
+| `config` | `summary` `labeled` `claude_md` `rules` `hooks` `mcp` | What this session loaded: non-empty `CLAUDE.md` files, `.claude/rules/*.md`, hook commands (plugin hooks included), MCP servers. `{summary}` is `📋1 · 🪝6`, `{labeled}` is `📋 CLAUDE.md 1 · 🪝 hooks 6` — both drop every zero. The individual fields always print a number. Out of every preset — add it yourself |
 | `command` | `out` | Your own shell command |
 
 Abbreviated counts read as `62.1k`, `1.2M`, `364.9M`. The `_raw` fields give

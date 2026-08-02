@@ -58,7 +58,7 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 		t.Errorf("Names() must be sorted for doctor output: %v", names)
 	}
 	for _, want := range []string{
-		"caveman", "command", "context", "cost", "dir", "effort", "fast_mode",
+		"caveman", "command", "config", "context", "cost", "dir", "effort", "fast_mode",
 		"limit.5h", "limit.7d", "lines", "model", "output_style", "pr", "repo",
 		"session", "thinking", "tokens", "version", "vim",
 	} {
