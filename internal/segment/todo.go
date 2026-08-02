@@ -32,9 +32,11 @@ func buildTodo(c Context) Result {
 	cur := transcript.LoadTodoCursor(c.CacheDir, c.In.TranscriptPath)
 	cur, err := transcript.ScanTodos(c.In.TranscriptPath, cur)
 	if err != nil {
-		// Cached counts describe file this render could not read. Gone
-		// transcript would otherwise pin stale number on screen for rest
-		// of session.
+		// scan.go splits gone file from transient error (EMFILE, EIO,
+		// permission blip), holding cursor for transient case so tokens keep
+		// counting through it. todo drops on both instead: Stable false
+		// leaves no "…" placeholder to fall back on, so a held-over count
+		// would show a number this render never measured.
 		return empty
 	}
 
