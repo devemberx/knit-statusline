@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
-	"path/filepath"
 )
 
 // Bump when todo counting rules change. Own number, not cacheVersion: token
@@ -29,12 +27,12 @@ func TodoCacheKey(transcriptPath string) string {
 	return "todos-" + hex.EncodeToString(h[:8]) + ".json"
 }
 
-// LoadTodoCursor read cache file. Missing, unreadable, corrupt or
-// version-mismatched all yield zero cursor: full rescan beat counts from
-// unknown rules.
+// LoadTodoCursor read cache file. Missing, unreadable, corrupt,
+// version-mismatched or no config root at all yield zero cursor: full rescan
+// beat counts from unknown rules.
 func LoadTodoCursor(dir, transcriptPath string) TodoCursor {
-	b, err := os.ReadFile(filepath.Join(dir, TodoCacheKey(transcriptPath)))
-	if err != nil {
+	b, ok := readCacheFile(dir, TodoCacheKey(transcriptPath))
+	if !ok {
 		return TodoCursor{}
 	}
 	var c todoCache
@@ -44,16 +42,9 @@ func LoadTodoCursor(dir, transcriptPath string) TodoCursor {
 	return TodoCursor{Offset: c.Offset, Todos: c.Todos}
 }
 
-// SaveTodoCursor write atomically. Claude Code start render while previous still
-// run, so two processes write here at once. Unique temp file then rename =
-// reader see one complete version or another, never half-written one.
-//
-// No fsync: this run every redraw, and cache lost to crash cost one rescan,
-// same as LoadTodoCursor already do for corrupt content.
+// SaveTodoCursor write atomically -- see writeCacheFile for why temp then
+// rename, and why empty dir answer nil.
 func SaveTodoCursor(dir, transcriptPath string, cur TodoCursor) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	b, err := json.Marshal(todoCache{
 		Version: todoCacheVersion,
 		Offset:  cur.Offset,
@@ -62,20 +53,5 @@ func SaveTodoCursor(dir, transcriptPath string, cur TodoCursor) error {
 	if err != nil {
 		return err
 	}
-
-	tmp, err := os.CreateTemp(dir, ".todos-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, filepath.Join(dir, TodoCacheKey(transcriptPath)))
+	return writeCacheFile(dir, TodoCacheKey(transcriptPath), b)
 }

@@ -1,6 +1,7 @@
 package transcript
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -33,6 +34,47 @@ func TestTodoCacheKeyVariesByPath(t *testing.T) {
 	// other's JSON and rescan from a meaningless offset.
 	if TodoCacheKey("/a.jsonl") == CacheKey(Options{TranscriptPath: "/a.jsonl", Scope: ScopeSession}) {
 		t.Error("todo cache key collide with tokens cache key")
+	}
+}
+
+// Empty dir mean no config root resolved. filepath.Join drop empty element, so
+// unguarded LoadTodoCursor read bare "todos-<hash>.json" out of whatever
+// directory process sit in. Unguarded SaveTodoCursor never reach that name --
+// MkdirAll("") fail first -- but it fail every redraw over condition no user can
+// fix. Same guard tokens cache carry.
+func TestTodoCursorWithoutDirectoryStaysOutOfWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	// Decoy carry counts no scan produced, plus offset that skip real lines.
+	// Loading it report todo list this session never wrote.
+	b, err := json.Marshal(todoCache{
+		Version: todoCacheVersion,
+		Offset:  999,
+		Todos:   Todos{Done: 9, Total: 9},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(TodoCacheKey("/x/y.jsonl"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := LoadTodoCursor("", "/x/y.jsonl"); got != (TodoCursor{}) {
+		t.Errorf(`LoadTodoCursor("") read working directory: %+v`, got)
+	}
+	if err := SaveTodoCursor("", "/x/y.jsonl", TodoCursor{Offset: 1}); err != nil {
+		t.Errorf(`SaveTodoCursor("") = %v, want nil`, err)
+	}
+
+	// Decoy byte-for-byte after. SaveTodoCursor that tolerate "" by skipping
+	// MkdirAll rename over this exact name instead.
+	after, err := os.ReadFile(TodoCacheKey("/x/y.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, b) {
+		t.Errorf(`SaveTodoCursor("") rewrote %s in the working directory`, TodoCacheKey("/x/y.jsonl"))
 	}
 }
 
