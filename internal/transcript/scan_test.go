@@ -44,7 +44,7 @@ func appendLines(t *testing.T, path string, lines []string) {
 	}
 }
 
-func scanOnce(t *testing.T, path string, cache *Cache) (Totals, *Cache) {
+func scanOnce(t *testing.T, path string, cache *Cache) (Summary, *Cache) {
 	t.Helper()
 	return Scan(Options{TranscriptPath: path, Scope: ScopeSession}, cache)
 }
@@ -62,8 +62,8 @@ func TestDedupesRepeatedMessageLines(t *testing.T) {
 
 	got, _ := scanOnce(t, path, nil)
 	want := Totals{Input: 300, CacheWrite: 30, CacheRead: 3000, Output: 12}
-	if got != want {
-		t.Errorf("got %+v, want %+v", got, want)
+	if got.Totals != want {
+		t.Errorf("got %+v, want %+v", got.Totals, want)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestDedupesAcrossIncrementalBoundary(t *testing.T) {
 	})
 
 	first, cache := scanOnce(t, path, nil)
-	if first.Input != 100 {
-		t.Fatalf("first scan input = %d, want 100", first.Input)
+	if first.Totals.Input != 100 {
+		t.Fatalf("first scan input = %d, want 100", first.Totals.Input)
 	}
 
 	// Remaining blocks of that same message arrive after first scan.
@@ -91,14 +91,14 @@ func TestDedupesAcrossIncrementalBoundary(t *testing.T) {
 
 	second, _ := scanOnce(t, path, cache)
 	want := Totals{Input: 300, CacheWrite: 30, CacheRead: 3000, Output: 12}
-	if second != want {
-		t.Errorf("got %+v, want %+v", second, want)
+	if second.Totals != want {
+		t.Errorf("got %+v, want %+v", second.Totals, want)
 	}
 
 	// Full scan from scratch agree with incremental result.
 	fresh, _ := scanOnce(t, path, nil)
-	if fresh != second {
-		t.Errorf("incremental %+v disagrees with full rescan %+v", second, fresh)
+	if fresh.Totals != second.Totals {
+		t.Errorf("incremental %+v disagrees with full rescan %+v", second.Totals, fresh.Totals)
 	}
 }
 
@@ -113,8 +113,8 @@ func TestIDLessEntryKeepsDedupGuard(t *testing.T) {
 	})
 
 	got, _ := scanOnce(t, path, nil)
-	if got.Input != 101 {
-		t.Errorf("input = %d, want 101 (id-less entry disarmed dedup)", got.Input)
+	if got.Totals.Input != 101 {
+		t.Errorf("input = %d, want 101 (id-less entry disarmed dedup)", got.Totals.Input)
 	}
 }
 
@@ -128,8 +128,8 @@ func TestIncrementalAppendDoesNotRecount(t *testing.T) {
 	appendLines(t, path, []string{assistantLine("msg_b", "claude-opus-4-8", 200, 0, 0, 7)})
 	got, cache := scanOnce(t, path, cache)
 
-	if got.Input != 300 || got.Output != 12 {
-		t.Errorf("got %+v, want input 300 output 12", got)
+	if got.Totals.Input != 300 || got.Totals.Output != 12 {
+		t.Errorf("got %+v, want input 300 output 12", got.Totals)
 	}
 	if cache.Files[path].Offset <= offsetAfterFirst {
 		t.Error("cursor did not advance past the appended bytes")
@@ -152,8 +152,8 @@ func TestTruncationTriggersRescan(t *testing.T) {
 	writeLines(t, path, []string{assistantLine("msg_b", "claude-opus-4-8", 50, 0, 0, 1)})
 
 	got, _ := scanOnce(t, path, cache)
-	if got.Input != 50 || got.Output != 1 {
-		t.Errorf("got %+v, want input 50 output 1", got)
+	if got.Totals.Input != 50 || got.Totals.Output != 1 {
+		t.Errorf("got %+v, want input 50 output 1", got.Totals)
 	}
 }
 
@@ -171,8 +171,8 @@ func TestPartialTrailingLineIsDeferred(t *testing.T) {
 	}
 
 	got, cache := scanOnce(t, path, nil)
-	if got.Input != 100 {
-		t.Fatalf("partial line was counted: %+v", got)
+	if got.Totals.Input != 100 {
+		t.Fatalf("partial line was counted: %+v", got.Totals)
 	}
 
 	// Finish interrupted line.
@@ -186,8 +186,8 @@ func TestPartialTrailingLineIsDeferred(t *testing.T) {
 	f.Close()
 
 	got, _ = scanOnce(t, path, cache)
-	if got.Input != 300 || got.Output != 12 {
-		t.Errorf("got %+v, want input 300 output 12", got)
+	if got.Totals.Input != 300 || got.Totals.Output != 12 {
+		t.Errorf("got %+v, want input 300 output 12", got.Totals)
 	}
 }
 
@@ -204,8 +204,8 @@ func TestSkipsSyntheticAndNonAssistantLines(t *testing.T) {
 
 	got, _ := scanOnce(t, path, nil)
 	want := Totals{Input: 100, CacheWrite: 10, CacheRead: 1000, Output: 5}
-	if got != want {
-		t.Errorf("got %+v, want %+v", got, want)
+	if got.Totals != want {
+		t.Errorf("got %+v, want %+v", got.Totals, want)
 	}
 }
 
@@ -220,15 +220,15 @@ func TestCorruptLinesAreSkipped(t *testing.T) {
 	})
 
 	got, _ := scanOnce(t, path, nil)
-	if got.Input != 100 {
-		t.Errorf("got %+v, want input 100", got)
+	if got.Totals.Input != 100 {
+		t.Errorf("got %+v, want input 100", got.Totals)
 	}
 }
 
 func TestMissingTranscriptYieldsZero(t *testing.T) {
 	got, cache := scanOnce(t, filepath.Join(t.TempDir(), "absent.jsonl"), nil)
-	if got != (Totals{}) {
-		t.Errorf("got %+v, want zero totals", got)
+	if got.Totals != (Totals{}) {
+		t.Errorf("got %+v, want zero totals", got.Totals)
 	}
 	if cache == nil {
 		t.Error("cache should never be nil")
@@ -239,8 +239,8 @@ func TestMissingTranscriptYieldsZero(t *testing.T) {
 // transcript, never current directory.
 func TestEmptyTranscriptPathYieldsZero(t *testing.T) {
 	got, cache := Scan(Options{Scope: ScopeSession}, nil)
-	if got != (Totals{}) {
-		t.Errorf("got %+v, want zero totals", got)
+	if got.Totals != (Totals{}) {
+		t.Errorf("got %+v, want zero totals", got.Totals)
 	}
 	if cache == nil {
 		t.Fatal("cache should never be nil")
@@ -260,18 +260,18 @@ func TestProjectScopeSidechainSelection(t *testing.T) {
 	writeLines(t, filepath.Join(dir, "agent-x.jsonl"), []string{assistantLine("msg_c", "claude-opus-4-8", 400, 0, 0, 9)})
 
 	session, _ := Scan(Options{TranscriptPath: main, Scope: ScopeSession}, nil)
-	if session.Input != 100 {
-		t.Errorf("session scope input = %d, want 100", session.Input)
+	if session.Totals.Input != 100 {
+		t.Errorf("session scope input = %d, want 100", session.Totals.Input)
 	}
 
 	project, _ := Scan(Options{TranscriptPath: main, Scope: ScopeProject}, nil)
-	if project.Input != 300 {
-		t.Errorf("project scope input = %d, want 300 (agent file excluded)", project.Input)
+	if project.Totals.Input != 300 {
+		t.Errorf("project scope input = %d, want 300 (agent file excluded)", project.Totals.Input)
 	}
 
 	withAgents, _ := Scan(Options{TranscriptPath: main, Scope: ScopeProject, IncludeSidechain: true}, nil)
-	if withAgents.Input != 700 {
-		t.Errorf("project scope with sidechain input = %d, want 700", withAgents.Input)
+	if withAgents.Totals.Input != 700 {
+		t.Errorf("project scope with sidechain input = %d, want 700", withAgents.Totals.Input)
 	}
 }
 
@@ -285,8 +285,8 @@ func TestVanishedFileEvictsItsCursor(t *testing.T) {
 	writeLines(t, gone, []string{assistantLine("msg_b", "claude-opus-4-8", 200, 0, 0, 0)})
 
 	opts := Options{TranscriptPath: main, Scope: ScopeProject}
-	if first, _ := Scan(opts, nil); first.Input != 300 {
-		t.Fatalf("first scan input = %d, want 300", first.Input)
+	if first, _ := Scan(opts, nil); first.Totals.Input != 300 {
+		t.Fatalf("first scan input = %d, want 300", first.Totals.Input)
 	}
 
 	_, cache := Scan(opts, nil)
@@ -295,8 +295,8 @@ func TestVanishedFileEvictsItsCursor(t *testing.T) {
 	}
 
 	got, cache := Scan(opts, cache)
-	if got.Input != 100 {
-		t.Errorf("input = %d, want 100 (deleted file still counted)", got.Input)
+	if got.Totals.Input != 100 {
+		t.Errorf("input = %d, want 100 (deleted file still counted)", got.Totals.Input)
 	}
 	if _, ok := cache.Files[gone]; ok {
 		t.Error("cursor for deleted file survived")
@@ -327,8 +327,8 @@ func TestTransientErrorKeepsLastCursor(t *testing.T) {
 	}
 
 	got, cache := Scan(opts, cache)
-	if got.Input != 300 {
-		t.Errorf("input = %d, want 300 (unreadable file dropped its totals)", got.Input)
+	if got.Totals.Input != 300 {
+		t.Errorf("input = %d, want 300 (unreadable file dropped its totals)", got.Totals.Input)
 	}
 	if cache.Files[flaky].Totals.Input != 200 {
 		t.Errorf("cursor for unreadable file lost: %+v", cache.Files[flaky])
@@ -355,13 +355,90 @@ func TestSidechainFlipKeepsTotalsCorrect(t *testing.T) {
 	}
 
 	got, cache := Scan(withAgents, cache)
-	if got.Input != 300 {
-		t.Errorf("input = %d, want 300 with sidechain on", got.Input)
+	if got.Totals.Input != 300 {
+		t.Errorf("input = %d, want 300 with sidechain on", got.Totals.Input)
 	}
 
 	got, _ = Scan(plain, cache)
-	if got.Input != 100 {
-		t.Errorf("input = %d, want 100 with sidechain off again", got.Input)
+	if got.Totals.Input != 100 {
+		t.Errorf("input = %d, want 100 with sidechain off again", got.Totals.Input)
+	}
+}
+
+// Line shaped like attachment Claude Code write once per session. Compact
+// JSON, matching what land on disk.
+func skillListingLine(count int) string {
+	return fmt.Sprintf(
+		`{"type":"user","attachment":{"type":"skill_listing","content":"# Skills","skillCount":%d,"isInitial":true,"names":["deploy"]}}`,
+		count)
+}
+
+func TestSkillListingCountReachesSummary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		skillListingLine(40),
+		assistantLine("msg_a", "claude-opus-4-8", 100, 10, 1000, 5),
+	})
+
+	sum, _ := scanOnce(t, path, nil)
+	if !sum.Skills.Known || sum.Skills.Available != 40 {
+		t.Errorf("skills = %+v, want 40 known", sum.Skills)
+	}
+	if sum.Totals.Input != 100 {
+		t.Errorf("input = %d, want 100 -- listing line must not disturb totals", sum.Totals.Input)
+	}
+}
+
+// Cursor resume past listing line, so count recomputed each scan drop to
+// zero on second render.
+func TestSkillCountSurvivesIncrementalScan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{skillListingLine(40)})
+
+	_, cache := scanOnce(t, path, nil)
+	appendLines(t, path, []string{assistantLine("msg_a", "claude-opus-4-8", 7, 0, 0, 1)})
+
+	sum, _ := scanOnce(t, path, cache)
+	if !sum.Skills.Known || sum.Skills.Available != 40 {
+		t.Errorf("skills after append = %+v, want 40 known", sum.Skills)
+	}
+}
+
+// Resumed session write a second listing. Later value win: skill installed
+// mid-session is exactly why a second line exist.
+func TestLaterSkillListingWins(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{skillListingLine(40), skillListingLine(41)})
+
+	sum, _ := scanOnce(t, path, nil)
+	if sum.Skills.Available != 41 {
+		t.Errorf("available = %d, want 41", sum.Skills.Available)
+	}
+}
+
+// No listing = unknown, never a zero somebody read as "no skills installed".
+func TestMissingSkillListingIsUnknown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{assistantLine("msg_a", "claude-opus-4-8", 100, 10, 1000, 5)})
+
+	sum, _ := scanOnce(t, path, nil)
+	if sum.Skills.Known || sum.Skills.Available != 0 {
+		t.Errorf("skills = %+v, want unknown", sum.Skills)
+	}
+}
+
+// Count belong to one session. Project scope sum tokens across sibling files,
+// and taking a sibling's listing would report a number this session never had.
+func TestProjectScopeTakesSessionFileSkillCount(t *testing.T) {
+	dir := t.TempDir()
+	session := filepath.Join(dir, "session.jsonl")
+	sibling := filepath.Join(dir, "other.jsonl")
+	writeLines(t, session, []string{skillListingLine(40)})
+	writeLines(t, sibling, []string{skillListingLine(7)})
+
+	sum, _ := Scan(Options{TranscriptPath: session, Scope: ScopeProject}, nil)
+	if sum.Skills.Available != 40 {
+		t.Errorf("available = %d, want 40", sum.Skills.Available)
 	}
 }
 
@@ -387,10 +464,11 @@ func TestRealTranscript(t *testing.T) {
 		warm, _ := Scan(opts, cache)
 		warmTook := time.Since(start)
 
-		t.Logf("%-7s input=%d cacheWrite=%d cacheRead=%d output=%d  cold=%v warm=%v",
-			scope, cold.Input, cold.CacheWrite, cold.CacheRead, cold.Output, coldTook, warmTook)
+		t.Logf("%-7s input=%d cacheWrite=%d cacheRead=%d output=%d skills=%+v cold=%v warm=%v",
+			scope, cold.Totals.Input, cold.Totals.CacheWrite, cold.Totals.CacheRead, cold.Totals.Output,
+			cold.Skills, coldTook, warmTook)
 
-		if cold.Total() == 0 {
+		if cold.Totals.Total() == 0 {
 			t.Fatalf("%s scope produced zero tokens", scope)
 		}
 		// A warm scan read nothing new, so it must agree with a cold one.

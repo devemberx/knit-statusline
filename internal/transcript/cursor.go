@@ -12,7 +12,8 @@ import (
 // 2: id-less entry stop clobbering dedup guard.
 // 3: burned -- cursor carried ultracode marker state, reverted. Next bump take
 // 4, else caches of that shape load as valid under new rules.
-const cacheVersion = 2
+// 4: cursor carry skill listing count.
+const cacheVersion = 4
 
 // Cache hold per-file scan cursors for one scope.
 type Cache struct {

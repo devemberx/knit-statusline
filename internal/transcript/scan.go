@@ -55,6 +55,10 @@ type entry struct {
 			CacheReadTokens     int64 `json:"cache_read_input_tokens"`
 		} `json:"usage"`
 	} `json:"message"`
+	Attachment *struct {
+		Type       string `json:"type"`
+		SkillCount int    `json:"skillCount"`
+	} `json:"attachment"`
 }
 
 // countable report whether decoded entry contribute to Totals.
@@ -71,12 +75,19 @@ func (e entry) countable() bool {
 // wasted decode, false negative lose tokens.
 var usageProbe = []byte(`"usage"`)
 
+// Prefilter for session skill listing. Value, not key: spacing in Claude Code
+// JSON is not a promise.
+var skillListingProbe = []byte(`"skill_listing"`)
+
 // FileCursor record how far one transcript file consumed, plus its totals.
 type FileCursor struct {
 	Offset int64 `json:"offset"`
 	// Last counted message. Persisted = dedup survive incremental boundary.
 	LastMessageID string `json:"lastMessageID"`
 	Totals        Totals `json:"totals"`
+	// Skills Claude Code loaded for session. Listing line sit ~26KB in, and
+	// cursor resume past it, so value persist here or vanish on second render.
+	SkillCount int `json:"skillCount"`
 }
 
 // scanFile advance cur over bytes appended since last scan.
@@ -91,7 +102,9 @@ func scanFile(path string, cur FileCursor) (FileCursor, error) {
 
 // applyLine fold one complete transcript line into cursor.
 func applyLine(cur *FileCursor, line []byte) {
-	if !bytes.Contains(line, usageProbe) {
+	usage := bytes.Contains(line, usageProbe)
+	listing := bytes.Contains(line, skillListingProbe)
+	if !usage && !listing {
 		return
 	}
 	var e entry
@@ -100,6 +113,18 @@ func applyLine(cur *FileCursor, line []byte) {
 	if err := json.Unmarshal(line, &e); err != nil {
 		return
 	}
+	if listing && e.Attachment != nil && e.Attachment.Type == "skill_listing" &&
+		e.Attachment.SkillCount > 0 {
+		cur.SkillCount = e.Attachment.SkillCount
+	}
+	if !usage {
+		return
+	}
+	applyUsage(cur, e)
+}
+
+// applyUsage fold one countable assistant entry into cursor totals.
+func applyUsage(cur *FileCursor, e entry) {
 	if !e.countable() {
 		return
 	}
@@ -158,19 +183,34 @@ type Options struct {
 	IncludeSidechain bool
 }
 
-// Scan return totals for a scope, reusing cache to skip bytes already counted.
-// Caller persist returned cache.
-func Scan(opts Options, cache *Cache) (Totals, *Cache) {
+// Skills report what session transcript say about loaded skills. Known separate
+// from Available: absent listing is unknown, not a session with no skills.
+type Skills struct {
+	Available int
+	Known     bool
+	Last      string
+}
+
+// Summary is everything one scan pass yield. Two segments read it, and second
+// pass over same bytes would buy nothing.
+type Summary struct {
+	Totals Totals
+	Skills Skills
+}
+
+// Scan return a summary for a scope, reusing cache to skip bytes already
+// counted. Caller persist returned cache.
+func Scan(opts Options, cache *Cache) (Summary, *Cache) {
 	if cache == nil {
 		cache = NewCache()
 	}
 	if opts.TranscriptPath == "" {
-		return Totals{}, cache
+		return Summary{}, cache
 	}
 
 	files, err := filesFor(opts.TranscriptPath, opts.Scope, opts.IncludeSidechain)
 	if err != nil {
-		return Totals{}, cache
+		return Summary{}, cache
 	}
 
 	var total Totals
@@ -194,5 +234,12 @@ func Scan(opts Options, cache *Cache) (Totals, *Cache) {
 
 	// Replace, not merge. Cursors for vanished files else accumulate forever.
 	cache.Files = cursors
-	return total, cache
+
+	sum := Summary{Totals: total}
+	// Session file alone. Project scope sum sibling transcripts, and their
+	// listings describe sessions this one never was.
+	if cur, ok := cursors[opts.TranscriptPath]; ok && cur.SkillCount > 0 {
+		sum.Skills = Skills{Available: cur.SkillCount, Known: true}
+	}
+	return sum, cache
 }
