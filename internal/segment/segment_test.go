@@ -69,8 +69,7 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 }
 
 // fixtureDocs enumerate documents that sweep every build path a segment can
-// take. Shared between TestProducedFieldsAreDeclared and
-// TestDeclaredIconAlwaysProduced.
+// take.
 var fixtureDocs = []struct {
 	name string
 	doc  []byte
@@ -82,8 +81,7 @@ var fixtureDocs = []struct {
 }
 
 // cavemanConfigDir seed temp dir with active flag file, so caveman escape its
-// ConfigDir=="" guard for tests whose ctx() leaves ConfigDir unset. Shared
-// between TestProducedFieldsAreDeclared and TestDeclaredIconAlwaysProduced.
+// ConfigDir=="" guard for tests whose ctx() leaves ConfigDir unset.
 func cavemanConfigDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -98,9 +96,7 @@ func cavemanConfigDir(t *testing.T) string {
 // placeholder that expand to nothing. Run across all three fixtures, since which
 // fields appear depend on input.
 //
-// caveman need flag file on disk, absent from every fixture and from ctx()'s
-// own ConfigDir -- without cavemanConfigDir seeding it, every combination below
-// returns empty and this test never checks caveman's produced fields at all.
+// caveman read flag file off disk, which no fixture carry, so seed one.
 func TestProducedFieldsAreDeclared(t *testing.T) {
 	cavemanDir := cavemanConfigDir(t)
 	for _, f := range fixtureDocs {
@@ -313,14 +309,10 @@ func TestBuildInjectsStableFromRegistry(t *testing.T) {
 // path omit expand to nothing, so slot narrow mid-session and read as crash.
 // Icon is fixed part of segment shape, so any row drawn at all carry one.
 //
-// Coverage differ per segment, not uniform across matrix. context and session
-// hold slot, so all 4 fixtures x 2 fresh states reach them. caveman need flag
-// file on disk, absent from every fixture, so cavemanConfigDir seed one and
-// point caveman there instead of skip. effort fire only where fixture carry
-// effort level -- fixtures.Full alone -- so check run 2 of 8 combinations,
-// same as any segment gated on payload content.
+// caveman read flag file off disk, which no fixture carry, so seed one.
 func TestDeclaredIconAlwaysProduced(t *testing.T) {
 	cavemanDir := cavemanConfigDir(t)
+	drawn := map[string]int{}
 
 	for _, f := range fixtureDocs {
 		for _, fresh := range []bool{false, true} {
@@ -339,11 +331,21 @@ func TestDeclaredIconAlwaysProduced(t *testing.T) {
 				if res.Empty {
 					continue
 				}
+				drawn[kind]++
 				if res.Fields["icon"].Text == "" {
 					t.Errorf("%s/%s fresh=%v: drew row with empty {icon}",
 						f.name, kind, fresh)
 				}
 			}
+		}
+	}
+
+	// Segment no fixture reach assert nothing, and loop above stay green while
+	// covering it zero times. Count instead of trust.
+	for _, kind := range Names() {
+		def, _ := Lookup(kind)
+		if slices.Contains(def.Fields, "icon") && drawn[kind] == 0 {
+			t.Errorf("%s declare {icon}, no fixture draw it", kind)
 		}
 	}
 }

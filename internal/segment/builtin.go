@@ -9,9 +9,8 @@ import (
 	"github.com/devemberx/knit-statusline/internal/render"
 )
 
-// Icon sit in field, not template literal. Literal text take Result.Base, Base
-// is Dim for both segments, and SGR 2 over emoji glyph blend it into background
-// until unreadable. effort and caveman already carry icon this way.
+// Icon sit in field, not template literal: literal take Result.Base, Base is
+// Dim for both segments, and SGR 2 over emoji glyph fade it past reading.
 const (
 	contextIcon = "✍️"
 	sessionIcon = "⏱"

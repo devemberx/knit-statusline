@@ -345,9 +345,6 @@ func TestPercentagesCarrySeverityColour(t *testing.T) {
 	}
 }
 
-// Icon must reach field map, not stay template literal: literal take
-// Result.Base, Base is Dim here, and SGR 2 over emoji glyph fade it past
-// reading.
 func TestContextIconIsWhiteField(t *testing.T) {
 	f := Build(ctx(t, fixtures.Full, "context")).Fields["icon"]
 	if f.Text != contextIcon {
@@ -361,9 +358,8 @@ func TestContextIconIsWhiteField(t *testing.T) {
 // Three build paths, three separate field maps. Icon missing from one expand to
 // nothing and shrink slot mid-session, which read as crash.
 //
-// wantPct pin which path each case land on. fixtures.Unknown gaining context
-// block would fold fresh-zero and unknown cases onto known-percentage path,
-// icon assertion alone cannot tell drift.
+// wantPct pin which path each case land on: fixtures.Unknown gaining context
+// block would fold every case onto known-percentage path unnoticed.
 func TestContextIconSurvivesEveryPath(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -822,8 +818,7 @@ func TestSessionIconIsWhiteField(t *testing.T) {
 	}
 }
 
-// Placeholder duration take same field map as real one, so icon ride along.
-// Assert it rather than trust it -- unknown branch is where slot width matter.
+// Unknown branch is where slot width matter, so pin icon on that path too.
 func TestSessionIconSurvivesUnknownDuration(t *testing.T) {
 	c := ctx(t, fixtures.Unknown, "session")
 	res := Build(c)
