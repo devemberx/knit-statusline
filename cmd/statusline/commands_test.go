@@ -794,3 +794,97 @@ func TestDoctorSkipsStrayBlockAcrossASymlinkedHome(t *testing.T) {
 		t.Errorf("stray block fired across a symlinked home:\n%s", got)
 	}
 }
+
+// No home mean no root, and every root-derived path then join to bare filename.
+// Doctor printing "settings.json" send user to open file in whatever directory
+// they ran from, and existsNote stat that same stranger -- so absent config
+// lose its "(not present)" marker while Configuration block below correctly
+// report builtin.
+func TestDoctorNamesTheMissingHomeOnEveryPathLine(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	// Decoys carry exactly names bare join produce, so assertion below pin
+	// existsNote skipping them, not label alone.
+	for _, name := range []string{"settings.json", "statusline.toml"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+
+	var out, errOut bytes.Buffer
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("doctor exited %d: %s", code, errOut.String())
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"  root       (no home directory)",
+		"  settings   (no home directory)",
+		"  config     (no home directory)",
+		"  cache      (no home directory)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("doctor omits %q:\n%s", want, got)
+		}
+	}
+	// Root line answered once. existsNote("") would append second verdict
+	// about file nobody named.
+	if strings.Contains(got, "(no home directory)  (not present)") {
+		t.Errorf("root line carries two verdicts:\n%s", got)
+	}
+	// Project line derive from cwd, never root, so missing home leave it real
+	// path carrying real marker. Blanket substitution across every line pass
+	// loop above.
+	want := "  project    " + config.ProjectPath(dir) + "  (not present)\n"
+	if !strings.Contains(got, want) {
+		t.Errorf("doctor omits %q:\n%s", want, got)
+	}
+}
+
+// Root that resolve must still print its real path on every line, marker
+// included. Substituting noHome everywhere, or dropping existsNote from these
+// lines, otherwise leave suite green: TestDoctorMarksAbsentFiles only grep
+// whole output for one "(not present)", which root line alone satisfy.
+func TestDoctorPrintsEveryRootedPathWhenRootResolves(t *testing.T) {
+	root := isolate(t)
+
+	var out, errOut bytes.Buffer
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("doctor exited %d: %s", code, errOut.String())
+	}
+
+	// isolate name root and create nothing under it -- first run after user
+	// set CLAUDE_CONFIG_DIR, so every line carry its marker.
+	got := out.String()
+	for _, want := range []string{
+		"  root       " + root + "  (CLAUDE_CONFIG_DIR)  (not present)",
+		"  settings   " + install.SettingsPath(root) + "  (not present)",
+		"  config     " + config.UserPath(root) + "  (not present)",
+		"  cache      " + filepath.Join(root, "statusline-cache"),
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("doctor omits %q:\n%s", want, got)
+		}
+	}
+	// Literal, not noHome: reading const back leave rename of its value green
+	// here, and wording is what user read.
+	if strings.Contains(got, "(no home directory)") {
+		t.Errorf("doctor claimed no home while root %q resolved:\n%s", root, got)
+	}
+
+	// Root on disk drop marker. rootNote hardcoded either way survive first
+	// half alone.
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("doctor exited %d: %s", code, errOut.String())
+	}
+	if got := out.String(); !strings.Contains(got, "  root       "+root+"  (CLAUDE_CONFIG_DIR)\n") {
+		t.Errorf("existing root still marked absent:\n%s", got)
+	}
+}

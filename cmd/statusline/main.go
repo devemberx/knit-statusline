@@ -185,7 +185,13 @@ func homeDir() string {
 
 // cacheDir hold transcript cursor and command output. Sit under config root,
 // not $HOME: split root read config from one directory and cache to another.
-// Empty root give empty path, which segment and cursor already treat as
+func cacheDir() string {
+	return cachePath(configDir())
+}
+
+// cachePath take root caller already resolved, so command holding one never
+// derive it twice and print cache line from a root its own root line disagree
+// with. Empty root give empty path, which segment and cursor already treat as
 // "no cache" rather than a relative directory under cwd.
 //
 // Relative root give empty path too. Render honour such root because Claude
@@ -193,8 +199,7 @@ func homeDir() string {
 // one statusline-cache/ per project user open, none of them shared. Cache
 // disposable, so losing it cost a rescan; scattering directories through user's
 // projects cost more.
-func cacheDir() string {
-	root := configDir()
+func cachePath(root string) string {
 	if root == "" || !filepath.IsAbs(root) {
 		return ""
 	}

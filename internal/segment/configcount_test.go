@@ -194,12 +194,104 @@ func TestConfigCountsRulesRecursively(t *testing.T) {
 func TestConfigDeduplicatesMCPServersByName(t *testing.T) {
 	c := configCtx(t)
 	writeUnder(t, c.ConfigDir, "settings.json",
-		`{"mcpServers": {"github": {}, "linear": {}}}`)
+		`{"mcpServers": {"github": {}, "linear": {}},
+		  "enabledMcpjsonServers": ["github", "postgres"]}`)
 	writeUnder(t, c.In.Workspace.ProjectDir, ".mcp.json",
 		`{"mcpServers": {"github": {}, "postgres": {}}}`)
 
 	if got, want := draw(c), "🔌3"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// .mcp.json arrive with checkout, and Claude Code prompt before running any of
+// it. Counting on sight print servers that never start.
+func TestConfigSkipsUnapprovedProjectMCPServers(t *testing.T) {
+	c := configCtx(t)
+	writeUnder(t, c.ConfigDir, "settings.json",
+		`{"mcpServers": {"linear": {}}, "enabledMcpjsonServers": ["github"]}`)
+	writeUnder(t, c.In.Workspace.ProjectDir, ".mcp.json",
+		`{"mcpServers": {"github": {}, "postgres": {}}}`)
+
+	if got, want := draw(c), "🔌2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Answer live in .claude.json project block too, beside servers `claude mcp
+// add` write.
+func TestConfigApprovesProjectMCPServersFromClaudeJSON(t *testing.T) {
+	c := configCtx(t)
+	writeUnder(t, c.In.Workspace.ProjectDir, ".mcp.json",
+		`{"mcpServers": {"github": {}, "postgres": {}}}`)
+	writeUnder(t, c.ConfigDir, ".claude.json", `{
+	  "projects": {
+	    `+quotePath(t, c.In.Workspace.ProjectDir)+`: {"enabledMcpjsonServers": ["postgres"]}
+	  }
+	}`)
+
+	if got, want := draw(c), "🔌1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// One switch approve whole file, so no name list exist to match against.
+func TestConfigApprovesEveryProjectMCPServerAtOnce(t *testing.T) {
+	c := configCtx(t)
+	writeUnder(t, c.ConfigDir, "settings.json", `{"enableAllProjectMcpServers": true}`)
+	writeUnder(t, c.In.Workspace.ProjectDir, ".mcp.json",
+		`{"mcpServers": {"github": {}, "postgres": {}}}`)
+
+	if got, want := draw(c), "🔌2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Plugin ship servers same two ways it ship hooks. Counting settings alone print
+// 0 while plugin's own server answer tool calls.
+func TestConfigCountsEnabledPluginMCPServers(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"plugin manifest": {".claude-plugin/plugin.json": `{"name": "p", "mcpServers": {"shrink": {}}}`},
+		"manifest path": {
+			".claude-plugin/plugin.json": `{"name": "p", "mcpServers": "./servers.json"}`,
+			"servers.json":               `{"mcpServers": {"shrink": {}}}`,
+		},
+		"plugin root": {".mcp.json": `{"mcpServers": {"shrink": {}}}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := configCtx(t)
+			install := enablePlugin(t, c, "p@m", true)
+			for rel, body := range files {
+				writeUnder(t, install, rel, body)
+			}
+
+			if got, want := draw(c), "🔌1"; got != want {
+				t.Errorf("rendered %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+// Switching plugin on approve its servers already; no prompt ask twice.
+func TestConfigCountsPluginMCPServersWithoutApproval(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".mcp.json", `{"mcpServers": {"shrink": {}}}`)
+	writeUnder(t, c.In.Workspace.ProjectDir, ".mcp.json", `{"mcpServers": {"github": {}}}`)
+
+	if got, want := draw(c), "🔌1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Plugin switched off run nothing, servers included.
+func TestConfigSkipsDisabledPluginMCPServers(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", false)
+	writeUnder(t, install, ".mcp.json", `{"mcpServers": {"shrink": {}}}`)
+
+	if got := draw(c); got != "" {
+		t.Errorf("rendered %q, want nothing", got)
 	}
 }
 
@@ -468,6 +560,7 @@ func TestConfigSkipsDisabledMCPServers(t *testing.T) {
 	  "projects": {
 	    `+quotePath(t, c.In.Workspace.ProjectDir)+`: {
 	      "mcpServers": {"sentry": {}},
+	      "enabledMcpjsonServers": ["github", "postgres"],
 	      "disabledMcpjsonServers": ["postgres"],
 	      "disabledMcpServers": ["sentry"]
 	    }
