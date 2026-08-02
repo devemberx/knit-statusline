@@ -77,6 +77,14 @@ linters:
         linters:
           - gosec
 
+      # G301 dir mode: preview put its fixture transcript in the same cache dir
+      # internal/transcript already make at 0o755. Second mode here leave the
+      # permissions decided by whichever run first.
+      - path: cmd/statusline/commands\.go
+        text: G301
+        linters:
+          - gosec
+
       # G304 file-inclusion taint: statusline.toml path derive from config root
       # and workspace.project_dir, never from stdin. Reading it is what config do.
       - path: internal/config/

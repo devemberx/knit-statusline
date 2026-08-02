@@ -4,22 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // Line shaped like ones Claude Code write for a TodoWrite call: tool_use block
 // inside assistant message, one entry per todo.
 func todoLine(sidechain bool, statuses ...string) string {
-	var items string
+	items := make([]string, len(statuses))
 	for i, s := range statuses {
-		if i > 0 {
-			items += ","
-		}
-		items += fmt.Sprintf(`{"content":"t%d","status":%q,"activeForm":"doing t%d"}`, i, s, i)
+		items[i] = fmt.Sprintf(`{"content":"t%d","status":%q,"activeForm":"doing t%d"}`, i, s, i)
 	}
 	return fmt.Sprintf(
 		`{"type":"assistant","isSidechain":%t,"uuid":"u-%d","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu","name":"TodoWrite","input":{"todos":[%s]}}]}}`,
-		sidechain, len(statuses), items)
+		sidechain, len(statuses), strings.Join(items, ","))
 }
 
 func scanTodosOnce(t *testing.T, path string, cur TodoCursor) TodoCursor {
