@@ -44,7 +44,7 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
 	}
 	full := out.String()
-	for _, want := range []string{"config:", "sample: complete data", "Opus 4.8", "current", "--sparse"} {
+	for _, want := range []string{"config:", "sample: complete data", "Opus 4.8", "current", "--sparse", "☑ 3/7"} {
 		if !strings.Contains(full, want) {
 			t.Errorf("preview missing %q:\n%s", want, full)
 		}
