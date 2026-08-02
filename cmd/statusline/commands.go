@@ -224,9 +224,10 @@ func runDoctor(args []string, stdout, stderr io.Writer) int {
 	// Configuration block below correctly report builtin.
 	settings, userConfig, cache := noHome, noHome, noHome
 	if root != "" {
-		settings = install.SettingsPath(root) + existsNote(install.SettingsPath(root))
-		userConfig = config.UserPath(root) + existsNote(config.UserPath(root))
-		cache = cacheDir()
+		settingsPath, configPath := install.SettingsPath(root), config.UserPath(root)
+		settings = settingsPath + existsNote(settingsPath)
+		userConfig = configPath + existsNote(configPath)
+		cache = cachePath(root)
 	}
 
 	fmt.Fprintln(stdout, "Paths")

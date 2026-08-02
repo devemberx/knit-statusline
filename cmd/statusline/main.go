@@ -185,10 +185,15 @@ func homeDir() string {
 
 // cacheDir hold transcript cursor and command output. Sit under config root,
 // not $HOME: split root read config from one directory and cache to another.
-// Empty root give empty path, which segment and cursor already treat as
-// "no cache" rather than a relative directory under cwd.
 func cacheDir() string {
-	root := configDir()
+	return cachePath(configDir())
+}
+
+// cachePath take root caller already resolved, so command holding one never
+// derive it twice and print cache line from a root its own root line disagree
+// with. Empty root give empty path, which segment and cursor already treat as
+// "no cache" rather than a relative directory under cwd.
+func cachePath(root string) string {
 	if root == "" {
 		return ""
 	}

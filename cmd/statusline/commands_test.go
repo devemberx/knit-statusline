@@ -721,6 +721,13 @@ func TestDoctorNamesTheMissingHomeOnEveryPathLine(t *testing.T) {
 	if strings.Contains(got, "(no home directory)  (not present)") {
 		t.Errorf("root line carries two verdicts:\n%s", got)
 	}
+	// Project line derive from cwd, never root, so missing home leave it real
+	// path carrying real marker. Blanket substitution across every line pass
+	// loop above.
+	want := "  project    " + config.ProjectPath(dir) + "  (not present)\n"
+	if !strings.Contains(got, want) {
+		t.Errorf("doctor omits %q:\n%s", want, got)
+	}
 }
 
 // Root that resolve must still print its real path on every line, marker
@@ -748,7 +755,9 @@ func TestDoctorPrintsEveryRootedPathWhenRootResolves(t *testing.T) {
 			t.Errorf("doctor omits %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, noHome) {
+	// Literal, not noHome: reading const back leave rename of its value green
+	// here, and wording is what user read.
+	if strings.Contains(got, "(no home directory)") {
 		t.Errorf("doctor claimed no home while root %q resolved:\n%s", root, got)
 	}
 
