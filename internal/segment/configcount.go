@@ -47,7 +47,7 @@ const maxClaudeJSONBytes = 4 << 20
 const (
 	maxRuleDepth   = 8
 	maxRuleEntries = 500
-	maxRuleTotal   = 2000
+	maxRuleTotal   = 1000
 )
 
 // Manifest path may point at file pointing at file. Two hops cover every layout

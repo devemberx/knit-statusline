@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,18 @@ func configCtx(t *testing.T) Context {
 	c.In.Workspace.ProjectDir = project
 	c.In.Workspace.CurrentDir = project
 	return c
+}
+
+// quotePath render path as JSON string, quotes included. Windows path carry
+// backslash, and raw interpolation leave "D:\a" standing as invalid escape --
+// whole file then read unknown, on that runner alone.
+func quotePath(t *testing.T, p string) string {
+	t.Helper()
+	b, err := json.Marshal(p)
+	if err != nil {
+		t.Fatalf("quote %s: %v", p, err)
+	}
+	return string(b)
 }
 
 func writeUnder(t *testing.T, dir, rel, content string) {
@@ -83,7 +96,7 @@ func enablePlugin(t *testing.T, c Context, key string, on bool) string {
 	t.Helper()
 	install := t.TempDir()
 	writeUnder(t, c.ConfigDir, "plugins/installed_plugins.json",
-		`{"version": 2, "plugins": {"`+key+`": [{"scope": "user", "installPath": "`+install+`"}]}}`)
+		`{"version": 2, "plugins": {"`+key+`": [{"scope": "user", "installPath": `+quotePath(t, install)+`}]}}`)
 	state := "false"
 	if on {
 		state = "true"
@@ -199,8 +212,8 @@ func TestConfigCountsMCPServersFromClaudeJSON(t *testing.T) {
 	writeUnder(t, filepath.Dir(c.ConfigDir), ".claude.json", `{
 	  "mcpServers": {"sentry": {}},
 	  "projects": {
-	    "`+c.In.Workspace.ProjectDir+`": {"mcpServers": {"postgres": {}}},
-	    "`+other+`": {"mcpServers": {"not-this-project": {}}}
+	    `+quotePath(t, c.In.Workspace.ProjectDir)+`: {"mcpServers": {"postgres": {}}},
+	    `+quotePath(t, other)+`: {"mcpServers": {"not-this-project": {}}}
 	  }
 	}`)
 
@@ -326,11 +339,11 @@ func TestConfigFieldsAddressableIndividually(t *testing.T) {
 // read through it. Refusing print 0 where rules load.
 func TestConfigFollowsSymlinkedRulesRoot(t *testing.T) {
 	c := configCtx(t)
-	real := t.TempDir()
-	writeUnder(t, real, "style.md", "x\n")
-	writeUnder(t, real, "go/errors.md", "x\n")
+	target := t.TempDir()
+	writeUnder(t, target, "style.md", "x\n")
+	writeUnder(t, target, "go/errors.md", "x\n")
 
-	if err := os.Symlink(real, filepath.Join(c.ConfigDir, "rules")); err != nil {
+	if err := os.Symlink(target, filepath.Join(c.ConfigDir, "rules")); err != nil {
 		t.Skipf("symlink unsupported here: %v", err)
 	}
 
@@ -342,11 +355,11 @@ func TestConfigFollowsSymlinkedRulesRoot(t *testing.T) {
 // Link planted below root walk wherever it aim, so entries stay Lstat.
 func TestConfigSkipsSymlinkedRuleEntries(t *testing.T) {
 	c := configCtx(t)
-	real := t.TempDir()
-	writeUnder(t, real, "planted.md", "x\n")
+	target := t.TempDir()
+	writeUnder(t, target, "planted.md", "x\n")
 	writeUnder(t, c.ConfigDir, "rules/own.md", "x\n")
 
-	if err := os.Symlink(real, filepath.Join(c.ConfigDir, "rules", "linked")); err != nil {
+	if err := os.Symlink(target, filepath.Join(c.ConfigDir, "rules", "linked")); err != nil {
 		t.Skipf("symlink unsupported here: %v", err)
 	}
 
@@ -360,12 +373,12 @@ func TestConfigSkipsSymlinkedRuleEntries(t *testing.T) {
 // number that stop where patience did.
 func TestConfigMarksOversizeRuleTreeUnknown(t *testing.T) {
 	c := configCtx(t)
-	for d := range 5 {
+	for d := range 3 {
 		dir := filepath.Join(c.ConfigDir, "rules", strconv.Itoa(d))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("mkdir: %v", err)
 		}
-		for i := range maxRuleEntries - 50 {
+		for i := range maxRuleEntries - 100 {
 			if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(i)+".md"), []byte("x"), 0o644); err != nil {
 				t.Fatalf("write rule: %v", err)
 			}
@@ -426,7 +439,7 @@ func TestConfigIgnoresManifestHookPathOutsidePlugin(t *testing.T) {
 	outside := t.TempDir()
 	writeUnder(t, outside, "hooks.json", `{`+oneHookBody+`}`)
 	writeUnder(t, install, ".claude-plugin/plugin.json",
-		`{"name": "p", "hooks": "`+filepath.ToSlash(filepath.Join(outside, "hooks.json"))+`"}`)
+		`{"name": "p", "hooks": `+quotePath(t, filepath.Join(outside, "hooks.json"))+`}`)
 
 	if got := draw(c); got != "" {
 		t.Errorf("rendered %q, want nothing", got)
@@ -453,7 +466,7 @@ func TestConfigSkipsDisabledMCPServers(t *testing.T) {
 		`{"mcpServers": {"github": {}, "postgres": {}}}`)
 	writeUnder(t, c.ConfigDir, ".claude.json", `{
 	  "projects": {
-	    "`+c.In.Workspace.ProjectDir+`": {
+	    `+quotePath(t, c.In.Workspace.ProjectDir)+`: {
 	      "mcpServers": {"sentry": {}},
 	      "disabledMcpjsonServers": ["postgres"],
 	      "disabledMcpServers": ["sentry"]
