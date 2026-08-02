@@ -442,6 +442,67 @@ func TestProjectScopeTakesSessionFileSkillCount(t *testing.T) {
 	}
 }
 
+// Skill invocation as Claude Code write it: tool_use block inside assistant
+// message that also carry usage.
+func skillUseLine(msgID, skill string) string {
+	return fmt.Sprintf(
+		`{"type":"assistant","message":{"id":%q,"model":"claude-opus-4-8","content":[{"type":"tool_use","id":"toolu_01","name":"Skill","input":{"skill":%q}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}`,
+		msgID, skill)
+}
+
+func TestLastSkillReachesSummary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		skillListingLine(40),
+		skillUseLine("msg_a", "superpowers:brainstorming"),
+	})
+
+	sum, _ := scanOnce(t, path, nil)
+	if sum.Skills.Last != "superpowers:brainstorming" {
+		t.Errorf("last = %q, want superpowers:brainstorming", sum.Skills.Last)
+	}
+}
+
+func TestLastSkillTakesMostRecentInvocation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		skillUseLine("msg_a", "superpowers:brainstorming"),
+		skillUseLine("msg_b", "superpowers:writing-plans"),
+	})
+
+	sum, _ := scanOnce(t, path, nil)
+	if sum.Skills.Last != "superpowers:writing-plans" {
+		t.Errorf("last = %q, want superpowers:writing-plans", sum.Skills.Last)
+	}
+}
+
+// Invocation sit before incremental boundary. Recomputing per scan lose it.
+func TestLastSkillSurvivesIncrementalScan(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{skillUseLine("msg_a", "deploy")})
+
+	_, cache := scanOnce(t, path, nil)
+	appendLines(t, path, []string{assistantLine("msg_b", "claude-opus-4-8", 7, 0, 0, 1)})
+
+	sum, _ := scanOnce(t, path, cache)
+	if sum.Skills.Last != "deploy" {
+		t.Errorf("last after append = %q, want deploy", sum.Skills.Last)
+	}
+}
+
+// Every other tool_use share block shape. Only Skill name a skill.
+func TestOtherToolUseDoesNotSetLastSkill(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		`{"type":"assistant","message":{"id":"msg_a","model":"claude-opus-4-8","content":[{"type":"tool_use","id":"toolu_01","name":"Bash","input":{"command":"echo Skill"}}],"usage":{"input_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1}}}`,
+	})
+
+	sum, _ := scanOnce(t, path, nil)
+	if sum.Skills.Last != "" {
+		t.Errorf("last = %q, want empty", sum.Skills.Last)
+	}
+}
+
 // Opt-in check against a real Claude Code transcript. Real transcripts hold
 // conversation content and never get committed, so this stay skipped until a
 // path arrive:

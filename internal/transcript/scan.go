@@ -79,6 +79,24 @@ var usageProbe = []byte(`"usage"`)
 // JSON is not a promise.
 var skillListingProbe = []byte(`"skill_listing"`)
 
+// Prefilter for skill invocation. Bare name, so JSON spacing stay irrelevant.
+// Prose quoting "Skill" false-positive here and cost one wasted decode.
+var skillUseProbe = []byte(`"Skill"`)
+
+// Separate from entry on purpose. Every assistant line carry usage, so folding
+// content into entry would allocate a block struct per text block in file.
+type skillUse struct {
+	Message *struct {
+		Content []struct {
+			Type  string `json:"type"`
+			Name  string `json:"name"`
+			Input struct {
+				Skill string `json:"skill"`
+			} `json:"input"`
+		} `json:"content"`
+	} `json:"message"`
+}
+
 // FileCursor record how far one transcript file consumed, plus its totals.
 type FileCursor struct {
 	Offset int64 `json:"offset"`
@@ -88,6 +106,9 @@ type FileCursor struct {
 	// Skills Claude Code loaded for session. Listing line sit ~26KB in, and
 	// cursor resume past it, so value persist here or vanish on second render.
 	SkillCount int `json:"skillCount"`
+	// Last skill session invoked. Sticky: no exit event exist, so field is
+	// "last called", never "running now".
+	LastSkill string `json:"lastSkill"`
 }
 
 // scanFile advance cur over bytes appended since last scan.
@@ -104,7 +125,8 @@ func scanFile(path string, cur FileCursor) (FileCursor, error) {
 func applyLine(cur *FileCursor, line []byte) {
 	usage := bytes.Contains(line, usageProbe)
 	listing := bytes.Contains(line, skillListingProbe)
-	if !usage && !listing {
+	invoke := bytes.Contains(line, skillUseProbe)
+	if !usage && !listing && !invoke {
 		return
 	}
 	var e entry
@@ -117,10 +139,27 @@ func applyLine(cur *FileCursor, line []byte) {
 		e.Attachment.SkillCount > 0 {
 		cur.SkillCount = e.Attachment.SkillCount
 	}
+	if invoke {
+		applySkillUse(cur, line)
+	}
 	if !usage {
 		return
 	}
 	applyUsage(cur, e)
+}
+
+// applySkillUse record last Skill tool_use on line. Last block win: one message
+// may call skill twice, later call is what session is doing now.
+func applySkillUse(cur *FileCursor, line []byte) {
+	var s skillUse
+	if err := json.Unmarshal(line, &s); err != nil || s.Message == nil {
+		return
+	}
+	for _, b := range s.Message.Content {
+		if b.Type == "tool_use" && b.Name == "Skill" && b.Input.Skill != "" {
+			cur.LastSkill = b.Input.Skill
+		}
+	}
 }
 
 // applyUsage fold one countable assistant entry into cursor totals.
@@ -238,8 +277,11 @@ func Scan(opts Options, cache *Cache) (Summary, *Cache) {
 	sum := Summary{Totals: total}
 	// Session file alone. Project scope sum sibling transcripts, and their
 	// listings describe sessions this one never was.
-	if cur, ok := cursors[opts.TranscriptPath]; ok && cur.SkillCount > 0 {
-		sum.Skills = Skills{Available: cur.SkillCount, Known: true}
+	if cur, ok := cursors[opts.TranscriptPath]; ok {
+		sum.Skills.Last = cur.LastSkill
+		if cur.SkillCount > 0 {
+			sum.Skills.Available, sum.Skills.Known = cur.SkillCount, true
+		}
 	}
 	return sum, cache
 }
