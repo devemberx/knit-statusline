@@ -262,6 +262,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `dir` | `name` `path` `project` `worktree` `git` `branch` `dirty` | `{git}` is a preformatted ` (branch*)`, empty outside a repo |
 | `session` | `duration` `id` `name` `icon` | `{icon}` is `⏱` |
 | `effort` | `level` `icon` | Absent on models without an effort parameter; `{icon}` tracks the level — see [Colors](#colors) |
+| `todo` | `icon` `ratio` `done` `total` `pending` | Read from the transcript's last `TodoWrite` call; absent until the session writes one, and `{icon}` is `☑` — green once `{done}` reaches `{total}` |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
 | `tokens` | `io` `cache` `cache_hit` `input` `cache_write` `cache_read` `output` `total` `input_raw` `output_raw` | Read from the transcript, so the totals are cumulative |

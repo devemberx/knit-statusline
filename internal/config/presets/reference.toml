@@ -2,7 +2,7 @@
 #
 # Follows the layout of nilbuild/claude-statusline:
 #
-#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high
+#   Opus 4.8 │ ✍️ 42% │ acme (main*) │ ◕ high │ ☑ 3/7
 #
 #   current ●●●●○○○○○○  42% ⟳ 3:00pm
 #   weekly  ●●○○○○○○○○  18% ⟳ jul 28, 3:00pm
@@ -15,8 +15,13 @@
 # Run `knit-statusline preview` after an edit to see the result without
 # restarting Claude Code, and `knit-statusline doctor` if something looks wrong.
 
+# "todo" holds the last TodoWrite list this session wrote: ☑ 3/7, green once
+# every entry is done. A session that never used the todo tool has no list, so
+# the slot is dropped rather than filled with a placeholder -- it appears the
+# first time one is written, and drops again if a later TodoWrite clears the
+# list to empty.
 [[lines]]
-segments = ["model", "context", "dir", "effort"]
+segments = ["model", "context", "dir", "effort", "todo"]
 
 # A [[lines]] block with no segments is a deliberate blank row. A row whose
 # segments all turn out to be empty is dropped instead, so a missing value never

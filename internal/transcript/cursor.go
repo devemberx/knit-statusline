@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
-	"path/filepath"
 )
 
 // Bump when aggregation rules change. Stale cache hold totals under old rules;
@@ -33,17 +31,12 @@ func CacheKey(opts Options) string {
 	return "tokens-" + hex.EncodeToString(h[:8]) + ".json"
 }
 
-// LoadCache read cache file. Missing, unreadable, corrupt or version-mismatched
-// all yield empty cache: full rescan beat totals from unknown rules.
-//
-// Empty dir mean no config root at all. Join would drop directory element and
-// read bare "tokens-<hash>.json" out of whatever directory process sit in.
+// LoadCache read cache file. Missing, unreadable, corrupt, version-mismatched or
+// no config root at all yield empty cache: full rescan beat totals from unknown
+// rules.
 func LoadCache(dir string, opts Options) *Cache {
-	if dir == "" {
-		return NewCache()
-	}
-	b, err := os.ReadFile(filepath.Join(dir, CacheKey(opts)))
-	if err != nil {
+	b, ok := readCacheFile(dir, CacheKey(opts))
+	if !ok {
 		return NewCache()
 	}
 	var c Cache
@@ -56,44 +49,20 @@ func LoadCache(dir string, opts Options) *Cache {
 	return &c
 }
 
-// SaveCache write atomically. Claude Code start render while previous still
-// run, so two processes write here at once. Unique temp file then rename =
-// reader see one complete version or another, never half-written one.
+// SaveCache write atomically -- see writeCacheFile for why temp then rename, and
+// why empty dir answer nil.
 //
-// No fsync: this run every redraw, and cache lost to crash cost one rescan,
-// same as LoadCache already do for corrupt content.
-//
-// Empty dir mean no config root, so nothing to write and nowhere to write it.
-// Not error: caching optional, and MkdirAll("") fail every redraw over
-// condition no user can fix.
+// Nil cache mean nothing scanned, so nothing to persist. Writing empty one
+// create cache directory no render ever used.
 func SaveCache(dir string, opts Options, c *Cache) error {
-	if c == nil || dir == "" {
+	if c == nil {
 		return nil
 	}
 	c.Version = cacheVersion
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
 	b, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
-
-	final := filepath.Join(dir, CacheKey(opts))
-	tmp, err := os.CreateTemp(dir, ".tokens-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	defer os.Remove(tmpName)
-
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmpName, final)
+	return writeCacheFile(dir, CacheKey(opts), b)
 }

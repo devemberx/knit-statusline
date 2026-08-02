@@ -10,13 +10,10 @@
 package transcript
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -82,54 +79,14 @@ type FileCursor struct {
 	Totals        Totals `json:"totals"`
 }
 
-// scanFile advance cur over bytes appended since last scan. Shrunk file mean
-// replacement, not append -- transcripts append-only -- so rescan whole.
+// scanFile advance cur over bytes appended since last scan.
 func scanFile(path string, cur FileCursor) (FileCursor, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return cur, err
-	}
-	size := info.Size()
-
-	if size < cur.Offset {
-		cur = FileCursor{}
-	}
-	if size == cur.Offset {
-		return cur, nil
-	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		return cur, err
-	}
-	defer f.Close()
-
-	if cur.Offset > 0 {
-		if _, err := f.Seek(cur.Offset, io.SeekStart); err != nil {
-			return cur, err
-		}
-	}
-
-	r := bufio.NewReaderSize(f, 256*1024)
-	consumed := cur.Offset
-
-	for {
-		// ReadBytes grow to fit. Line reach megabytes, past bufio.Scanner 64KB
-		// token ceiling.
-		line, err := r.ReadBytes('\n')
-		if len(line) > 0 && line[len(line)-1] == '\n' {
-			consumed += int64(len(line))
-			applyLine(&cur, line)
-		}
-		// Fragment without newline = write in progress. Offset stay short of it,
-		// line counted once complete.
-		if err != nil {
-			break
-		}
-	}
-
-	cur.Offset = consumed
-	return cur, nil
+	offset, err := scanAppended(path, cur.Offset,
+		func() { cur = FileCursor{} },
+		func(line []byte) { applyLine(&cur, line) },
+	)
+	cur.Offset = offset
+	return cur, err
 }
 
 // applyLine fold one complete transcript line into cursor.

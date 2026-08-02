@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/devemberx/knit-statusline/internal/config"
+	"github.com/devemberx/knit-statusline/internal/fixtures"
 	"github.com/devemberx/knit-statusline/internal/install"
 	"github.com/devemberx/knit-statusline/internal/schema"
 )
@@ -43,7 +44,7 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
 	}
 	full := out.String()
-	for _, want := range []string{"config:", "sample: complete data", "Opus 4.8", "current", "--sparse"} {
+	for _, want := range []string{"config:", "sample: complete data", "Opus 4.8", "current", "--sparse", "☑ 3/7"} {
 		if !strings.Contains(full, want) {
 			t.Errorf("preview missing %q:\n%s", want, full)
 		}
@@ -64,6 +65,105 @@ func TestPreviewRendersCompleteAndSparseData(t *testing.T) {
 	}
 	if !strings.Contains(sparse, "weekly  ○○○○○○○○○○   …%") {
 		t.Errorf("sparse preview dropped held rate limit slot:\n%s", sparse)
+	}
+}
+
+// Fixture transcript belong to complete-data run alone. --sparse and
+// --unknown exist to show what a row look like with values missing, and todo
+// dropping out is one of those shapes.
+func TestPreviewDegradedRunsDrawNoTodoSlot(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+
+	for _, flag := range []string{"--sparse", "--unknown"} {
+		var out, errOut bytes.Buffer
+		if code := runPreview([]string{flag}, &out, &errOut); code != 0 {
+			t.Fatalf("%s exit = %d, stderr = %q", flag, code, errOut.String())
+		}
+		if strings.Contains(out.String(), "☑") {
+			t.Errorf("%s preview drew a todo slot:\n%s", flag, out.String())
+		}
+	}
+}
+
+// Unwritable cache directory drop todo slot, and dropped slot read as "no
+// list" -- exactly what fixture transcript was added to rule out. Preview exist
+// to catch bad edit, so problem go to stderr and row still draw.
+func TestPreviewWarnsWhenFixtureTranscriptFails(t *testing.T) {
+	isolate(t)
+	t.Setenv("NO_COLOR", "1")
+
+	// Regular file where config root belong. MkdirAll under it fail on every
+	// platform, unlike chmod 000, which root ignore.
+	blocked := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(blocked, "root"))
+
+	var out, errOut bytes.Buffer
+	if code := runPreview(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(errOut.String(), "preview transcript") {
+		t.Errorf("fixture write failed in silence, stderr:\n%s", errOut.String())
+	}
+	if !strings.Contains(out.String(), "Opus 4.8") {
+		t.Errorf("preview lost the row over one slot:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "☑") {
+		t.Errorf("todo drew without a transcript:\n%s", out.String())
+	}
+}
+
+// Preview must leave one transcript file however often it run, else cache
+// directory fill with per-run copies and every one keep its own scan cursor.
+func TestPreviewTranscriptPathIsFixed(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := writePreviewTranscript(dir)
+	if err != nil {
+		t.Fatalf("writePreviewTranscript: %v", err)
+	}
+	second, err := writePreviewTranscript(dir)
+	if err != nil {
+		t.Fatalf("writePreviewTranscript: %v", err)
+	}
+	if first != second {
+		t.Errorf("path moved between runs: %q then %q", first, second)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Errorf("two runs left %d files, want 1", len(entries))
+	}
+
+	got, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, fixtures.TodosJSONL) {
+		t.Error("written transcript does not match the fixture")
+	}
+}
+
+// Unwritable cache directory must surface as error runPreview can ignore,
+// not a panic and not a half-written path it goes on to scan.
+func TestWritePreviewTranscriptReportsUnwritableDir(t *testing.T) {
+	blocked := filepath.Join(t.TempDir(), "file-not-dir")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	path, err := writePreviewTranscript(filepath.Join(blocked, "cache"))
+	if err == nil {
+		t.Fatal("writing under a file returned no error")
+	}
+	if path != "" {
+		t.Errorf("returned path %q alongside an error, want empty", path)
 	}
 }
 

@@ -36,6 +36,23 @@ var Unknown []byte
 //go:embed empty.json
 var Empty []byte
 
+// TodosJSONL is transcript lines, not a status line document. Fixture JSON carry
+// no transcript_path, so segments reading transcript off disk have nothing to
+// open -- preview and tests both need a real file.
+//
+// Last non-sidechain TodoWrite hold 7 entries, 3 completed. Sidechain line carry
+// different counts -- bad skip logic shows wrong count in output, not only a
+// failing test.
+//
+// transcript_path is one field, so preview point every transcript-reading
+// segment here, todo or not. Lines stay bare for that reason: no usage key, so
+// tokens still draw its no-usage shape, and no deferred_tools_delta, so mcp
+// still drop. Segment added later inherit this file -- give it what it need or
+// its preview go silent.
+//
+//go:embed todos.jsonl
+var TodosJSONL []byte
+
 // PreviewEpoch is instant preview pretend to run at, so its output stay stable
 // and diff-reviewable.
 const PreviewEpoch int64 = 1753243200

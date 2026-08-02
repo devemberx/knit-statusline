@@ -171,6 +171,22 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
+	// Fixture JSON carry no transcript_path, so segments reading transcript off
+	// disk -- todo, tokens, mcp -- have nothing to open, and any edit to them
+	// would preview as silence rather than signal. Complete-data run alone:
+	// --sparse and --unknown exist to draw shape values leave when missing.
+	//
+	// Todo slot pay for failure, not preview run. Warning still reach stderr:
+	// silent drop is exactly what preview exist to tell apart from empty list.
+	if !*sparse && !*unknown {
+		path, err := writePreviewTranscript(cacheDir())
+		if err != nil {
+			fmt.Fprintln(stderr, "warning: preview transcript:", err)
+		} else {
+			in.TranscriptPath = path
+		}
+	}
+
 	fmt.Fprintf(stdout, "config: %s\nsample: %s\n\n", label, kind)
 	fmt.Fprintln(stdout, statusline.Render(cfg, in, statusline.Options{
 		Palette: render.NewPalette(),
@@ -187,6 +203,43 @@ func runPreview(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintln(stdout, "Run with --sparse or --unknown to check the layout when values are missing.")
 	return 0
+}
+
+// writePreviewTranscript put todo fixture on disk, so preview render segment
+// that read transcript rather than stdin.
+//
+// Fixed name, not temp one: scan cursor key off this path, and fresh name
+// per run leave cache file per run behind.
+//
+// Lives under cache directory because it is disposable by same rule --
+// delete it and next preview write it again.
+func writePreviewTranscript(dir string) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	tmp, err := os.CreateTemp(dir, ".preview-todos-*.tmp")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(fixtures.TodosJSONL); err != nil {
+		tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+
+	// Two previews may overlap same as two renders do. Rename leave one complete
+	// file or other, never half-written transcript mid-scan.
+	final := filepath.Join(dir, "preview-todos.jsonl")
+	if err := os.Rename(tmpName, final); err != nil {
+		return "", err
+	}
+	return final, nil
 }
 
 // previewConfig resolve what to draw. Project override included, so preview show
