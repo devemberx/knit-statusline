@@ -56,6 +56,10 @@ const (
 // shipping; deeper is loop.
 const maxHookHops = 2
 
+// Bound ancestor walk. Deepest checkout run near 20 segments; 40 leave room and
+// still bound stat calls when stdin carry pathological path.
+const maxAncestorDepth = 40
+
 // Variable Claude Code expand inside plugin paths.
 const pluginRootVar = "${CLAUDE_PLUGIN_ROOT}"
 
@@ -245,6 +249,7 @@ func countClaudeMD(n *configCount, user, project string) {
 			filepath.Join(project, ".claude", "CLAUDE.md"),
 			filepath.Join(project, ".claude", "CLAUDE.local.md"),
 		)
+		paths = append(paths, ancestorClaudeMD(n, project)...)
 	}
 
 	for _, p := range paths {
@@ -257,6 +262,33 @@ func countClaudeMD(n *configCount, user, project string) {
 			n.n++
 		}
 	}
+}
+
+// ancestorClaudeMD list files every directory above project may hold.
+//
+// Claude Code walk from working directory to filesystem root, loading each
+// CLAUDE.md it pass. Monorepo keep shared instruction one level up, and
+// counting project directory alone report 1 where 3 load.
+//
+// Depth capped: path arrive from stdin, and one carrying 400 segments cost 800
+// stat calls per render. Stopping short is not proof of zero, so cap resolve
+// unknown.
+func ancestorClaudeMD(n *configCount, project string) []string {
+	var paths []string
+	dir := project
+	for range maxAncestorDepth {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return paths
+		}
+		dir = parent
+		paths = append(paths,
+			filepath.Join(dir, "CLAUDE.md"),
+			filepath.Join(dir, "CLAUDE.local.md"),
+		)
+	}
+	n.lost()
+	return paths
 }
 
 func countRules(n *configCount, user, project string) {
