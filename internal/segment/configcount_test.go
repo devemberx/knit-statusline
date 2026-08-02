@@ -187,6 +187,63 @@ func TestConfigCountsEveryClaudeMdLocation(t *testing.T) {
 	}
 }
 
+// Claude Code walk from working directory to filesystem root, loading every
+// CLAUDE.md it pass. Monorepo keep shared instruction one level up, and
+// counting project directory alone report 1 where 3 load.
+func TestConfigCountsAncestorClaudeMd(t *testing.T) {
+	c := configCtx(t)
+	root := t.TempDir()
+	project := filepath.Join(root, "team", "service")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	c.In.Workspace.ProjectDir = project
+	c.In.Workspace.CurrentDir = project
+
+	writeUnder(t, root, "CLAUDE.md", "monorepo\n")
+	writeUnder(t, filepath.Join(root, "team"), "CLAUDE.local.md", "team\n")
+	writeUnder(t, project, "CLAUDE.md", "service\n")
+
+	if got, want := draw(c), "📋3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Empty ancestor file load nothing, same as empty one in project.
+func TestConfigSkipsEmptyAncestorClaudeMd(t *testing.T) {
+	c := configCtx(t)
+	root := t.TempDir()
+	project := filepath.Join(root, "nested")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	c.In.Workspace.ProjectDir = project
+	c.In.Workspace.CurrentDir = project
+
+	writeUnder(t, root, "CLAUDE.md", "")
+	writeUnder(t, project, "CLAUDE.md", "service\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Path deeper than cap leave ancestors unwalked, and stopping short prove no
+// zero.
+func TestConfigMarksDeepAncestorPathUnknown(t *testing.T) {
+	c := configCtx(t)
+	deep := t.TempDir()
+	for range maxAncestorDepth + 1 {
+		deep = filepath.Join(deep, "d")
+	}
+	c.In.Workspace.ProjectDir = deep
+	c.In.Workspace.CurrentDir = deep
+
+	if got, want := draw(c), "📋…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 func TestConfigCountsRulesRecursively(t *testing.T) {
 	c := configCtx(t)
 	writeUnder(t, c.ConfigDir, "rules/style.md", "x\n")
