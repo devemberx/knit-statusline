@@ -105,7 +105,9 @@ linters:
       # G304 file-inclusion taint: settings, manifest and registry paths derive
       # from CLAUDE_CONFIG_DIR, $HOME or workspace.project_dir, never from
       # stdin. Every read sit behind Stat regular-file check and size cap.
-      - path: internal/segment/configcount\.go
+      # Per-platform open live in configcount_unix and configcount_other, same
+      # paths, same guards.
+      - path: internal/segment/configcount(_unix|_other)?\.go
         text: G304
         linters:
           - gosec

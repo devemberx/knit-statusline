@@ -1001,11 +1001,12 @@ func readConfigJSON(path string, limit int64, v any) error {
 
 // readCappedFile read regular file up to limit.
 //
-// Stat before open, and regular file only: settings.json or CLAUDE.md as FIFO
-// hold os.Open until some writer arrive, and render path carry no timeout to
-// cut that. Blocked render print nothing, which read as crash. Symlink followed
-// on purpose -- settings.json pointed into dotfiles checkout is normal, and no
-// byte read here reach row.
+// Stat first keep non-regular path away from open at all: settings.json or
+// CLAUDE.md as FIFO hold blocking open until some writer arrive, and render
+// path carry no timeout to cut that. Blocked render print nothing, which read
+// as crash. Outside unix that Stat stand as only guard before open. Symlink
+// followed on purpose -- settings.json pointed into dotfiles checkout is
+// normal, and no byte read here reach row.
 func readCappedFile(path string, limit int64) ([]byte, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
@@ -1014,12 +1015,33 @@ func readCappedFile(path string, limit int64) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, errConfigNotRegular
 	}
+	return readRegular(path, limit)
+}
 
-	f, err := os.Open(path)
+// readRegular open path and read it, refusing anything but regular file.
+//
+// Stat above and open here are two syscalls, and between them path get renamed
+// onto FIFO -- Stat clear it as regular, open block on it anyway. openConfigFile
+// return without waiting on unix; handle's own Stat then refuse what name no
+// longer describe.
+//
+// That Stat not redundant with O_NONBLOCK: read on nonblocking FIFO fd park in
+// runtime poller on linux, and return EOF on darwin -- empty bytes counted as
+// zero config.
+func readRegular(path string, limit int64) ([]byte, error) {
+	f, err := openConfigFile(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errConfigNotRegular
+	}
 
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
