@@ -168,6 +168,10 @@ jobs:
       matrix:
         # Mirror the release targets. A tag push is the wrong moment to learn
         # darwin or windows stopped compiling.
+        #
+        # plan9 ship nowhere and sit here for build tags alone: it is the one
+        # GOOS neither unix nor windows, so !unix && !windows files compile in
+        # no other job.
         include:
           - {goos: linux, goarch: amd64}
           - {goos: linux, goarch: arm64}
@@ -175,6 +179,7 @@ jobs:
           - {goos: darwin, goarch: arm64}
           - {goos: windows, goarch: amd64}
           - {goos: windows, goarch: arm64}
+          - {goos: plan9, goarch: amd64}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

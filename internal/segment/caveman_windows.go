@@ -11,8 +11,8 @@ import "os"
 // root, so no rename put one at this path.
 //
 // Constraint say windows, not !unix: file name already pin GOOS, so !unix here
-// read as cover for plan9 and wasm it never give. Those build fail loud on
-// missing function instead, weaker guard nobody reasoned about being worse.
+// read as cover for plan9 and wasm it never give. caveman_other.go answer those
+// with refusal instead, weaker guard nobody reasoned about being worse.
 func openCavemanFile(path string) (*os.File, error) {
 	return os.Open(path)
 }
