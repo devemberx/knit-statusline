@@ -290,6 +290,23 @@ type importWalk struct {
 	bytes int64
 }
 
+// charge spend one file's size, false when budget cannot cover it.
+//
+// Compared before subtracting: sparse file report apparent size near int64 max,
+// and three of them carry budget past int64 min, wrapping it back positive and
+// reopening reads walk refused.
+//
+// Charge is stat size, not bytes read, so file grown between stat and read cost
+// up to per-file cap over budget. Bound hold against generated tree, not
+// against writer racing render.
+func (w *importWalk) charge(size int64) bool {
+	if size > w.bytes {
+		return false
+	}
+	w.bytes -= size
+	return true
+}
+
 // count one instruction file plus every file it import.
 //
 // Empty file is what fresh install leave at <config root>/CLAUDE.md, and it
@@ -338,7 +355,7 @@ func (w *importWalk) count(path string, hop int) {
 
 	// Size charged before scan, since scan is what read it. File budget alone
 	// leave 200 files times 1 MiB readable per render.
-	if w.bytes -= fi.Size(); w.bytes < 0 {
+	if !w.charge(fi.Size()) {
 		w.n.lost()
 		return
 	}

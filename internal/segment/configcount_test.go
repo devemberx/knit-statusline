@@ -394,11 +394,47 @@ func TestConfigMarksImportsPastByteBudgetUnknown(t *testing.T) {
 func TestConfigCountsImportsUnderByteBudget(t *testing.T) {
 	c := configCtx(t)
 	project := c.In.Workspace.ProjectDir
-	writeUnder(t, project, "parts/one.md", strings.Repeat("x", 32<<10))
-	writeUnder(t, project, "parts/two.md", strings.Repeat("x", 32<<10))
+	writeUnder(t, project, filepath.Join("parts", "one.md"), strings.Repeat("x", 32<<10))
+	writeUnder(t, project, filepath.Join("parts", "two.md"), strings.Repeat("x", 32<<10))
 	writeUnder(t, project, "CLAUDE.md", "@parts/one.md\n@parts/two.md\n")
 
 	if got, want := draw(c), "📋3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Sparse file report apparent size near int64 max, and three of them carry
+// budget past int64 min. Subtracting first wrap it back positive, handing walk
+// budget it already spent.
+func TestImportWalkChargeRefusesSizeOverBudget(t *testing.T) {
+	w := importWalk{bytes: maxImportBytes}
+	for i := range 3 {
+		if w.charge(1 << 62) {
+			t.Fatalf("charge %d of 1<<62 accepted against %d budget", i+1, w.bytes)
+		}
+		if w.bytes != maxImportBytes {
+			t.Fatalf("refused charge %d moved budget to %d", i+1, w.bytes)
+		}
+	}
+	if !w.charge(1 << 10) {
+		t.Errorf("1 KiB refused against %d budget", w.bytes)
+	}
+}
+
+// File sitting at last hop get counted and never scanned, so its size cost no
+// budget. Charging it shrink what reads that do happen may spend.
+func TestConfigChargesNoBytesForLastHopFile(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "@hop1.md\n")
+	for i := 1; i < maxImportHops; i++ {
+		writeUnder(t, project, "hop"+strconv.Itoa(i)+".md", "@hop"+strconv.Itoa(i+1)+".md\n")
+	}
+	leaf := "hop" + strconv.Itoa(maxImportHops) + ".md"
+	writeUnder(t, project, leaf, strings.Repeat("x", maxImportBytes+1))
+
+	// Root plus 5 hops = 6, leaf outweigh whole budget and still cost nothing.
+	if got, want := draw(c), "📋6"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
 	}
 }
