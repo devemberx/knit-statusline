@@ -433,12 +433,17 @@ func apiDuration(c Context) (string, bool) {
 
 // Fill ramp read without color, so NO_COLOR terminal still separate max from
 // high. Unknown level take empty circle, never medium's glyph.
+//
+// max hold Magenta, not Orange: Orange is warn threshold, and context bar sit on
+// same row as effort in every preset, so orange ✦ read as rate-limit warning.
+// Magenta's other users -- vim mode, git worktree marker -- stay off most rows.
+// high keep Cyan though dir own it too: dir draw text, effort draw glyph.
 func effortStyle(level string) (string, render.Color) {
 	switch level {
 	case "max":
-		return "✦", render.Orange
+		return "✦", render.Magenta
 	case "xhigh":
-		return "●", render.Magenta
+		return "●", render.Aqua
 	case "high":
 		return "◕", render.Cyan
 	case "medium":

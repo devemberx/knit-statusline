@@ -210,8 +210,8 @@ func TestEffortStyleSeparatesEveryLevel(t *testing.T) {
 		{"low", "◔", render.Dim},
 		{"medium", "◑", render.White},
 		{"high", "◕", render.Cyan},
-		{"xhigh", "●", render.Magenta},
-		{"max", "✦", render.Orange},
+		{"xhigh", "●", render.Aqua},
+		{"max", "✦", render.Magenta},
 	}
 
 	icons := map[string]string{}
