@@ -8,6 +8,13 @@ import (
 // Cache file plumbing shared by every scan that persist a cursor. Each consumer
 // keep its own key, version and payload -- token rules and todo rules move
 // apart -- and share nothing but bytes on disk.
+//
+// Every cache in this package go through these two, never bare
+// filepath.Join(dir, name) beside them. Guard below is one line each and both
+// get lost to copy-paste: PR #33 hand-copied cursor.go's atomic write into new
+// todo cursor and left dir == "" check behind, so cache loaded out of whatever
+// project directory render happened to run in. cachefile_test.go enforce this;
+// comment alone stop nobody.
 
 // readCacheFile read dir/name, reporting whether bytes came back.
 //
