@@ -485,6 +485,44 @@ func TestConfigCountsImportIndentedUnderParagraph(t *testing.T) {
 	}
 }
 
+// Blockquote marker shift content column same way list item do, so four spaces
+// behind "> " open code block sitting inside quote. Measured in 2.1.220.
+func TestConfigSkipsImportsInsideQuotedIndentedCode(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> Setup:\n>\n>     @quoted.md\n")
+	writeUnder(t, project, "quoted.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Import quoted at content column is prose that quote hold, and it load.
+func TestConfigCountsImportInsideQuote(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> see @quoted.md\n")
+	writeUnder(t, project, "quoted.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Three spaces behind "> " stay under code indent, way three spaces at margin
+// do. Measured loading in 2.1.220.
+func TestConfigCountsQuotedImportUnderCodeIndent(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> Setup:\n>\n>    @quoted.md\n")
+	writeUnder(t, project, "quoted.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // List end at first line back at margin, so four spaces under paragraph after
 // it hold code again, not that item's continuation.
 func TestConfigSkipsIndentedCodeAfterListEnd(t *testing.T) {

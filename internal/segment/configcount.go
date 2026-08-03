@@ -439,9 +439,10 @@ const (
 //
 // Behavior measured against Claude Code 2.1.220, one import per throwaway
 // project: four spaces after blank line load nothing, tab load nothing, three
-// spaces load, four spaces under list item load, and four spaces right under
-// prose line load. Parser guessing differently from what load is worse than
-// gap, so each of those five is a test.
+// spaces load, four spaces under list item load, four spaces right under prose
+// line load, and behind "> " same four load nothing where three load. Parser
+// guessing differently from what load is worse than gap, so each of those eight
+// is a test.
 type blockScan struct {
 	fence      string
 	para       bool
@@ -451,7 +452,7 @@ type blockScan struct {
 
 // prose hand back line's content, ok false where Claude Code read no import.
 func (s *blockScan) prose(line string) (string, bool) {
-	indent, text := lineIndent(line)
+	indent, text := lineIndent(stripQuote(line))
 	if text == "" {
 		s.para = false
 		return "", false
@@ -535,6 +536,31 @@ func listMarker(text string) int {
 		return 0
 	}
 	return i + n
+}
+
+// stripQuote peel blockquote markers off line, handing back what quote hold.
+//
+// Marker take up to 3 spaces ahead of ">" and eat one space behind it, so
+// column code block measure from sit inside quote rather than at margin.
+// Loop peel nested quote, since "> > " shift twice.
+//
+// ">" alone strip to empty line, which is blank inside that quote -- block
+// boundary, way real blank line is.
+func stripQuote(line string) string {
+	for {
+		i := 0
+		for i < len(line) && i < codeIndent-1 && line[i] == ' ' {
+			i++
+		}
+		if i >= len(line) || line[i] != '>' {
+			return line
+		}
+		i++
+		if i < len(line) && line[i] == ' ' {
+			i++
+		}
+		line = line[i:]
+	}
 }
 
 // lineIndent measure leading whitespace in columns and hand back rest of line.
