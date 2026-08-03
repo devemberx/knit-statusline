@@ -162,6 +162,74 @@ func TestConfigSkipsDisabledPluginHooks(t *testing.T) {
 	}
 }
 
+// enablePlugins register n plugins at once and switch every one on. Return
+// install path each sit at.
+func enablePlugins(t *testing.T, c Context, n int) []string {
+	t.Helper()
+	root := t.TempDir()
+	installs := make([]string, n)
+	reg := map[string]any{}
+	on := map[string]bool{}
+	for i := range n {
+		key := "p" + strconv.Itoa(i) + "@vendor"
+		installs[i] = filepath.Join(root, strconv.Itoa(i))
+		reg[key] = []map[string]string{{"scope": "user", "installPath": installs[i]}}
+		on[key] = true
+	}
+	writeJSONUnder(t, c.ConfigDir, "plugins/installed_plugins.json",
+		map[string]any{"version": 2, "plugins": reg})
+	writeJSONUnder(t, c.ConfigDir, "settings.json", map[string]any{"enabledPlugins": on})
+	return installs
+}
+
+func writeJSONUnder(t *testing.T, dir, rel string, v any) {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal %s: %v", rel, err)
+	}
+	writeUnder(t, dir, rel, string(b))
+}
+
+// Plugin declaring nothing still cost five stat calls, and roster capped at
+// 1 MiB alone hold thousands of them. Stopping short is no proof of zero.
+func TestConfigMarksPluginsPastPathBudgetUnknown(t *testing.T) {
+	c := configCtx(t)
+	enablePlugins(t, c, maxPluginPaths+10)
+
+	if got, want := draw(c), "🪝… · 🔌…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Path budget alone leave every manifest read at maxConfigBytes, so bytes carry
+// own budget. One manifest serve both counts, so each plugin here read twice.
+func TestConfigMarksPluginsPastByteBudgetUnknown(t *testing.T) {
+	c := configCtx(t)
+	pad := strings.Repeat("x", maxConfigBytes-1024)
+	for _, install := range enablePlugins(t, c, int(maxPluginBytes/maxConfigBytes)+1) {
+		writeUnder(t, install, ".claude-plugin/plugin.json",
+			`{"pad": "`+pad+`", `+oneHookBody+`}`)
+	}
+
+	if got, want := draw(c), "🪝… · 🔌…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Machine running a handful of plugins stay far under both budgets, so normal
+// roster still count exact.
+func TestConfigCountsPluginsUnderBudget(t *testing.T) {
+	c := configCtx(t)
+	for _, install := range enablePlugins(t, c, 20) {
+		writeUnder(t, install, ".claude-plugin/plugin.json", `{"name": "p", `+oneHookBody+`}`)
+	}
+
+	if got, want := draw(c), "🪝20"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Empty file load no instruction. Counting it claim guidance that does not
 // exist -- state ~/.claude/CLAUDE.md sit in on fresh install.
 func TestConfigSkipsEmptyClaudeMd(t *testing.T) {
