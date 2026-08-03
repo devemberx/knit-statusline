@@ -168,6 +168,17 @@ jobs:
       matrix:
         # Mirror the release targets. A tag push is the wrong moment to learn
         # darwin or windows stopped compiling.
+        #
+        # plan9 and wasip1 ship nowhere and build here to keep !unix build tag
+        # honest. internal/segment spell its non-unix open helper !unix, not
+        # windows, so a windows-only file landing back there compile on every
+        # release target and break these two alone. Both entries, not one: a
+        # windows-suffixed file break plan9 and wasip1 together, a plan9-suffixed
+        # one break wasip1 while plan9 stay green. No runner exist for either,
+        # and none needed: compile is the whole claim.
+        #
+        # vet typecheck _test.go as well, so unix-only test carry own build tag
+        # like caveman_unix_test.go, else these two entries alone go red.
         include:
           - {goos: linux, goarch: amd64}
           - {goos: linux, goarch: arm64}
@@ -175,6 +186,8 @@ jobs:
           - {goos: darwin, goarch: arm64}
           - {goos: windows, goarch: amd64}
           - {goos: windows, goarch: arm64}
+          - {goos: plan9, goarch: amd64}
+          - {goos: wasip1, goarch: wasm}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
