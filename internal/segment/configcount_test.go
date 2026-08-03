@@ -420,6 +420,98 @@ func TestConfigKeepsFenceOpenAcrossOtherMarker(t *testing.T) {
 	}
 }
 
+// Four spaces after blank line open indented code block, and Claude Code load
+// nothing out of it. Measured against 2.1.220: same file's own "@secret.md"
+// stayed literal in context while plain one expanded.
+func TestConfigSkipsImportsInsideIndentedCode(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n    @first.md\n    @second.md\n\nDone.\n")
+	writeUnder(t, project, "first.md", "not loaded\n")
+	writeUnder(t, project, "second.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Tab measure four columns, so it open same block four spaces do.
+func TestConfigSkipsImportsInsideTabIndentedCode(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n\t@tabbed.md\n")
+	writeUnder(t, project, "tabbed.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Three spaces is prose. Block start at four, and cap sit there in 2.1.220 too.
+func TestConfigCountsImportUnderCodeIndent(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n   @three.md\n")
+	writeUnder(t, project, "three.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// List item shift where content start, so four spaces under bullet is that
+// item's own paragraph, not code. Measured loading in 2.1.220.
+func TestConfigCountsImportIndentedUnderListItem(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "- item one\n\n    @nested.md\n")
+	writeUnder(t, project, "nested.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Indented code never interrupt paragraph, so line sitting right under prose
+// load whatever it indent to. Measured loading in 2.1.220.
+func TestConfigCountsImportIndentedUnderParagraph(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n    @under.md\n")
+	writeUnder(t, project, "under.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// List end at first line back at margin, so four spaces under paragraph after
+// it hold code again, not that item's continuation.
+func TestConfigSkipsIndentedCodeAfterListEnd(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "- item one\n\nSetup:\n\n    @after.md\n")
+	writeUnder(t, project, "after.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Blank line inside block do not close it; first line back out of indent do.
+func TestConfigCountsImportAfterIndentedCode(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n    @first.md\n\n    @second.md\n\n@after.md\n")
+	writeUnder(t, project, "first.md", "not loaded\n")
+	writeUnder(t, project, "second.md", "not loaded\n")
+	writeUnder(t, project, "after.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Chain run 5 hops, so file sitting 6 hops out never load and never count.
 func TestConfigStopsImportChainAtHopCap(t *testing.T) {
 	c := configCtx(t)
