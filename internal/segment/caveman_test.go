@@ -98,7 +98,7 @@ func TestCavemanRefusesSymlink(t *testing.T) {
 
 // Lstat and Open are two syscalls. Whoever write config root swap flag for
 // symlink in between, and Open land on target Lstat never saw. Handing
-// readSameFile FileInfo of another file stand in for that window, microseconds
+// readIfSame FileInfo of another file stand in for that window, microseconds
 // wide and never lost on purpose.
 func TestCavemanRefusesFileSwappedAfterStat(t *testing.T) {
 	dir := t.TempDir()
@@ -115,7 +115,7 @@ func TestCavemanRefusesFileSwappedAfterStat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lstat other: %v", err)
 	}
-	if got, ok := readSameFile(flag, fi); ok {
+	if got, ok := readIfSame(flag, fi); ok {
 		t.Errorf("read %q under another file's stat and got %q, want refusal", flag, got)
 	}
 
@@ -123,7 +123,7 @@ func TestCavemanRefusesFileSwappedAfterStat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lstat flag: %v", err)
 	}
-	if got, ok := readSameFile(flag, fi); !ok || got != "full" {
+	if got, ok := readIfSame(flag, fi); !ok || got != "full" {
 		t.Errorf("read own file gave %q, %v; want %q, true", got, ok, "full")
 	}
 }

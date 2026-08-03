@@ -76,20 +76,25 @@ func readCavemanFile(path string) (string, bool) {
 	if err != nil || !fi.Mode().IsRegular() {
 		return "", false
 	}
-	return readSameFile(path, fi)
+	return readIfSame(path, fi)
 }
 
-// readSameFile open path, refusing unless opened file is one fi describe.
+// readIfSame open path, refusing unless opened file is one fi describe.
 //
 // Lstat and Open are two syscalls, and between them path get renamed onto
 // symlink -- Lstat clear it as regular, Open follow it anyway. Handle's own
 // Stat close that window: identity checked on opened handle, not on name.
 // Upstream caveman-config.js readFlag reach for O_NOFOLLOW instead;
-// Windows have no such flag, os.SameFile run everywhere.
+// Windows have no such flag, os.SameFile compile everywhere.
+//
+// Windows guard weaker: os.Lstat of regular file save path, not file id, and
+// os.SameFile load that id by reopening path. Symlink swapped in still
+// refused -- reopen carry FILE_FLAG_OPEN_REPARSE_POINT, land on link itself.
+// Regular file renamed over path pass, both id read after swap.
 //
 // Longer than cap = reject whole, not truncate -- nothing legitimate write past
 // 64 bytes here.
-func readSameFile(path string, fi os.FileInfo) (string, bool) {
+func readIfSame(path string, fi os.FileInfo) (string, bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", false
