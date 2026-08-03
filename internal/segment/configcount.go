@@ -61,12 +61,19 @@ const maxHookHops = 2
 const maxAncestorDepth = 40
 
 // Bound import walk. Claude Code stop following at 5 hops, so hop cap match
-// what load. Two budgets under it: file budget bound reads, reference budget
-// bound stat calls. Prose carrying many "@" spend second budget alone.
+// what load. Three budgets under it: file budget bound reads, reference budget
+// bound stat calls, byte budget bound their product. Prose carrying many "@"
+// spend second budget alone.
+//
+// 200 files times 1 MiB read 200 MiB per render, uncached: measured near 74ms
+// warm on darwin/arm64, disk-bound cold. Instruction tree on real machine total
+// 50 KiB across 6 files, largest 25 KiB, so 4 MiB leave 80x headroom and cost
+// near 1.4ms at same rate.
 const (
 	maxImportHops  = 5
 	maxImportFiles = 200
 	maxImportRefs  = 2000
+	maxImportBytes = 4 << 20
 )
 
 // Variable Claude Code expand inside plugin paths.
@@ -266,19 +273,38 @@ func countClaudeMD(n *configCount, user, project string) {
 		seen:  map[string]struct{}{},
 		files: maxImportFiles,
 		refs:  maxImportRefs,
+		bytes: maxImportBytes,
 	}
 	for _, p := range paths {
 		w.count(p, 0)
 	}
 }
 
-// importWalk carry instruction count, files already counted, and both budgets
+// importWalk carry instruction count, files already counted, and every budget
 // across every root.
 type importWalk struct {
 	n     *configCount
 	seen  map[string]struct{}
 	files int
 	refs  int
+	bytes int64
+}
+
+// charge spend one file's size, false when budget cannot cover it.
+//
+// Compared before subtracting: sparse file report apparent size near int64 max,
+// and three of them carry budget past int64 min, wrapping it back positive and
+// reopening reads walk refused.
+//
+// Charge is stat size, not bytes read, so file grown between stat and read cost
+// up to per-file cap over budget. Bound hold against generated tree, not
+// against writer racing render.
+func (w *importWalk) charge(size int64) bool {
+	if size > w.bytes {
+		return false
+	}
+	w.bytes -= size
+	return true
 }
 
 // count one instruction file plus every file it import.
@@ -324,6 +350,13 @@ func (w *importWalk) count(path string, hop int) {
 	// Claude Code stop at same hop, so stopping here match what load -- number
 	// stay a fact, not a truncation.
 	if hop >= maxImportHops {
+		return
+	}
+
+	// Size charged before scan, since scan is what read it. File budget alone
+	// leave 200 files times 1 MiB readable per render.
+	if !w.charge(fi.Size()) {
+		w.n.lost()
 		return
 	}
 
