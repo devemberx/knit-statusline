@@ -370,6 +370,39 @@ func TestConfigMarksImportsPastFileBudgetUnknown(t *testing.T) {
 	}
 }
 
+// File budget alone leave 200 MiB readable per render, so bytes carry own
+// budget. Few files under per-file cap still pass it.
+func TestConfigMarksImportsPastByteBudgetUnknown(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	pad := strings.Repeat("x", maxConfigBytes-1) + "\n"
+	var body strings.Builder
+	for i := range int(maxImportBytes/maxConfigBytes) + 1 {
+		name := "part" + strconv.Itoa(i) + ".md"
+		writeUnder(t, project, filepath.Join("parts", name), pad)
+		body.WriteString("@parts/" + name + "\n")
+	}
+	writeUnder(t, project, "CLAUDE.md", body.String())
+
+	if got, want := draw(c), "📋…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Instruction tree measured on real machine total 50 KiB, so budget bound
+// pathological tree alone and normal one count exact.
+func TestConfigCountsImportsUnderByteBudget(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "parts/one.md", strings.Repeat("x", 32<<10))
+	writeUnder(t, project, "parts/two.md", strings.Repeat("x", 32<<10))
+	writeUnder(t, project, "CLAUDE.md", "@parts/one.md\n@parts/two.md\n")
+
+	if got, want := draw(c), "📋3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Prose carrying "@" past reference budget name no file, but resolving each one
 // still cost a stat.
 func TestConfigMarksImportsPastRefBudgetUnknown(t *testing.T) {
