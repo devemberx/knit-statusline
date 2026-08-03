@@ -1014,12 +1014,29 @@ func readCappedFile(path string, limit int64) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, errConfigNotRegular
 	}
+	return readRegular(path, limit)
+}
 
-	f, err := os.Open(path)
+// readRegular open path and read it, refusing anything but regular file.
+//
+// Stat above and open here are two syscalls, and between them path get renamed
+// onto FIFO -- Stat clear it as regular, open block on it anyway. openConfigFile
+// return without waiting on unix; handle's own Stat then refuse what name no
+// longer describe.
+func readRegular(path string, limit int64) ([]byte, error) {
+	f, err := openConfigFile(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errConfigNotRegular
+	}
 
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
