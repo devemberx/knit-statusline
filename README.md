@@ -166,7 +166,7 @@ example.
 
 ## 📚 Documentation
 
-- **[Configuration](docs/CONFIGURATION.md)** — the layout model, all 22 segments
+- **[Configuration](docs/CONFIGURATION.md)** — the layout model, all 23 segments
   and their fields, templates and alignment, every option, presets, and
   per-project overrides.
 - **[Contributing](.github/CONTRIBUTING.md)** — setup, commit format, and the

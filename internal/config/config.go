@@ -59,6 +59,9 @@ type Segment struct {
 	Scope            *string `toml:"scope"`
 	IncludeSidechain *bool   `toml:"include_sidechain"`
 
+	// type = "limit.model" only. Empty follow session's model.
+	Model *string `toml:"model"`
+
 	// type = "command" only.
 	Command   *string `toml:"command"`
 	TimeoutMS *int    `toml:"timeout_ms"`
@@ -113,6 +116,8 @@ type Resolved struct {
 	Scope            string
 	IncludeSidechain bool
 
+	Model string
+
 	Command   string
 	TimeoutMS int
 	CacheMS   int
@@ -159,6 +164,9 @@ func (c *Config) Resolve(name, defaultTemplate string) Resolved {
 	}
 	if s.IncludeSidechain != nil {
 		r.IncludeSidechain = *s.IncludeSidechain
+	}
+	if s.Model != nil {
+		r.Model = *s.Model
 	}
 	if s.Command != nil {
 		r.Command = *s.Command

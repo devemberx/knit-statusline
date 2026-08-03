@@ -360,6 +360,9 @@ func mergeSegment(dst, src *Segment) {
 	if src.IncludeSidechain != nil {
 		dst.IncludeSidechain = src.IncludeSidechain
 	}
+	if src.Model != nil {
+		dst.Model = src.Model
+	}
 	if src.Command != nil {
 		dst.Command = src.Command
 	}

@@ -59,7 +59,7 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 	}
 	for _, want := range []string{
 		"caveman", "command", "config", "context", "cost", "dir", "effort",
-		"fast_mode", "limit.5h", "limit.7d", "lines", "mcp", "model",
+		"fast_mode", "limit.5h", "limit.7d", "limit.model", "lines", "mcp", "model",
 		"output_style", "pr", "repo", "session", "thinking", "todo", "tokens",
 		"version", "vim",
 	} {

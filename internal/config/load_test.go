@@ -172,6 +172,7 @@ crit = 30
 bar_width = 5
 scope = "project"
 include_sidechain = true
+model = "Fable"
 command = "echo hi"
 timeout_ms = 250
 cache_ms = 5000
@@ -254,6 +255,22 @@ warn = 80
 	}
 	if seg.Warn == nil || *seg.Warn != 80 {
 		t.Error("warn should be overridden")
+	}
+}
+
+// Project layer pin model without restating template. Key merge per-key like
+// every other; missing case leave pin silently dropped on any project holding
+// its own statusline.toml.
+func TestMergeSegmentCarriesModelPin(t *testing.T) {
+	base := mustParse(t, "[segments.\"limit.model\"]\ntemplate = \"{model} {pct}%\"\n")
+	override := mustParse(t, "[segments.\"limit.model\"]\nmodel = \"Fable\"\n")
+
+	seg := Merge(base, override).Segments["limit.model"]
+	if seg.Model == nil || *seg.Model != "Fable" {
+		t.Errorf("model = %v, want Fable", seg.Model)
+	}
+	if seg.Template == nil || *seg.Template != "{model} {pct}%" {
+		t.Error("template should survive an override that does not mention it")
 	}
 }
 
