@@ -70,18 +70,41 @@ func buildCaveman(c Context) Result {
 // readCavemanFile read at most cavemanMaxBytes from regular file.
 //
 // Lstat before open: flag symlinked at ~/.ssh/id_rsa otherwise print that
-// file's bytes every render. Longer than cap = reject whole, not truncate --
-// nothing legitimate write past 64 bytes here.
+// file's bytes every render.
 func readCavemanFile(path string) (string, bool) {
 	fi, err := os.Lstat(path)
 	if err != nil || !fi.Mode().IsRegular() {
 		return "", false
 	}
+	return readIfSame(path, fi)
+}
+
+// readIfSame open path, refusing unless opened file is one fi describe.
+//
+// Lstat and Open are two syscalls, and between them path get renamed onto
+// symlink -- Lstat clear it as regular, Open follow it anyway. Handle's own
+// Stat close that window: identity checked on opened handle, not on name.
+// Upstream caveman-config.js readFlag reach for O_NOFOLLOW instead;
+// Windows have no such flag, os.SameFile compile everywhere.
+//
+// Windows guard weaker: os.Lstat of regular file save path, not file id, and
+// os.SameFile load that id by reopening path. Symlink swapped in still
+// refused -- reopen carry FILE_FLAG_OPEN_REPARSE_POINT, land on link itself.
+// Regular file renamed over path pass, both id read after swap.
+//
+// Longer than cap = reject whole, not truncate -- nothing legitimate write past
+// 64 bytes here.
+func readIfSame(path string, fi os.FileInfo) (string, bool) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", false
 	}
 	defer f.Close()
+
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(fi, opened) {
+		return "", false
+	}
 
 	b, err := io.ReadAll(io.LimitReader(f, cavemanMaxBytes+1))
 	if err != nil || len(b) > cavemanMaxBytes {

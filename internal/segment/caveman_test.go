@@ -96,6 +96,38 @@ func TestCavemanRefusesSymlink(t *testing.T) {
 	}
 }
 
+// Lstat and Open are two syscalls. Whoever write config root swap flag for
+// symlink in between, and Open land on target Lstat never saw. Handing
+// readIfSame FileInfo of another file stand in for that window, microseconds
+// wide and never lost on purpose.
+func TestCavemanRefusesFileSwappedAfterStat(t *testing.T) {
+	dir := t.TempDir()
+	flag := filepath.Join(dir, ".caveman-active")
+	if err := os.WriteFile(flag, []byte("full"), 0o644); err != nil {
+		t.Fatalf("write flag: %v", err)
+	}
+	other := filepath.Join(dir, "other")
+	if err := os.WriteFile(other, []byte("ultra"), 0o644); err != nil {
+		t.Fatalf("write other: %v", err)
+	}
+
+	fi, err := os.Lstat(other)
+	if err != nil {
+		t.Fatalf("lstat other: %v", err)
+	}
+	if got, ok := readIfSame(flag, fi); ok {
+		t.Errorf("read %q under another file's stat and got %q, want refusal", flag, got)
+	}
+
+	fi, err = os.Lstat(flag)
+	if err != nil {
+		t.Fatalf("lstat flag: %v", err)
+	}
+	if got, ok := readIfSame(flag, fi); !ok || got != "full" {
+		t.Errorf("read own file gave %q, %v; want %q, true", got, ok, "full")
+	}
+}
+
 func TestCavemanRefusesDirectory(t *testing.T) {
 	c := ctx(t, fixtures.Full, "caveman")
 	c.ConfigDir = t.TempDir()
