@@ -795,6 +795,26 @@ func TestConfigFollowsSymlinkedRulesRoot(t *testing.T) {
 	}
 }
 
+// settings.json symlinked into dotfiles checkout is normal too, and config read
+// follow it where caveman flag read refuse. openNonblock and
+// openNonblockNoFollow now sit in one file, so handing this caller wrong one
+// cost hooks and servers silently.
+func TestConfigFollowsSymlinkedSettings(t *testing.T) {
+	c := configCtx(t)
+	target := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(target, []byte(threeCommandSettings), 0o644); err != nil {
+		t.Fatalf("write target: %v", err)
+	}
+
+	if err := os.Symlink(target, filepath.Join(c.ConfigDir, "settings.json")); err != nil {
+		t.Skipf("symlink unsupported here: %v", err)
+	}
+
+	if got, want := draw(c), "🪝3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Link planted below root walk wherever it aim, so entries stay Lstat.
 func TestConfigSkipsSymlinkedRuleEntries(t *testing.T) {
 	c := configCtx(t)

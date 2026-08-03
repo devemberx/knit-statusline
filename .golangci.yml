@@ -93,21 +93,12 @@ linters:
           - gosec
 
       # G304 file-inclusion taint: caveman flag path derive from config root
-      # ($CLAUDE_CONFIG_DIR, else ~/.claude), never from stdin. Read sit behind
-      # Lstat regular-file check, os.SameFile identity check and 64-byte cap,
-      # tighter than taint check ask for. Per-platform open live in these two
-      # files alone; caveman.go hold no open call left to waive.
-      - path: internal/segment/caveman_(unix|windows)\.go
-        text: G304
-        linters:
-          - gosec
-
-      # G304 file-inclusion taint: settings, manifest and registry paths derive
-      # from CLAUDE_CONFIG_DIR, $HOME or workspace.project_dir, never from
-      # stdin. Every read sit behind Stat regular-file check and size cap.
-      # Per-platform open live in configcount_unix and configcount_other, same
-      # paths, same guards.
-      - path: internal/segment/configcount(_unix|_other)?\.go
+      # ($CLAUDE_CONFIG_DIR, else ~/.claude); settings, manifest and registry
+      # paths derive from that root, $HOME or workspace.project_dir. None come
+      # from stdin. Caveman read sit behind Lstat regular-file check, os.SameFile
+      # identity check and 64-byte cap; config read sit behind Stat regular-file
+      # check and size cap. Every open both segment make live in these two files.
+      - path: internal/segment/open_(unix|other)\.go
         text: G304
         linters:
           - gosec
