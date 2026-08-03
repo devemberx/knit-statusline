@@ -4,8 +4,10 @@ import (
 	"errors"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/devemberx/knit-statusline/internal/render"
 )
@@ -32,6 +34,10 @@ const (
 	// kind marking per-model window. Session and account-wide weekly sit in
 	// same array under "session" and "weekly_all", scope null on both.
 	scopedWeeklyKind = "weekly_scoped"
+
+	// Word naming vendor, not family. Every model id open with it, and display
+	// name may too, so matching on it pair any session with any window.
+	vendorWord = "claude"
 )
 
 // usageCacheDoc is subset of .claude.json this segment read. configcount.go
@@ -116,8 +122,12 @@ func buildModelLimit(c Context) Result {
 // readUsageCache decode cachedUsageUtilization off .claude.json.
 //
 // CLAUDE_CONFIG_DIR move file inside config root; default install leave it
-// beside, at ~/.claude.json. First hit win -- both exist only when somebody
-// moved root and left old file behind. Same probe configcount.go run.
+// beside, at ~/.claude.json. Same probe configcount.go run.
+//
+// Search walk past file that parse but carry no usage block: both files exist
+// only when somebody moved root, and either one may be copy Claude Code write
+// its fetch to. Leftover from before move answer stale and drop on TTL, so
+// walking cost no wrong number.
 func readUsageCache(root string) (*cachedUsage, bool) {
 	for _, p := range []string{
 		filepath.Join(root, ".claude.json"),
@@ -130,7 +140,9 @@ func readUsageCache(root string) (*cachedUsage, bool) {
 		case err != nil:
 			return nil, false
 		}
-		return d.Usage, d.Usage != nil
+		if d.Usage != nil {
+			return d.Usage, true
+		}
 	}
 	return nil, false
 }
@@ -181,8 +193,8 @@ func pickScopedLimit(limits []scopedLimit, names []string) (scopedLimit, bool) {
 // Pinned name stand alone: window is account-wide, so Fable week keep filling
 // while row get read from Opus session, and somebody pinning it want that
 // number, not this session's. Unpinned, session model answer to two names --
-// display name off payload, family word inside id -- and usage document agree
-// with whichever one release ship.
+// display name off payload, id beside it -- and usage document agree with
+// whichever one release ship.
 func modelNames(c Context) []string {
 	if pin := familyWord(c.Cfg.Model); pin != "" {
 		return []string{pin}
@@ -192,28 +204,39 @@ func modelNames(c Context) []string {
 	}
 
 	var out []string
-	if w := familyWord(c.In.Model.DisplayName); w != "" {
-		out = append(out, w)
-	}
-	// claude-fable-5[1m] give "claude", "fable", "5[1m]". Junk part match no
-	// family word, and every part here belong to this session's model anyway.
-	for _, p := range strings.Split(strings.ToLower(c.In.Model.ID), "-") {
-		if p != "" {
-			out = append(out, p)
+	for _, name := range []string{c.In.Model.DisplayName, c.In.Model.ID} {
+		if w := familyWord(name); w != "" && !slices.Contains(out, w) {
+			out = append(out, w)
 		}
 	}
 	return out
 }
 
-// familyWord reduce model name to what every source agree on. Usage document
-// write "Fable", payload display name may gain release number, id carry
-// "claude-fable-5". First word, lowercased, is overlap.
+// familyWord reduce model name to word every source agree on.
+//
+// Usage document write "Fable", payload display name may gain release number,
+// id carry "claude-fable-5[1m]", and pin get pasted off any of them. Vendor
+// word and version part drop; first word left is overlap.
+//
+// Dropping "claude" is what hold windows apart: every id open with it, so
+// keeping it match "Claude Opus 4.5" from Fable session and print week that
+// bind another model.
 func familyWord(name string) string {
-	name = strings.ToLower(strings.TrimSpace(name))
-	if i := strings.IndexByte(name, ' '); i >= 0 {
-		name = name[:i]
+	for _, part := range strings.FieldsFunc(name, nameBreak) {
+		part = strings.ToLower(part)
+		// Version part lead with digit: "5", "4.5", "5[1m]", "20241022".
+		if part == vendorWord || (part[0] >= '0' && part[0] <= '9') {
+			continue
+		}
+		return part
 	}
-	return name
+	return ""
+}
+
+// nameBreak split model name. Space separate display name words, hyphen
+// separate id parts, and pin arrive in either shape.
+func nameBreak(r rune) bool {
+	return r == '-' || r == '_' || unicode.IsSpace(r)
 }
 
 // resetTime parse RFC 3339 stamp usage document write. Unparseable value drop

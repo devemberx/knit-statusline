@@ -29,7 +29,7 @@ drop, or restyle without touching code.
 
 - 🧶 **Compose your own rows.** Reorder segments, drop what you do not want, put
   two on one line — a config edit, not a code edit.
-- 🧱 **22 built-in segments.** Model, context, directory and git, session,
+- 🧱 **23 built-in segments.** Model, context, directory and git, session,
   effort, todo lists, MCP servers, rate limits, cost, tokens, lines changed, PR.
 - 🔢 **Cumulative token tracking.** Fresh input, cache writes, cache reads and
   output counted separately, because they are priced separately.

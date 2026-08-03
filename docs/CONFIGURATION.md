@@ -356,8 +356,11 @@ model = "Fable"
 template = "{model} {bar} {pct:>3}%{reset}"
 ```
 
-`model` is matched against the name in the usage data, case-insensitively, on
-the family word alone: `Fable` matches `Fable 5` and `claude-fable-5` alike.
+`model` is matched against the name in the usage data on the family word alone,
+so `Fable`, `fable`, `Fable 5`, `Claude Fable 5` and `claude-fable-5` all name
+the same window — case, the `claude` prefix and the release number are all
+ignored. Which means a pin cannot separate one release of a model from another,
+and does not need to: `/usage` scopes its row by family too.
 
 ---
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,21 +46,10 @@ func writeUsageCache(t *testing.T, dir string, fetchedAt time.Time, limits ...st
       "limits": [%s]
     }
   }
-}`, fetchedAt.UnixMilli(), joinJSON(limits))
+}`, fetchedAt.UnixMilli(), strings.Join(limits, ","))
 	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(doc), 0o644); err != nil {
 		t.Fatalf("write .claude.json: %v", err)
 	}
-}
-
-func joinJSON(items []string) string {
-	out := ""
-	for i, it := range items {
-		if i > 0 {
-			out += ","
-		}
-		out += it
-	}
-	return out
 }
 
 // modelLimitCtx build Context statusline.Render way, with config root pointing
@@ -181,6 +171,106 @@ func TestModelLimitMatchesModelByIDFamily(t *testing.T) {
 	}
 }
 
+// Vendor word name no family. Display name carrying it must still match its own
+// model, so stripping it cost no window.
+func TestModelLimitMatchesVendorPrefixedDisplayName(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "63", modelScope("Claude Fable 5"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+	c.In.Model = schema.Model{ID: "claude-fable-5[1m]", DisplayName: "Fable 5"}
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("vendor-prefixed display name dropped its own model's window")
+	}
+	if got := res.Fields["pct"].Text; got != "63" {
+		t.Errorf("pct = %q, want %q", got, "63")
+	}
+}
+
+// Every model id start "claude-", so vendor word left in name pool match
+// "Claude Opus 4.5" from Fable session and print another model's week.
+func TestModelLimitVendorWordMatchesNoModel(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "42", modelScope("Claude Opus 4.5"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+	c.In.Model = schema.Model{ID: "claude-fable-5[1m]", DisplayName: "Fable 5"}
+	if res := Build(c); !res.Empty {
+		t.Errorf("Opus window rendered %+v under a Fable session, want empty", res.Fields)
+	}
+}
+
+// Release number distinguish no window: /usage scope its row by family, and
+// session id carry release number usage document need not repeat.
+func TestModelLimitMatchesAcrossReleaseNumbers(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "51", modelScope("Opus 4.5"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+	c.In.Model = schema.Model{ID: "claude-opus-5", DisplayName: "Opus 5"}
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("release number split one family into two windows")
+	}
+	if got := res.Fields["pct"].Text; got != "51" {
+		t.Errorf("pct = %q, want %q", got, "51")
+	}
+}
+
+// Account hold one scoped window per model. Walk must reach session's own
+// rather than stop at whichever entry sit first.
+func TestModelLimitPicksOwnWindowAmongSeveral(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "12", modelScope("Claude Opus 4.5"), "2025-07-28T20:59:59.810071+00:00"),
+		scopedLimitJSON("weekly_scoped", "34", modelScope("Sonnet 4.5"), "2025-07-28T20:59:59.810071+00:00"),
+		scopedLimitJSON("weekly_scoped", "56", modelScope("Fable"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+	c.In.Model = schema.Model{ID: "claude-fable-5[1m]", DisplayName: "Fable 5"}
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("session's own window dropped while two others sat ahead of it")
+	}
+	if got := res.Fields["pct"].Text; got != "56" {
+		t.Errorf("pct = %q, want %q", got, "56")
+	}
+	if got := res.Fields["model"].Text; got != "Fable" {
+		t.Errorf("model = %q, want %q", got, "Fable")
+	}
+}
+
+// Model id is what /model and payload show, so pin get pasted from it. Silent
+// drop there leave user no error to read.
+func TestModelLimitPinAcceptsModelID(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "77", modelScope("Fable"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	for _, pin := range []string{"Fable", "fable", "Fable 5", "Claude Fable 5", "claude-fable-5[1m]"} {
+		c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+		c.In.Model = schema.Model{ID: "claude-opus-5", DisplayName: "Opus 5"}
+		c.Cfg.Model = pin
+		res := Build(c)
+		if res.Empty {
+			t.Errorf("pin %q dropped segment", pin)
+			continue
+		}
+		if got := res.Fields["pct"].Text; got != "77" {
+			t.Errorf("pin %q: pct = %q, want %q", pin, got, "77")
+		}
+	}
+}
+
 // Claude Code discard this cache past one hour, and window may have reset in
 // meantime. Stale percentage state fact no render measured.
 func TestModelLimitDropsStaleCache(t *testing.T) {
@@ -256,6 +346,31 @@ func TestModelLimitReadsClaudeJSONBesideRoot(t *testing.T) {
 
 	if res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute)); res.Empty {
 		t.Error(".claude.json beside root dropped segment")
+	}
+}
+
+// Moved config root leave two .claude.json, and only one hold usage block.
+// Stopping at first file that merely parse report no window while live copy sit
+// one directory up.
+func TestModelLimitFallsPastFileWithoutUsageBlock(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".claude.json"), []byte(`{"installMethod":"native"}`), 0o644); err != nil {
+		t.Fatalf("write inner .claude.json: %v", err)
+	}
+	writeUsageCache(t, home, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "42", modelScope("Opus"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute))
+	if res.Empty {
+		t.Fatal("usage block one directory up dropped segment")
+	}
+	if got := res.Fields["pct"].Text; got != "42" {
+		t.Errorf("pct = %q, want %q", got, "42")
 	}
 }
 
