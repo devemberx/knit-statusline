@@ -94,7 +94,7 @@ func TestResolveUndeclaredSegment(t *testing.T) {
 	if r.Scope != DefaultScope || r.TimeoutMS != DefaultTimeoutMS {
 		t.Errorf("scope/timeout = %q/%d", r.Scope, r.TimeoutMS)
 	}
-	if r.IncludeSidechain || r.Command != "" || r.CacheMS != 0 {
+	if r.IncludeSidechain || r.Model != "" || r.Command != "" || r.CacheMS != 0 {
 		t.Errorf("optional fields should stay zero: %+v", r)
 	}
 }
@@ -108,6 +108,7 @@ func TestResolveCarriesEveryOverride(t *testing.T) {
 			Template:         ptr("{out}"),
 			Scope:            ptr(ScopeProject),
 			IncludeSidechain: ptr(true),
+			Model:            ptr("Fable"),
 			Command:          ptr("kubectl config current-context"),
 			TimeoutMS:        ptr(0),
 			CacheMS:          ptr(5000),
@@ -126,6 +127,9 @@ func TestResolveCarriesEveryOverride(t *testing.T) {
 	}
 	if !r.IncludeSidechain {
 		t.Error("include_sidechain override lost")
+	}
+	if r.Model != "Fable" {
+		t.Errorf("model = %q, want %q", r.Model, "Fable")
 	}
 	if r.Command != "kubectl config current-context" {
 		t.Errorf("command = %q", r.Command)

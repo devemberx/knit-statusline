@@ -265,6 +265,7 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `todo` | `icon` `ratio` `done` `total` `pending` | Read from the transcript's last `TodoWrite` call; absent until the session writes one, and `{icon}` is `☑` — green once `{done}` reaches `{total}` |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
+| `limit.model` | `pct` `bar` `reset` `reset_time` `model` | The weekly window scoped to one model — the `Current week (Fable)` row in `/usage`. Read off disk rather than from the payload, and dropped whenever the account has no such window — see [Per-model weekly windows](#per-model-weekly-windows) |
 | `tokens` | `io` `cache` `cache_hit` `input` `cache_write` `cache_read` `output` `total` `input_raw` `output_raw` | Read from the transcript, so the totals are cumulative |
 | `cost` | `usd` `api_duration` | Client-side estimate; resets on `/clear` |
 | `lines` | `added` `removed` | |
@@ -319,6 +320,51 @@ Add it to a row like anything else:
 segments = ["model", "dir", "mcp"]
 ```
 
+### Per-model weekly windows
+
+`/usage` shows a `Current week (Fable)` row beside the session and weekly ones.
+The status line payload does not: Claude Code builds `rate_limits` out of the
+`anthropic-ratelimit-unified-5h`/`-7d` response headers, and no header names a
+model. The only copy on the machine is the `cachedUsageUtilization` block in
+`.claude.json`, which Claude Code writes from its own usage fetch — so that is
+where `limit.model` reads it.
+
+Three consequences follow from reading a cache rather than the payload:
+
+- **It expires.** Claude Code refreshes the block every five minutes while a
+  session is sending and ignores it once it is an hour old. `limit.model` does
+  the same, so an idle session eventually drops the segment rather than showing
+  a percentage that may belong to a window which has since reset.
+- **It is not a documented interface.** A Claude Code release that renames the
+  block takes the segment with it. The failure is a silently missing segment,
+  never a broken row.
+- **It is out of every preset**, and `preview` never draws it. `preview` pins
+  its clock to a fixed instant so that two runs compare, and no real cache is
+  ever fresh against that instant — so the segment expires there by the rule
+  above whatever `.claude.json` holds. Add it to a row yourself, and read the
+  result off a live session rather than off `preview`.
+
+By default the segment shows the window belonging to the model the session is
+running, and drops when that model has no scoped window — which is the usual
+case for Opus and Sonnet. The window is account-wide, though, so a Fable week
+keeps filling while you read the row from an Opus session. Pin it to see that
+number anywhere:
+
+```toml
+[[lines]]
+segments = ["model", "limit.5h", "limit.7d", "limit.model"]
+
+[segments."limit.model"]
+model = "Fable"
+template = "{model} {bar} {pct:>3}%{reset}"
+```
+
+`model` is matched against the name in the usage data on the family word alone,
+so `Fable`, `fable`, `Fable 5`, `Claude Fable 5` and `claude-fable-5` all name
+the same window — case, the `claude` prefix and the release number are all
+ignored. Which means a pin cannot separate one release of a model from another,
+and does not need to: `/usage` scopes its row by family too.
+
 ---
 
 ## Segment options
@@ -331,6 +377,7 @@ segments = ["model", "dir", "mcp"]
 | `bar_width` | `context`, `limit.*` | Bar width in characters | `10` |
 | `scope` | `tokens` | `"session"` or `"project"` | `"session"` |
 | `include_sidechain` | `tokens` | Count subagent transcripts too | `false` |
+| `model` | `limit.model` | Which model's weekly window to show, by name — `"Fable"` | the session's own model |
 | `command` | `type = "command"` | What to run | — |
 | `timeout_ms` | `type = "command"`, `dir` | How long to wait — bounds the command, or the git call for `dir` | `1000` |
 | `cache_ms` | `type = "command"` | Reuse the previous output for this long | `0` |

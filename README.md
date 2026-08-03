@@ -29,7 +29,7 @@ drop, or restyle without touching code.
 
 - 🧶 **Compose your own rows.** Reorder segments, drop what you do not want, put
   two on one line — a config edit, not a code edit.
-- 🧱 **22 built-in segments.** Model, context, directory and git, session,
+- 🧱 **23 built-in segments.** Model, context, directory and git, session,
   effort, todo lists, MCP servers, rate limits, cost, tokens, lines changed, PR.
 - 🔢 **Cumulative token tracking.** Fresh input, cache writes, cache reads and
   output counted separately, because they are priced separately.
@@ -166,7 +166,7 @@ example.
 
 ## 📚 Documentation
 
-- **[Configuration](docs/CONFIGURATION.md)** — the layout model, all 22 segments
+- **[Configuration](docs/CONFIGURATION.md)** — the layout model, all 23 segments
   and their fields, templates and alignment, every option, presets, and
   per-project overrides.
 - **[Contributing](.github/CONTRIBUTING.md)** — setup, commit format, and the
