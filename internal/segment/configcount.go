@@ -1021,15 +1021,18 @@ func readCappedFile(path string, limit int64) ([]byte, error) {
 // readRegular open path and read it, refusing anything but regular file.
 //
 // Stat above and open here are two syscalls, and between them path get renamed
-// onto FIFO -- Stat clear it as regular, open block on it anyway. openConfigFile
+// onto FIFO -- Stat clear it as regular, open block on it anyway. openNonblock
 // return without waiting on unix; handle's own Stat then refuse what name no
 // longer describe.
 //
 // That Stat not redundant with O_NONBLOCK: read on nonblocking FIFO fd park in
 // runtime poller on linux, and return EOF on darwin -- empty bytes counted as
 // zero config.
+//
+// openNonblock, not openNonblockNoFollow: settings.json pointed into dotfiles
+// checkout is normal here, unlike caveman flag.
 func readRegular(path string, limit int64) ([]byte, error) {
-	f, err := openConfigFile(path)
+	f, err := openNonblock(path)
 	if err != nil {
 		return nil, err
 	}
