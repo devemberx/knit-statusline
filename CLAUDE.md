@@ -86,7 +86,9 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
   `CLAUDE_CONFIG_DIR` relocate settings.json, statusline.toml, installed binary
   and cache together. Resolver return empty when no home: `filepath.Join` on
   empty string yield relative `.claude`, and that silently disable empty-value
-  guard in `install` and `config.Load`.
+  guard in `install` and `config.Load`. One exception: `~` typed inside user's
+  own `CLAUDE.md` import name their home, not config root, so `resolveImport`
+  expand it through `os.UserHomeDir`.
 - Relative root refused by `install` and `uninstall`, taken as-is by render.
   Relative value resolve against cwd of whichever process read it, and Claude
   Code's cwd is not user's shell — one value name two roots. Write command must
