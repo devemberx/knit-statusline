@@ -129,9 +129,11 @@ func buildModelLimit(c Context) Result {
 // its fetch to. Leftover from before move answer stale and drop on TTL, so
 // walking cost no wrong number.
 func readUsageCache(root string) (*cachedUsage, bool) {
+	// Clean before Dir: CLAUDE_CONFIG_DIR written with trailing slash leave
+	// Dir() pointing at root itself, and both probe collapse onto one file.
 	for _, p := range []string{
 		filepath.Join(root, ".claude.json"),
-		filepath.Join(filepath.Dir(root), ".claude.json"),
+		filepath.Join(filepath.Dir(filepath.Clean(root)), ".claude.json"),
 	} {
 		var d usageCacheDoc
 		switch err := readConfigJSON(p, maxClaudeJSONBytes, &d); {
@@ -196,7 +198,14 @@ func pickScopedLimit(limits []scopedLimit, names []string) (scopedLimit, bool) {
 // display name off payload, id beside it -- and usage document agree with
 // whichever one release ship.
 func modelNames(c Context) []string {
-	if pin := familyWord(c.Cfg.Model); pin != "" {
+	// Pin naming no family -- "Claude", "5" -- still bind row away from session
+	// model. Falling through print window user never asked for, under name they
+	// never typed.
+	if c.Cfg.Model != "" {
+		pin := familyWord(c.Cfg.Model)
+		if pin == "" {
+			return nil
+		}
 		return []string{pin}
 	}
 	if c.In == nil {
@@ -241,6 +250,11 @@ func nameBreak(r rune) bool {
 
 // resetTime parse RFC 3339 stamp usage document write. Unparseable value drop
 // reset alone: percentage is number row exist for.
+//
+// Local() is what put this clock on same face as limit.5h and limit.7d: their
+// stamp arrive as Unix seconds and time.Unix hand back Local, while time.Parse
+// keep "+00:00" written in document. Seoul reader otherwise get "jul 28,
+// 8:59pm" beside "jul 29, 5:59am" for one instant, neither marked UTC.
 func resetTime(s *string) (time.Time, bool) {
 	if s == nil || *s == "" {
 		return time.Time{}, false
@@ -249,7 +263,7 @@ func resetTime(s *string) (time.Time, bool) {
 	if err != nil {
 		return time.Time{}, false
 	}
-	return at, true
+	return at.Local(), true
 }
 
 // clampPct hold percentage in 0-100. Document report 100 on spent window and

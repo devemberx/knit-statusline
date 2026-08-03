@@ -52,6 +52,20 @@ func writeUsageCache(t *testing.T, dir string, fetchedAt time.Time, limits ...st
 	}
 }
 
+// wantReset render stamp way row must show it: local zone, spelled out here
+// rather than taken off dateTime, so production formatter answer to something.
+//
+// Literal expectation would state UTC wall clock and pass in every zone,
+// hiding exactly what this guard exist for.
+func wantReset(t *testing.T, stamp string) string {
+	t.Helper()
+	at, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		t.Fatalf("parse %q: %v", stamp, err)
+	}
+	return strings.ToLower(at.Local().Format("Jan 2, 3:04pm"))
+}
+
 // modelLimitCtx build Context statusline.Render way, with config root pointing
 // at seeded directory.
 func modelLimitCtx(t *testing.T, doc []byte, root string, age time.Duration) Context {
@@ -82,8 +96,40 @@ func TestModelLimitReadsScopedWindowForSessionModel(t *testing.T) {
 	if got := res.Fields["model"].Text; got != "Opus" {
 		t.Errorf("model = %q, want %q", got, "Opus")
 	}
-	if got := res.Fields["reset_time"].Text; got != "jul 28, 8:59pm" {
-		t.Errorf("reset_time = %q, want %q", got, "jul 28, 8:59pm")
+	if want := wantReset(t, "2025-07-28T20:59:59.810071+00:00"); res.Fields["reset_time"].Text != want {
+		t.Errorf("reset_time = %q, want %q", res.Fields["reset_time"].Text, want)
+	}
+}
+
+// Usage document stamp reset as RFC 3339 carrying "+00:00"; payload stamp it as
+// Unix seconds, which time.Unix hand back in local zone. Segments sharing row
+// must land on one clock -- unmarked UTC beside local time read as two resets,
+// and preset put limit.7d and limit.model side by side.
+func TestModelLimitResetAgreesWithAccountWideWindow(t *testing.T) {
+	const stamp = "2025-07-28T20:59:59.810071+00:00"
+	at, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		t.Fatalf("parse stamp: %v", err)
+	}
+
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "42", modelScope("Opus"), stamp),
+	)
+	scoped := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute))
+	if scoped.Empty {
+		t.Fatal("scoped window dropped")
+	}
+
+	sec, used := at.Unix(), 42.0
+	c := ctx(t, fixtures.Full, "limit.7d")
+	c.In.RateLimits = &schema.RateLimits{
+		SevenDay: &schema.Window{UsedPercentage: &used, ResetsAt: &sec},
+	}
+	account := Build(c)
+
+	if got, want := scoped.Fields["reset_time"].Text, account.Fields["reset_time"].Text; got != want {
+		t.Errorf("one instant, two clocks: limit.model %q, limit.7d %q", got, want)
 	}
 }
 
@@ -160,14 +206,69 @@ func TestModelLimitMatchesModelByIDFamily(t *testing.T) {
 		scopedLimitJSON("weekly_scoped", "63", modelScope("Fable"), "2025-07-28T20:59:59.810071+00:00"),
 	)
 
+	// Display name blank leave id as only handle, so this exercise id path
+	// rather than pass on display name that already match.
 	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
-	c.In.Model = schema.Model{ID: "claude-fable-5[1m]", DisplayName: "Fable 5"}
+	c.In.Model = schema.Model{ID: "claude-fable-5[1m]"}
 	res := Build(c)
 	if res.Empty {
 		t.Fatal("id family match dropped segment")
 	}
 	if got := res.Fields["pct"].Text; got != "63" {
 		t.Errorf("pct = %q, want %q", got, "63")
+	}
+}
+
+// Dated id put two numbers ahead of family: claude-3-5-sonnet-20241022 give
+// "3" to anything reading first part after vendor word.
+func TestModelLimitMatchesDatedModelID(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "29", modelScope("Sonnet"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+	c.In.Model = schema.Model{ID: "claude-3-5-sonnet-20241022"}
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("dated id dropped its own model's window")
+	}
+	if got := res.Fields["pct"].Text; got != "29" {
+		t.Errorf("pct = %q, want %q", got, "29")
+	}
+}
+
+// Pin naming no family bind row nowhere. Falling through to session model print
+// window user never asked for, under name they never typed.
+func TestModelLimitPinNamingNoFamilyDrops(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCache(t, root, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "42", modelScope("Opus"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	for _, pin := range []string{"Claude", "claude", "5", "4.5", "-"} {
+		c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+		c.Cfg.Model = pin
+		if res := Build(c); !res.Empty {
+			t.Errorf("pin %q rendered %+v, want empty", pin, res.Fields)
+		}
+	}
+}
+
+// Trailing slash on CLAUDE_CONFIG_DIR leave filepath.Dir pointing at root
+// itself, collapsing both probe onto one file and losing beside-root copy.
+func TestModelLimitReadsBesideTrailingSlashRoot(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatalf("mkdir root: %v", err)
+	}
+	writeUsageCache(t, home, usageFetchedAt,
+		scopedLimitJSON("weekly_scoped", "42", modelScope("Opus"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	if res := Build(modelLimitCtx(t, fixtures.Full, root+string(filepath.Separator), time.Minute)); res.Empty {
+		t.Error("trailing-slash root dropped segment")
 	}
 }
 

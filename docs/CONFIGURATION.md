@@ -338,8 +338,11 @@ Three consequences follow from reading a cache rather than the payload:
 - **It is not a documented interface.** A Claude Code release that renames the
   block takes the segment with it. The failure is a silently missing segment,
   never a broken row.
-- **It is out of every preset**, and out of `preview` — the fixtures carry no
-  usage cache. Add it to a row yourself.
+- **It is out of every preset**, and `preview` never draws it. `preview` pins
+  its clock to a fixed instant so that two runs compare, and no real cache is
+  ever fresh against that instant — so the segment expires there by the rule
+  above whatever `.claude.json` holds. Add it to a row yourself, and read the
+  result off a live session rather than off `preview`.
 
 By default the segment shows the window belonging to the model the session is
 running, and drops when that model has no scoped window — which is the usual
