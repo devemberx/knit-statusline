@@ -31,7 +31,7 @@ func palette(t *testing.T) []swatch {
 	// Dim is SGR 2, no foreground of its own, so it never match. Every other
 	// entry must -- miss here read as "palette clean" while measuring nothing.
 	found := paletteEntry.FindAllStringSubmatch(string(src), -1)
-	if len(found) < 8 {
+	if len(found) < 10 {
 		t.Fatalf("matched %d palette entries in style.go, pattern out of step", len(found))
 	}
 	out := make([]swatch, 0, len(found))

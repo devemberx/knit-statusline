@@ -365,8 +365,8 @@ gets a distinct glyph and color:
 | `low` | `◔` | dim |
 | `medium` | `◑` | white |
 | `high` | `◕` | cyan |
-| `xhigh` | `●` | magenta |
-| `max` | `✦` | orange |
+| `xhigh` | `●` | aqua |
+| `max` | `✦` | magenta |
 
 A level the binary does not recognise renders `○` in dim — its own slot, so it
 never reads as `medium`. The glyphs form a fill ramp, so the five levels stay

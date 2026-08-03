@@ -14,6 +14,10 @@ type Color string
 // Reference palette, 24-bit foreground escapes. New entry clear CIEDE2000 18.4
 // against every other, distance Orange and Yellow already sit at -- closer pair
 // stop reading as two colors in one row.
+//
+// Ten entries leave thin room. Aqua clear 21.0 against Cyan, best any vivid hue
+// still reach; coral, violet and teal all land under 11 against Red, Magenta and
+// Cyan. Next entry need brute-force search over sRGB, not eyeball.
 const (
 	Blue    Color = "\033[38;2;0;153;255m"
 	Orange  Color = "\033[38;2;255;176;85m"
@@ -24,6 +28,7 @@ const (
 	White   Color = "\033[38;2;220;220;220m"
 	Magenta Color = "\033[38;2;180;140;255m"
 	Pink    Color = "\033[38;2;230;60;170m"
+	Aqua    Color = "\033[38;2;0;236;198m"
 	Dim     Color = "\033[2m"
 
 	reset = "\033[0m"
