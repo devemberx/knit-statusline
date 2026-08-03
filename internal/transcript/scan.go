@@ -58,6 +58,8 @@ type entry struct {
 	Attachment *struct {
 		Type       string `json:"type"`
 		SkillCount int    `json:"skillCount"`
+		// True only on whole-roster listing. Delta listing carry false.
+		IsInitial bool `json:"isInitial"`
 	} `json:"attachment"`
 }
 
@@ -103,8 +105,16 @@ type FileCursor struct {
 	// Last counted message. Persisted = dedup survive incremental boundary.
 	LastMessageID string `json:"lastMessageID"`
 	Totals        Totals `json:"totals"`
-	// Skills Claude Code loaded for session. Listing line sit ~26KB in, and
-	// cursor resume past it, so value persist here or vanish on second render.
+	// Skills Claude Code loaded for session, off whole-roster listing alone.
+	// Listing sit tens of KB in, and cursor resume past it, so value persist
+	// here or vanish on second render.
+	//
+	// Delta listing dropped. Its skillCount size delta, not roster: skill
+	// invoked mid-session write skillCount 1, so last-wins park "1" on row rest
+	// of session. Summing deltas over-count instead -- measured delta
+	// re-announce name listing already carry. Counting names settle neither:
+	// measured initial listing carry 49 names over 45 distinct, so distinct
+	// count contradict number Claude Code itself publish.
 	SkillCount int `json:"skillCount"`
 	// Last skill session invoked. Sticky: no exit event exist, so field is
 	// "last called", never "running now".
@@ -136,7 +146,7 @@ func applyLine(cur *FileCursor, line []byte) {
 		return
 	}
 	if listing && e.Attachment != nil && e.Attachment.Type == "skill_listing" &&
-		e.Attachment.SkillCount > 0 {
+		e.Attachment.IsInitial && e.Attachment.SkillCount > 0 {
 		cur.SkillCount = e.Attachment.SkillCount
 	}
 	if invoke {
@@ -230,8 +240,8 @@ type Skills struct {
 	Last      string
 }
 
-// Summary is everything one scan pass yield. Two segments read it, and second
-// pass over same bytes would buy nothing.
+// Summary is everything one scan pass yield. Listing and usage sit in same
+// file, so caller wanting both need not scan twice.
 type Summary struct {
 	Totals Totals
 	Skills Skills

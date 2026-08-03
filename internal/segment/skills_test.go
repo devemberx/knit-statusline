@@ -30,10 +30,19 @@ func skillsCtx(t *testing.T, lines ...string) Context {
 	return c
 }
 
+// Wrapper type and key order copied off recorded transcript.
 func listingLine(count int) string {
 	return fmt.Sprintf(
-		`{"type":"user","attachment":{"type":"skill_listing","content":"# Skills","skillCount":%d,"isInitial":true,"names":["deploy"]}}`,
+		`{"type":"attachment","attachment":{"type":"skill_listing","content":"# Skills","skillCount":%d,"isInitial":true,"names":["deploy"]}}`,
 		count)
+}
+
+// Delta listing every skill invocation write. skillCount size delta, not
+// roster.
+func deltaListingLine(name string) string {
+	return fmt.Sprintf(
+		`{"type":"attachment","attachment":{"type":"skill_listing","content":"# Skills","skillCount":1,"isInitial":false,"names":[%q]}}`,
+		name)
 }
 
 func skillLine(msgID, skill string) string {
@@ -61,6 +70,19 @@ func TestBuildSkillsDropsWithoutTranscript(t *testing.T) {
 	c.In.TranscriptPath = ""
 	if got := draw(c); got != "" {
 		t.Errorf("got %q, want empty", got)
+	}
+}
+
+// Session invoking a skill get delta listing beside tool_use. Row must keep
+// roster count, not fall to delta's 1.
+func TestBuildSkillsKeepsCountAcrossInvocation(t *testing.T) {
+	c := skillsCtx(t,
+		listingLine(40),
+		skillLine("msg_a", "deploy"),
+		deltaListingLine("deploy"),
+	)
+	if got := draw(c); got != "💡 40" {
+		t.Errorf("got %q, want \"💡 40\"", got)
 	}
 }
 

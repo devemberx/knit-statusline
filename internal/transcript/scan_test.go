@@ -365,12 +365,20 @@ func TestSidechainFlipKeepsTotalsCorrect(t *testing.T) {
 	}
 }
 
-// Line shaped like attachment Claude Code write once per session. Compact
-// JSON, matching what land on disk.
+// Whole-roster listing Claude Code write at session start. Key order and
+// wrapper type copied off recorded transcript, compact as what land on disk.
 func skillListingLine(count int) string {
 	return fmt.Sprintf(
-		`{"type":"user","attachment":{"type":"skill_listing","content":"# Skills","skillCount":%d,"isInitial":true,"names":["deploy"]}}`,
+		`{"type":"attachment","attachment":{"type":"skill_listing","content":"# Skills","skillCount":%d,"isInitial":true,"names":["deploy"]}}`,
 		count)
+}
+
+// Delta listing Claude Code write when skill get invoked: isInitial false, and
+// skillCount sizing delta rather than roster.
+func skillDeltaListingLine(name string) string {
+	return fmt.Sprintf(
+		`{"type":"attachment","attachment":{"type":"skill_listing","content":"# Skills","skillCount":1,"isInitial":false,"names":[%q]}}`,
+		name)
 }
 
 func TestSkillListingCountReachesSummary(t *testing.T) {
@@ -404,15 +412,59 @@ func TestSkillCountSurvivesIncrementalScan(t *testing.T) {
 	}
 }
 
-// Resumed session write a second listing. Later value win: skill installed
-// mid-session is exactly why a second line exist.
-func TestLaterSkillListingWins(t *testing.T) {
+// Resumed session write second whole-roster listing. Later value win: skill
+// installed mid-session is why a second roster exist.
+func TestLaterInitialListingWins(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.jsonl")
 	writeLines(t, path, []string{skillListingLine(40), skillListingLine(41)})
 
 	sum, _ := scanOnce(t, path, nil)
 	if sum.Skills.Available != 41 {
 		t.Errorf("available = %d, want 41", sum.Skills.Available)
+	}
+}
+
+// Invoking a skill write delta listing carrying skillCount 1. Reading it as
+// roster park "1" on row rest of session -- measured in 23 of 25 recorded
+// transcripts holding more than one listing.
+func TestDeltaListingDoesNotClobberCount(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{
+		skillListingLine(40),
+		skillDeltaListingLine("deploy"),
+		skillDeltaListingLine("deploy"),
+	})
+
+	sum, _ := scanOnce(t, path, nil)
+	if !sum.Skills.Known || sum.Skills.Available != 40 {
+		t.Errorf("skills = %+v, want 40 known", sum.Skills)
+	}
+}
+
+// Production order: roster read on first render, delta appended later. Count
+// live in cursor by then, so clobber survive into every later render.
+func TestDeltaListingAfterIncrementalBoundary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{skillListingLine(40)})
+
+	_, cache := scanOnce(t, path, nil)
+	appendLines(t, path, []string{skillDeltaListingLine("deploy")})
+
+	sum, _ := scanOnce(t, path, cache)
+	if sum.Skills.Available != 40 {
+		t.Errorf("available = %d, want 40", sum.Skills.Available)
+	}
+}
+
+// Delta alone prove no roster size. Reporting its skillCount as roster would
+// print a number no listing ever claimed.
+func TestDeltaListingAloneIsUnknown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "s.jsonl")
+	writeLines(t, path, []string{skillDeltaListingLine("deploy")})
+
+	sum, _ := scanOnce(t, path, nil)
+	if sum.Skills.Known || sum.Skills.Available != 0 {
+		t.Errorf("skills = %+v, want unknown", sum.Skills)
 	}
 }
 
