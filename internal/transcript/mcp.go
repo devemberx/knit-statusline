@@ -75,14 +75,15 @@ type deferredDelta struct {
 // sibling transcripts under scope = "project" would report servers of sessions
 // that already exited.
 //
-// No cache. Cursor carry byte offset alone, and delta sit at head of file where
-// incremental scan never look again; parking roster in cursor is what
-// cacheVersion 3 tried and lost.
+// No cache. Delta sit at head of file where incremental scan never look again,
+// so cursor is only place roster could live -- and roster is tool set plus two
+// server lists, not one number. Skill listing park in cursor at cacheVersion 4
+// because it is one int; MCPState would grow every cursor by every tool name
+// session ever attached, sibling transcripts under scope = "project" included.
 //
 // Whole file pass through every render, so cost track transcript size: measured
 // on M1 Pro with warm page cache, 1.4MB in 1.1ms, 3.5MB in 3.2ms. Reading only
-// appended bytes would need roster cached beside cursor, shape cacheVersion 3
-// already lost.
+// appended bytes would need that roster cached beside cursor.
 func ScanMCP(path string) (MCPState, bool) {
 	f, err := os.Open(path)
 	if err != nil {

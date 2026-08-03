@@ -47,7 +47,8 @@ func buildTokens(c Context) Result {
 	}
 
 	cache := transcript.LoadCache(c.CacheDir, opts)
-	totals, cache := transcript.Scan(opts, cache)
+	sum, cache := transcript.Scan(opts, cache)
+	totals := sum.Totals
 
 	// Cache write failure cost one rescan next render. Not worth failing over.
 	_ = transcript.SaveCache(c.CacheDir, opts, cache)

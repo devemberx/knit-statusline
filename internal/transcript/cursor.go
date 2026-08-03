@@ -12,7 +12,8 @@ import (
 // 2: id-less entry stop clobbering dedup guard.
 // 3: burned -- cursor carried ultracode marker state, reverted. Next bump take
 // 4, else caches of that shape load as valid under new rules.
-const cacheVersion = 2
+// 4: cursor carry skill listing count and last Skill invocation.
+const cacheVersion = 4
 
 // Cache hold per-file scan cursors for one scope.
 type Cache struct {
@@ -26,6 +27,9 @@ func NewCache() *Cache {
 
 // CacheKey name cache file per scope. Path hashed: name stay short and
 // filesystem-safe whatever project layout.
+//
+// "tokens-" prefix predate skill state riding in same cursor. Renaming orphan
+// every cache on disk for a filename nobody read, so prefix stay.
 func CacheKey(opts Options) string {
 	h := sha256.Sum256([]byte(string(opts.Scope) + "\x00" + opts.TranscriptPath))
 	return "tokens-" + hex.EncodeToString(h[:8]) + ".json"

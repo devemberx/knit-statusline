@@ -60,8 +60,8 @@ func TestEverySegmentIsRegisteredAndSorted(t *testing.T) {
 	for _, want := range []string{
 		"caveman", "command", "config", "context", "cost", "dir", "effort",
 		"fast_mode", "limit.5h", "limit.7d", "limit.model", "lines", "mcp", "model",
-		"output_style", "pr", "repo", "session", "thinking", "todo", "tokens",
-		"version", "vim",
+		"output_style", "pr", "repo", "session", "skills", "thinking", "todo",
+		"tokens", "version", "vim",
 	} {
 		if !slices.Contains(names, want) {
 			t.Errorf("segment %q not registered", want)
@@ -311,16 +311,29 @@ func TestBuildInjectsStableFromRegistry(t *testing.T) {
 	}
 }
 
+// skillsListingFixture seed transcript holding skill_listing, so skills escape
+// its own TranscriptPath=="" guard for tests whose ctx() leaves it unset.
+func skillsListingFixture(t *testing.T) (path, cacheDir string) {
+	t.Helper()
+	dir := t.TempDir()
+	path = filepath.Join(dir, "session.jsonl")
+	if err := os.WriteFile(path, []byte(listingLine(1)+"\n"), 0o644); err != nil {
+		t.Fatalf("seed skills listing fixture: %v", err)
+	}
+	return path, filepath.Join(dir, "cache")
+}
+
 // Opposite direction from TestProducedFieldsAreDeclared: declared field that one
 // path omit expand to nothing, so slot narrow mid-session and read as crash.
 // Icon is fixed part of segment shape, so any row drawn at all carry one.
 //
-// caveman read flag file off disk, mcp and todo read transcript, none of which
-// any fixture carry, so seed all three.
+// caveman read flag file off disk, mcp, todo and skills read transcript, none
+// of which any fixture carry, so seed all four.
 func TestDeclaredIconAlwaysProduced(t *testing.T) {
 	cavemanDir := cavemanConfigDir(t)
 	mcpPath := mcpCtx(t, mcpDelta(t, []string{"mcp__srv_a__go"}, nil, nil, nil)).In.TranscriptPath
 	todoPath, todoCache := todoTranscript(t), t.TempDir()
+	skillsPath, skillsCacheDir := skillsListingFixture(t)
 	drawn := map[string]int{}
 
 	for _, f := range fixtureDocs {
@@ -340,6 +353,9 @@ func TestDeclaredIconAlwaysProduced(t *testing.T) {
 				}
 				if kind == "todo" {
 					c.In.TranscriptPath, c.CacheDir = todoPath, todoCache
+				}
+				if kind == "skills" {
+					c.In.TranscriptPath, c.CacheDir = skillsPath, skillsCacheDir
 				}
 				res := Build(c)
 				// Dropped slot draw nothing, so no shape to hold.
