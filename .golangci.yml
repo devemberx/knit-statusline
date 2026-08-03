@@ -94,9 +94,10 @@ linters:
 
       # G304 file-inclusion taint: caveman flag path derive from config root
       # ($CLAUDE_CONFIG_DIR, else ~/.claude), never from stdin. Read sit behind
-      # Lstat regular-file check and 64-byte cap, tighter than taint check ask
-      # for.
-      - path: internal/segment/caveman\.go
+      # Lstat regular-file check, os.SameFile identity check and 64-byte cap,
+      # tighter than taint check ask for. Per-platform open live in these two
+      # files alone; caveman.go hold no open call left to waive.
+      - path: internal/segment/caveman_(unix|windows)\.go
         text: G304
         linters:
           - gosec
