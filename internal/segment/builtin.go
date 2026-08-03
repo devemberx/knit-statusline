@@ -436,8 +436,12 @@ func apiDuration(c Context) (string, bool) {
 //
 // max hold Magenta, not Orange: Orange is warn threshold, and context bar sit on
 // same row as effort in every preset, so orange ✦ read as rate-limit warning.
-// Magenta's other users -- vim mode, git worktree marker -- stay off most rows.
-// high keep Cyan though dir own it too: dir draw text, effort draw glyph.
+// Magenta also mark vim mode and git worktree, but neither carry severity, so
+// sharing it mislead nobody.
+// high keep Cyan though dir own it too, both drawing text: Cyan carry no
+// severity, so pair cost grouping, not false alarm. Every free palette entry
+// already mark severity or another segment, and eleventh entry find less room
+// than Aqua's 21.0, best any vivid hue reach.
 func effortStyle(level string) (string, render.Color) {
 	switch level {
 	case "max":
