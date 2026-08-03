@@ -296,6 +296,51 @@ func TestConfigSkipsImportsInsideCode(t *testing.T) {
 	}
 }
 
+// Fence close on its own character only, so "~~~" inside "```" block is code
+// that block hold, not a close. Toggle on either marker end block early and
+// read rest as prose.
+func TestConfigKeepsFenceOpenAcrossOtherMarker(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "```\n~~~\n@fenced.md\n```\n")
+	writeUnder(t, project, "fenced.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Chain run 5 hops, so file sitting 6 hops out never load and never count.
+func TestConfigStopsImportChainAtHopCap(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "@hop1.md\n")
+	for i := 1; i <= maxImportHops; i++ {
+		writeUnder(t, project, "hop"+strconv.Itoa(i)+".md", "@hop"+strconv.Itoa(i+1)+".md\n")
+	}
+
+	// Root plus 5 hops = 6. hop6.md sit past cap.
+	if got, want := draw(c), "📋6"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// "~" mean home even under CLAUDE_CONFIG_DIR: reference is path somebody typed
+// in their own file, not config location this program own.
+func TestConfigExpandsTildeImport(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	// USERPROFILE set too: os.UserHomeDir read that one on Windows.
+	t.Setenv("USERPROFILE", home)
+	c := configCtx(t)
+	writeUnder(t, home, "shared/style.md", "style\n")
+	writeUnder(t, c.In.Workspace.ProjectDir, "CLAUDE.md", "@~/shared/style.md\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Reference naming no file cost one Stat and count nothing, so "@mention" in
 // prose need no rule of its own.
 func TestConfigIgnoresImportsNamingNoFile(t *testing.T) {
@@ -309,7 +354,7 @@ func TestConfigIgnoresImportsNamingNoFile(t *testing.T) {
 
 // Generated CLAUDE.md listing more files than budget stop walk, and stopping
 // prove no zero.
-func TestConfigMarksOversizeImportTreeUnknown(t *testing.T) {
+func TestConfigMarksImportsPastFileBudgetUnknown(t *testing.T) {
 	c := configCtx(t)
 	project := c.In.Workspace.ProjectDir
 	var body strings.Builder
@@ -327,7 +372,7 @@ func TestConfigMarksOversizeImportTreeUnknown(t *testing.T) {
 
 // Prose carrying "@" past reference budget name no file, but resolving each one
 // still cost a stat.
-func TestConfigMarksOversizeReferenceCountUnknown(t *testing.T) {
+func TestConfigMarksImportsPastRefBudgetUnknown(t *testing.T) {
 	c := configCtx(t)
 	var body strings.Builder
 	for i := range maxImportRefs + 10 {
@@ -342,12 +387,32 @@ func TestConfigMarksOversizeReferenceCountUnknown(t *testing.T) {
 
 // Unreadable instruction file hide its imports, and hidden import prove no
 // count.
-func TestConfigMarksOversizeClaudeMdUnknown(t *testing.T) {
+func TestConfigMarksClaudeMdPastByteCapUnknown(t *testing.T) {
 	c := configCtx(t)
 	writeUnder(t, c.In.Workspace.ProjectDir, "CLAUDE.md", strings.Repeat("x", maxConfigBytes+1))
 
 	if got, want := draw(c), "📋…"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Reference budget bound stat calls, not list scanImports build ahead of them.
+// 1 MiB of "@a.md" line resolve 175k path before walk spend its first, so limit
+// stop collecting where budget would stop walking.
+func TestScanImportsStopsAtLimit(t *testing.T) {
+	dir := t.TempDir()
+	var body strings.Builder
+	for range 100 {
+		body.WriteString("@a.md\n")
+	}
+	writeUnder(t, dir, "CLAUDE.md", body.String())
+
+	refs, err := scanImports(filepath.Join(dir, "CLAUDE.md"), 8)
+	if err != nil {
+		t.Fatalf("scanImports: %v", err)
+	}
+	if len(refs) != 8 {
+		t.Errorf("collected %d refs, want 8", len(refs))
 	}
 }
 

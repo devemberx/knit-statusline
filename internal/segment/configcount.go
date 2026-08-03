@@ -287,8 +287,11 @@ type importWalk struct {
 // load nothing. Symlink followed on purpose: CLAUDE.md pointed at AGENTS.md is
 // common, and Claude Code read through it.
 //
-// seen key on cleaned path: two roots reaching same file load it once, and file
-// importing its own importer otherwise walk until hop cap.
+// seen key on cleaned path, not resolved identity: file importing its own
+// importer stop at second visit, and two roots naming same path load it once.
+// Symlink alias and case-different name on case-insensitive volume still count
+// twice -- EvalSymlinks per node buy that at one syscall each, above what
+// miscount cost.
 func (w *importWalk) count(path string, hop int) {
 	path = filepath.Clean(path)
 	if _, dup := w.seen[path]; dup {
@@ -324,7 +327,9 @@ func (w *importWalk) count(path string, hop int) {
 		return
 	}
 
-	refs, err := scanImports(path)
+	// One past remaining budget: walk still trip on that extra reference, so
+	// limit move no count, only list length.
+	refs, err := scanImports(path, w.refs+1)
 	if err != nil {
 		w.n.lost()
 		return
@@ -342,7 +347,11 @@ func (w *importWalk) count(path string, hop int) {
 //
 // Reference that resolve to nothing cost one Stat and count nothing, so "@user"
 // in prose need no rule of its own.
-func scanImports(path string) ([]string, error) {
+//
+// limit stop collecting where caller budget would stop walking: 1 MiB of "@a"
+// line otherwise resolve 175k path, every one a joined string, before walk
+// spend its first reference.
+func scanImports(path string, limit int) ([]string, error) {
 	b, err := readCappedFile(path, maxConfigBytes)
 	if err != nil {
 		return nil, err
@@ -350,23 +359,49 @@ func scanImports(path string) ([]string, error) {
 
 	dir := filepath.Dir(path)
 	var out []string
-	var fenced bool
+	var fence string
 	for line := range strings.Lines(string(b)) {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			fenced = !fenced
+		if m := fenceMarker(trimmed); m != "" {
+			switch fence {
+			case "":
+				fence = m
+			case m:
+				fence = ""
+			}
 			continue
 		}
-		if fenced {
+		// Line carrying no "@" hold no import, and skipping it before split
+		// keep prose off two allocations per line.
+		if fence != "" || !strings.ContainsRune(trimmed, '@') {
 			continue
 		}
 		for _, ref := range lineImports(trimmed) {
 			if p := resolveImport(ref, dir); p != "" {
 				out = append(out, p)
+				if len(out) >= limit {
+					return out, nil
+				}
 			}
 		}
 	}
 	return out, nil
+}
+
+// fenceMarker name marker a line open or close fence with, "" when line is no
+// fence.
+//
+// Fence close on its own character only, so "~~~" sitting inside a "```" block
+// is content. Toggling on either marker close that block early and read rest of
+// it as prose.
+func fenceMarker(line string) string {
+	switch {
+	case strings.HasPrefix(line, "```"):
+		return "```"
+	case strings.HasPrefix(line, "~~~"):
+		return "~~~"
+	}
+	return ""
 }
 
 // lineImports pick references out of one line, backtick span dropped.
@@ -923,12 +958,6 @@ func readClaudeJSONServers(n *configCount, names *mcpNames, user, project string
 
 // readConfigJSON decode capped regular file. Caller separate fs.ErrNotExist --
 // absent file prove zero, unreadable one prove nothing.
-//
-// Stat before open, and regular file only: settings.json as FIFO hold os.Open
-// until some writer arrive, and render path carry no timeout to cut that.
-// Blocked render print nothing, which read as crash. Symlink followed on
-// purpose -- settings.json pointed into dotfiles checkout is normal, and no
-// byte read here reach row.
 func readConfigJSON(path string, limit int64, v any) error {
 	b, err := readCappedFile(path, limit)
 	if err != nil {
@@ -938,6 +967,12 @@ func readConfigJSON(path string, limit int64, v any) error {
 }
 
 // readCappedFile read regular file up to limit.
+//
+// Stat before open, and regular file only: settings.json or CLAUDE.md as FIFO
+// hold os.Open until some writer arrive, and render path carry no timeout to
+// cut that. Blocked render print nothing, which read as crash. Symlink followed
+// on purpose -- settings.json pointed into dotfiles checkout is normal, and no
+// byte read here reach row.
 func readCappedFile(path string, limit int64) ([]byte, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
