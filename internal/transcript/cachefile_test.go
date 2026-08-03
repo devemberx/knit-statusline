@@ -9,24 +9,24 @@ import (
 	"testing"
 )
 
-// Calls that write or read whole file at once. Cache path is what they reach
-// here, and every one of them join dir and name themselves -- empty dir then
-// leave name relative, pointing at cwd of whichever process render under.
+// Calls a cache reader or writer reach for, each joining dir and name itself.
+// Empty dir then leave name relative, pointing at cwd of whichever process
+// render under.
 //
-// os.Open stay off list: transcript itself is read that way, streaming, and it
-// take path caller already resolved.
+// os.Open stay off list: transcript itself is read that way, streaming, from
+// path caller already resolved. Writing openers stay on -- package hold no
+// streaming write, so os.Create or os.OpenFile here mean cache bytes.
 var cacheFileCalls = map[string]bool{
 	"ReadFile":   true,
 	"WriteFile":  true,
+	"Create":     true,
 	"CreateTemp": true,
+	"OpenFile":   true,
 	"Rename":     true,
 }
 
 // Cache read and write live in cachefile.go alone, for its dir == "" guard.
-//
-// Rule live in that file's comment, and comment stopped nobody: PR #33 copied
-// cursor.go's atomic write into new todo cursor, guard left behind. Review
-// caught it because PR #32 had made empty root common days before.
+// Why comment alone never held that line: cachefile.go.
 func TestCacheIOStaysInCachefile(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
