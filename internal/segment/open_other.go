@@ -10,6 +10,11 @@ import "os"
 // config root or project directory, so no rename put one at path either caller
 // read.
 //
+// That reasoning cover windows alone. plan9 serve pipe out of /srv and any 9P
+// mount, so blocking open stay reachable there -- what this file buy plan9 and
+// wasm is package that compile, not FIFO guard unix get. Caller's own Stat on
+// opened handle still run everywhere.
+//
 // File name carry no GOOS suffix on purpose: open_windows.go would take implicit
 // windows-only constraint on top of !unix, leaving plan9 and wasm with no open
 // at all.

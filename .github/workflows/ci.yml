@@ -168,6 +168,12 @@ jobs:
       matrix:
         # Mirror the release targets. A tag push is the wrong moment to learn
         # darwin or windows stopped compiling.
+        #
+        # plan9 ship nowhere and build here to keep !unix build tag honest.
+        # internal/segment spell its non-unix open helper !unix, not windows, so
+        # a windows-only file landing back there compile on every release target
+        # and break this entry alone. No runner exist for plan9, and none needed:
+        # compile is the whole claim.
         include:
           - {goos: linux, goarch: amd64}
           - {goos: linux, goarch: arm64}
@@ -175,6 +181,7 @@ jobs:
           - {goos: darwin, goarch: arm64}
           - {goos: windows, goarch: amd64}
           - {goos: windows, goarch: arm64}
+          - {goos: plan9, goarch: amd64}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
