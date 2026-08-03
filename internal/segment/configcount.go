@@ -363,9 +363,10 @@ func scanImports(path string, limit int) ([]string, error) {
 	for line := range strings.Lines(string(b)) {
 		trimmed := strings.TrimSpace(line)
 		if m := fenceMarker(trimmed); m != "" {
-			if fence == "" {
+			switch fence {
+			case "":
 				fence = m
-			} else if fence == m {
+			case m:
 				fence = ""
 			}
 			continue
