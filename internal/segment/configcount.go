@@ -63,8 +63,9 @@ const maxHookHops = 2
 // 1000.
 //
 // 2.1.220 accept one array level and refuse two -- `[["path"]]` fail whole
-// plugin load with `hooks: Invalid input`. Four leave room for a level or two
-// more and still bound decode at 4 times maxPluginBytes, near 70ms at that rate.
+// plugin load with `hooks: Invalid input`. Four leave room for level or two more
+// and still bound decode at 4 times maxPluginBytes: 1200-plugin roster, every
+// manifest near maxConfigBytes and nested at 4, measured 34ms.
 //
 // Depth spend per file, not per walk: maxHookHops bound files at 2, so product
 // stay inside same bound.
@@ -137,7 +138,7 @@ func defaultManagedSettings() string {
 var (
 	errConfigTooBig     = errors.New("config file over size cap")
 	errConfigNotRegular = errors.New("config path not regular file")
-	errPluginBudget     = errors.New("plugin walk over read budget")
+	errPluginBudget     = errors.New("plugin walk over budget")
 )
 
 // configCount hold one category. ok=false mean some source failed to read, so
@@ -1067,7 +1068,7 @@ func (w *pluginWalk) countManifestHooks(install string) {
 		}
 
 		var c int
-		err := w.walkPluginDecl(d.Hooks, install, "hooks", 0, 0, func(obj json.RawMessage) error {
+		err := w.walkPluginDecl(d.Hooks, declPos{install: install, key: "hooks"}, func(obj json.RawMessage) error {
 			var events map[string][]hookGroup
 			if err := json.Unmarshal(obj, &events); err != nil {
 				return err
@@ -1108,7 +1109,7 @@ func (w *pluginWalk) countPluginMCP(seen map[string]struct{}, install string) {
 			return
 		}
 
-		err := w.walkPluginDecl(d.MCPServers, install, "mcpServers", 0, 0, func(obj json.RawMessage) error {
+		err := w.walkPluginDecl(d.MCPServers, declPos{install: install, key: "mcpServers"}, func(obj json.RawMessage) error {
 			var servers map[string]json.RawMessage
 			if err := json.Unmarshal(obj, &servers); err != nil {
 				return err
@@ -1125,6 +1126,27 @@ func (w *pluginWalk) countPluginMCP(seen map[string]struct{}, install string) {
 	}
 }
 
+// declPos mark where one declaration walk stand: which plugin, which key, how
+// many file hops and array levels spent reaching here. pluginWalk hold budgets
+// spanning every plugin; declPos hold position inside one declaration.
+//
+// Struct, not loose parameters: hops and depth both int and would sit adjacent
+// in signature, so transposing them at call site compile clean and show only as
+// wrong bound.
+type declPos struct {
+	install string
+	key     string
+	hops    int
+	depth   int
+}
+
+// nest step into one array level.
+func (at declPos) nest() declPos { at.depth++; return at }
+
+// hop step into pointed-at file. Depth budget span one file, so reset live here
+// -- caller cannot forget it.
+func (at declPos) hop() declPos { at.hops++; at.depth = 0; return at }
+
 // walkPluginDecl resolve one manifest declaration, handing each inline object
 // to fn.
 //
@@ -1132,13 +1154,13 @@ func (w *pluginWalk) countPluginMCP(seen map[string]struct{}, install string) {
 // such paths. Reading object form alone make every path-form plugin a type
 // error, and one of them drag row's whole count to "…".
 //
-// key name what pointed-at file wrap its object in: hooks file carry "hooks",
+// at.key name what pointed-at file wrap its object in: hooks file carry "hooks",
 // .mcp.json carry "mcpServers".
 //
-// depth count array levels walked so far, spent against maxDeclDepth. Nesting
+// at.depth count array levels walked so far, spent against maxDeclDepth. Nesting
 // past it answer errPluginBudget, which caller resolve to unknown -- walk
 // stopping mid-declaration prove nothing about what run.
-func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, hop, depth int, fn func(json.RawMessage) error) error {
+func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, at declPos, fn func(json.RawMessage) error) error {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		return nil
@@ -1152,9 +1174,9 @@ func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, ho
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return err
 		}
-		return w.walkPluginPath(p, install, key, hop, fn)
+		return w.walkPluginPath(p, at, fn)
 	case '[':
-		if depth >= maxDeclDepth {
+		if at.depth >= maxDeclDepth {
 			return errPluginBudget
 		}
 		var paths []json.RawMessage
@@ -1162,7 +1184,7 @@ func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, ho
 			return err
 		}
 		for _, p := range paths {
-			if err := w.walkPluginDecl(p, install, key, hop, depth+1, fn); err != nil {
+			if err := w.walkPluginDecl(p, at.nest(), fn); err != nil {
 				return err
 			}
 		}
@@ -1176,17 +1198,17 @@ func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, ho
 // Resolved path stay inside plugin: manifest reaching out of its own install
 // directory is not that plugin's hook file, whatever sit at other end. Declared
 // file missing is 0 -- plugin ship broken path, not unreadable bytes.
-func (w *pluginWalk) walkPluginPath(p, install, key string, hop int, fn func(json.RawMessage) error) error {
-	if hop >= maxHookHops || p == "" {
+func (w *pluginWalk) walkPluginPath(p string, at declPos, fn func(json.RawMessage) error) error {
+	if at.hops >= maxHookHops || p == "" {
 		return nil
 	}
 
-	p = strings.ReplaceAll(p, pluginRootVar, install)
+	p = strings.ReplaceAll(p, pluginRootVar, at.install)
 	if !filepath.IsAbs(p) {
-		p = filepath.Join(install, p)
+		p = filepath.Join(at.install, p)
 	}
 	p = filepath.Clean(p)
-	rel, err := filepath.Rel(install, p)
+	rel, err := filepath.Rel(at.install, p)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil
 	}
@@ -1198,7 +1220,7 @@ func (w *pluginWalk) walkPluginPath(p, install, key string, hop int, fn func(jso
 	case err != nil:
 		return err
 	}
-	return w.walkPluginDecl(d[key], install, key, hop+1, 0, fn)
+	return w.walkPluginDecl(d[at.key], at.hop(), fn)
 }
 
 // claudeJSONDoc is subset of .claude.json MCP count read. `claude mcp add`

@@ -116,7 +116,11 @@ func enablePlugin(t *testing.T, c Context, key string, on bool) string {
 	return install
 }
 
-const oneHookBody = `"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "activate.js"}]}]}`
+// oneHookEvents is event map alone -- shape inline declaration carry. File wrap
+// it under "hooks".
+const oneHookEvents = `{"SessionStart": [{"hooks": [{"type": "command", "command": "activate.js"}]}]}`
+
+const oneHookBody = `"hooks": ` + oneHookEvents
 
 // Plugin hook never reach settings.json, so counting that file alone print 0
 // while two hooks fire every prompt.
@@ -1496,6 +1500,36 @@ func TestConfigMarksDeeplyNestedHookFileUnknown(t *testing.T) {
 	writeUnder(t, install, "more.json", `{`+oneHookBody+`}`)
 
 	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth budget span one file, so declaration at cap behind another at cap still
+// count exact: maxHookHops bound files, maxDeclDepth bound levels inside one.
+// Product, not sum -- reset dropped from declPos.hop turn this "…".
+func TestConfigCountsHookDeclAtNestingCapEachFile(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, maxDeclDepth)+`}`)
+	writeUnder(t, install, "hooks/hooks.json",
+		`{"hooks": `+nestDecl(`"./more.json"`, maxDeclDepth)+`}`)
+	writeUnder(t, install, "more.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth spend on array level alone. Inline object sitting at cap still reach fn
+// -- check moved to top of walkPluginDecl turn this "…".
+func TestConfigCountsInlineHookObjectAtNestingCap(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(oneHookEvents, maxDeclDepth)+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
 	}
 }
