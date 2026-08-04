@@ -2,6 +2,7 @@ package segment
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -214,6 +215,47 @@ func TestConfigMarksPluginsPastByteBudgetUnknown(t *testing.T) {
 
 	if got, want := draw(c), "🪝… · 🔌…"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Byte budget must stop walk looking, not only stop it charging. Read run
+// before charge, so walk still looking pay maxConfigBytes per file past budget,
+// and path budget alone bound that at 2000 times 1 MiB.
+func TestPluginWalkStopsLookingPastByteBudget(t *testing.T) {
+	dir := t.TempDir()
+	writeUnder(t, dir, "big.json", `{"pad": "`+strings.Repeat("x", 4096)+`"}`)
+
+	var hooks, mcp configCount
+	w := pluginWalk{hooks: &hooks, mcp: &mcp, paths: 10, bytes: 1024}
+
+	var d pluginDoc
+	if err := w.read(filepath.Join(dir, "big.json"), &d); !errors.Is(err, errPluginBudget) {
+		t.Fatalf("read over byte budget = %v, want errPluginBudget", err)
+	}
+
+	// Absent path answering errPluginBudget rather than fs.ErrNotExist prove no
+	// Stat reach filesystem.
+	if err := w.read(filepath.Join(dir, "gone.json"), &d); !errors.Is(err, errPluginBudget) {
+		t.Errorf("look after blown byte budget = %v, want errPluginBudget", err)
+	}
+}
+
+// Manifest over maxConfigBytes fail before charge, so nothing spend byte budget
+// while read still pull maxConfigBytes+1 off disk. Roster of them otherwise
+// bound by path budget alone -- measured 1.27s over 1200.
+func TestPluginWalkStopsLookingPastOverCapRead(t *testing.T) {
+	dir := t.TempDir()
+	writeUnder(t, dir, "huge.json", `{"pad": "`+strings.Repeat("x", maxConfigBytes)+`"}`)
+
+	var hooks, mcp configCount
+	w := pluginWalk{hooks: &hooks, mcp: &mcp, paths: 10, bytes: 1024}
+
+	var d pluginDoc
+	if err := w.read(filepath.Join(dir, "huge.json"), &d); !errors.Is(err, errPluginBudget) {
+		t.Fatalf("read over maxConfigBytes = %v, want errPluginBudget", err)
+	}
+	if err := w.read(filepath.Join(dir, "gone.json"), &d); !errors.Is(err, errPluginBudget) {
+		t.Errorf("look after over-cap read = %v, want errPluginBudget", err)
 	}
 }
 
