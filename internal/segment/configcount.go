@@ -56,6 +56,20 @@ const (
 // shipping; deeper is loop.
 const maxHookHops = 2
 
+// Bound array nesting inside one declaration. Every level re-decode whole
+// remaining payload, so cost is depth times bytes -- decode work, which neither
+// plugin read budget see. encoding/json stop at 10000 levels alone: 1 MB
+// declaration nested 9000 deep measured 40.3s on darwin/arm64 warm, 4.4s at
+// 1000.
+//
+// 2.1.220 accept one array level and refuse two -- `[["path"]]` fail whole
+// plugin load with `hooks: Invalid input`. Four leave room for a level or two
+// more and still bound decode at 4 times maxPluginBytes, near 70ms at that rate.
+//
+// Depth spend per file, not per walk: maxHookHops bound files at 2, so product
+// stay inside same bound.
+const maxDeclDepth = 4
+
 // Bound ancestor walk. Deepest checkout run near 20 segments; 40 leave room and
 // still bound stat calls when stdin carry pathological path.
 const maxAncestorDepth = 40
@@ -1053,7 +1067,7 @@ func (w *pluginWalk) countManifestHooks(install string) {
 		}
 
 		var c int
-		err := w.walkPluginDecl(d.Hooks, install, "hooks", 0, func(obj json.RawMessage) error {
+		err := w.walkPluginDecl(d.Hooks, install, "hooks", 0, 0, func(obj json.RawMessage) error {
 			var events map[string][]hookGroup
 			if err := json.Unmarshal(obj, &events); err != nil {
 				return err
@@ -1094,7 +1108,7 @@ func (w *pluginWalk) countPluginMCP(seen map[string]struct{}, install string) {
 			return
 		}
 
-		err := w.walkPluginDecl(d.MCPServers, install, "mcpServers", 0, func(obj json.RawMessage) error {
+		err := w.walkPluginDecl(d.MCPServers, install, "mcpServers", 0, 0, func(obj json.RawMessage) error {
 			var servers map[string]json.RawMessage
 			if err := json.Unmarshal(obj, &servers); err != nil {
 				return err
@@ -1120,7 +1134,11 @@ func (w *pluginWalk) countPluginMCP(seen map[string]struct{}, install string) {
 //
 // key name what pointed-at file wrap its object in: hooks file carry "hooks",
 // .mcp.json carry "mcpServers".
-func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, hop int, fn func(json.RawMessage) error) error {
+//
+// depth count array levels walked so far, spent against maxDeclDepth. Nesting
+// past it answer errPluginBudget, which caller resolve to unknown -- walk
+// stopping mid-declaration prove nothing about what run.
+func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, hop, depth int, fn func(json.RawMessage) error) error {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		return nil
@@ -1136,12 +1154,15 @@ func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, ho
 		}
 		return w.walkPluginPath(p, install, key, hop, fn)
 	case '[':
+		if depth >= maxDeclDepth {
+			return errPluginBudget
+		}
 		var paths []json.RawMessage
 		if err := json.Unmarshal(raw, &paths); err != nil {
 			return err
 		}
 		for _, p := range paths {
-			if err := w.walkPluginDecl(p, install, key, hop, fn); err != nil {
+			if err := w.walkPluginDecl(p, install, key, hop, depth+1, fn); err != nil {
 				return err
 			}
 		}
@@ -1177,7 +1198,7 @@ func (w *pluginWalk) walkPluginPath(p, install, key string, hop int, fn func(jso
 	case err != nil:
 		return err
 	}
-	return w.walkPluginDecl(d[key], install, key, hop+1, fn)
+	return w.walkPluginDecl(d[key], install, key, hop+1, 0, fn)
 }
 
 // claudeJSONDoc is subset of .claude.json MCP count read. `claude mcp add`

@@ -1449,6 +1449,70 @@ func TestConfigCountsHooksFromManifestPath(t *testing.T) {
 	}
 }
 
+// nestDecl wrap decl in n array levels.
+func nestDecl(decl string, n int) string {
+	for range n {
+		decl = "[" + decl + "]"
+	}
+	return decl
+}
+
+// Every array level re-decode whole remaining payload, so nesting cost depth
+// times bytes -- decode work neither read budget see. Stopping short is no proof
+// of zero.
+func TestConfigMarksDeeplyNestedHookDeclUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, maxDeclDepth+1)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Cap sit above what 2.1.220 load, so nesting it accept still count exact.
+func TestConfigCountsHookDeclAtNestingCap(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, maxDeclDepth)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth budget span one file: hooks file reached through path form open its own
+// declaration, and one deep nesting there cost same decode.
+func TestConfigMarksDeeplyNestedHookFileUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json", `{"name": "p", "hooks": "./hooks/hooks.json"}`)
+	writeUnder(t, install, "hooks/hooks.json",
+		`{"hooks": `+nestDecl(`"./more.json"`, maxDeclDepth+1)+`}`)
+	writeUnder(t, install, "more.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// mcpServers take same shapes hooks take, so nesting reach same walk.
+func TestConfigMarksDeeplyNestedMCPDeclUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "mcpServers": `+nestDecl(`"./.mcp.json"`, maxDeclDepth+1)+`}`)
+	writeUnder(t, install, ".mcp.json", `{"mcpServers": {"github": {}}}`)
+
+	if got, want := draw(c), "🔌…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Path reaching out of plugin directory is not that plugin's hook file, whatever
 // sit at other end.
 func TestConfigIgnoresManifestHookPathOutsidePlugin(t *testing.T) {
