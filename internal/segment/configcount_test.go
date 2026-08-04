@@ -116,7 +116,11 @@ func enablePlugin(t *testing.T, c Context, key string, on bool) string {
 	return install
 }
 
-const oneHookBody = `"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "activate.js"}]}]}`
+// oneHookEvents is event map alone -- shape inline declaration carry. File wrap
+// it under "hooks".
+const oneHookEvents = `{"SessionStart": [{"hooks": [{"type": "command", "command": "activate.js"}]}]}`
+
+const oneHookBody = `"hooks": ` + oneHookEvents
 
 // Plugin hook never reach settings.json, so counting that file alone print 0
 // while two hooks fire every prompt.
@@ -1446,6 +1450,146 @@ func TestConfigCountsHooksFromManifestPath(t *testing.T) {
 				t.Errorf("rendered %q, want %q", got, want)
 			}
 		})
+	}
+}
+
+// nestDecl wrap decl in n array levels.
+func nestDecl(decl string, n int) string {
+	for range n {
+		decl = "[" + decl + "]"
+	}
+	return decl
+}
+
+// Every array level re-decode whole remaining payload, so nesting cost depth
+// times bytes -- decode work neither read budget see. Stopping short is no proof
+// of zero.
+func TestConfigMarksDeeplyNestedHookDeclUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, maxDeclDepth+1)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Cap sit above what 2.1.220 load, so nesting it accept still count exact.
+func TestConfigCountsHookDeclAtNestingCap(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, maxDeclDepth)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth budget span one file: hooks file reached through path form open its own
+// declaration, and one deep nesting there cost same decode.
+func TestConfigMarksDeeplyNestedHookFileUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json", `{"name": "p", "hooks": "./hooks/hooks.json"}`)
+	writeUnder(t, install, "hooks/hooks.json",
+		`{"hooks": `+nestDecl(`"./more.json"`, maxDeclDepth+1)+`}`)
+	writeUnder(t, install, "more.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth budget span one file, so declaration at cap behind another at cap still
+// count exact: maxHookHops bound files, maxDeclDepth bound levels inside one.
+// Product, not sum -- reset dropped from declPos.hop turn this "…".
+func TestConfigCountsHookDeclAtNestingCapEachFile(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, maxDeclDepth)+`}`)
+	writeUnder(t, install, "hooks/hooks.json",
+		`{"hooks": `+nestDecl(`"./more.json"`, maxDeclDepth)+`}`)
+	writeUnder(t, install, "more.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth spend on array level alone. Inline object sitting at cap still reach fn
+// -- check moved to top of walkPluginDecl turn this "…".
+func TestConfigCountsInlineHookObjectAtNestingCap(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(oneHookEvents, maxDeclDepth)+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Depth count levels down one branch, not arrays seen. Sibling array start from
+// same level -- nest() taking pointer receiver leak first sibling's spend into
+// next and turn this "…".
+func TestConfigCountsSiblingHookDeclArrays(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	arm := nestDecl(`"./hooks/hooks.json"`, maxDeclDepth-1)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": [`+arm+`, `+arm+`, `+arm+`]}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Two array levels is shape 2.1.220 refuse, and cap deliberately sit above it.
+// Literal 2, not maxDeclDepth: every constant-relative test above stay green at
+// maxDeclDepth 1, leaving that contract unpinned.
+func TestConfigCountsTwiceNestedHookDecl(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, 2)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Cap bound decode cost, so nesting past what any manifest write answer unknown.
+// Literal 5 pin cap's other end: constant-relative test stay green at
+// maxDeclDepth 100 too. Two literals together hold maxDeclDepth in 2..4.
+func TestConfigMarksFiveDeepHookDeclUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, 5)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// mcpServers take same shapes hooks take, so nesting reach same walk.
+func TestConfigMarksDeeplyNestedMCPDeclUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "mcpServers": `+nestDecl(`"./.mcp.json"`, maxDeclDepth+1)+`}`)
+	writeUnder(t, install, ".mcp.json", `{"mcpServers": {"github": {}}}`)
+
+	if got, want := draw(c), "🔌…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
 	}
 }
 
