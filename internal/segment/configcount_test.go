@@ -1534,6 +1534,52 @@ func TestConfigCountsInlineHookObjectAtNestingCap(t *testing.T) {
 	}
 }
 
+// Depth count levels down one branch, not arrays seen. Sibling array start from
+// same level -- nest() taking pointer receiver leak first sibling's spend into
+// next and turn this "…".
+func TestConfigCountsSiblingHookDeclArrays(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	arm := nestDecl(`"./hooks/hooks.json"`, maxDeclDepth-1)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": [`+arm+`, `+arm+`, `+arm+`]}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝3"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Two array levels is shape 2.1.220 refuse, and cap deliberately sit above it.
+// Literal 2, not maxDeclDepth: every constant-relative test above stay green at
+// maxDeclDepth 1, leaving that contract unpinned.
+func TestConfigCountsTwiceNestedHookDecl(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, 2)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Cap bound decode cost, so nesting past what any manifest write answer unknown.
+// Literal 5 pin cap's other end: constant-relative test stay green at
+// maxDeclDepth 100 too. Two literals together hold maxDeclDepth in 2..4.
+func TestConfigMarksFiveDeepHookDeclUnknown(t *testing.T) {
+	c := configCtx(t)
+	install := enablePlugin(t, c, "p@m", true)
+	writeUnder(t, install, ".claude-plugin/plugin.json",
+		`{"name": "p", "hooks": `+nestDecl(`"./hooks/hooks.json"`, 5)+`}`)
+	writeUnder(t, install, "hooks/hooks.json", `{`+oneHookBody+`}`)
+
+	if got, want := draw(c), "🪝…"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // mcpServers take same shapes hooks take, so nesting reach same walk.
 func TestConfigMarksDeeplyNestedMCPDeclUnknown(t *testing.T) {
 	c := configCtx(t)

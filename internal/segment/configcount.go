@@ -65,10 +65,11 @@ const maxHookHops = 2
 // 2.1.220 accept one array level and refuse two -- `[["path"]]` fail whole
 // plugin load with `hooks: Invalid input`. Four leave room for level or two more
 // and still bound decode at 4 times maxPluginBytes: 1200-plugin roster, every
-// manifest near maxConfigBytes and nested at 4, measured 34ms.
+// manifest near maxConfigBytes, measured 34ms nested at 4 and 99ms one level
+// wide. Width cost more than depth once depth capped, and byte budget hold it.
 //
-// Depth spend per file, not per walk: maxHookHops bound files at 2, so product
-// stay inside same bound.
+// Depth spend per file, not per walk. Byte budget charge every file walk-wide,
+// so decode stay bounded whatever hop count maxHookHops allow.
 const maxDeclDepth = 4
 
 // Bound ancestor walk. Deepest checkout run near 20 segments; 40 leave room and
