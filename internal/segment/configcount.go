@@ -408,9 +408,9 @@ func scanImports(path string, limit int) ([]string, error) {
 	var out []string
 	var blocks blockScan
 	for line := range strings.Lines(string(b)) {
+		text, ok := blocks.prose(line)
 		// Line carrying no "@" hold no import, and skipping it before split
 		// keep prose off two allocations per line.
-		text, ok := blocks.prose(line)
 		if !ok || !strings.ContainsRune(text, '@') {
 			continue
 		}
@@ -438,57 +438,87 @@ const (
 // there, no blank line needed ahead of it.
 //
 // Behavior measured against Claude Code 2.1.220, one import per throwaway
-// project: four spaces after blank line load nothing, tab load nothing, three
-// spaces load, four spaces under list item load, four spaces right under prose
-// line load, and behind "> " same four load nothing where three load. Parser
-// guessing differently from what load is worse than gap, so each of those eight
-// is a test.
+// project. Rule that came out: indented code open at block boundary alone,
+// column it measure from shift with list item and blockquote marker, and
+// paragraph run on through line that only drop quote markers or indent. Fence
+// is one place 2.1.220 leave CommonMark -- four-space "```" under running
+// paragraph open fence there, where spec read paragraph text. Parser guessing
+// differently from what load is worse than gap, so every shape measured sit in
+// configcount_test.go as a test.
 type blockScan struct {
 	fence      string
+	fenceQuote int
 	para       bool
 	code       bool
+	quote      int
 	listIndent int
 }
 
 // prose hand back line's content, ok false where Claude Code read no import.
 func (s *blockScan) prose(line string) (string, bool) {
-	indent, text := lineIndent(stripQuote(line))
+	quote, indent, text := lineLead(line)
 	if text == "" {
 		s.para = false
 		return "", false
 	}
-	para := s.para
-	s.para = true
 
-	// Fence close on its own marker alone, so "~~~" inside "```" block is
-	// content. Toggling on either marker close that block early and read rest
-	// of it as prose.
 	if s.fence != "" {
-		if fenceMarker(text) == s.fence {
+		// Fence live inside quote that opened it. Line back at shallower depth
+		// stand outside both, and 2.1.220 load import sitting there -- fence
+		// running to end of file instead drop it.
+		if quote < s.fenceQuote {
 			s.fence = ""
+		} else {
+			// Fence close on its own marker alone, so "~~~" inside "```" block
+			// is content. Toggling on either marker close that block early and
+			// read rest of it as prose.
+			//
+			// Closing marker take any indent, since opening one did.
+			if fenceMarker(text) == s.fence {
+				s.fence = ""
+			}
+			s.para = false
+			return "", false
 		}
-		return "", false
 	}
+
+	// Paragraph run on into line holding fewer quote markers -- lazy
+	// continuation. Deeper quote open block of its own instead.
+	para := s.para && quote <= s.quote
+	s.quote = quote
 
 	// Indented code never interrupt paragraph, so block open on boundary
 	// alone. Blank line inside do not close it -- first line back out of its
 	// indent do.
 	switch {
 	case s.code && indent >= s.listIndent+codeIndent:
+		s.para = false
 		return "", false
 	case s.code:
 		s.code = false
 	case !para && indent >= s.listIndent+codeIndent:
-		s.code = true
+		s.code, s.para = true, false
 		return "", false
 	}
+	s.para = true
 
+	// Fence take any indent, unlike every other block here: four-space "```"
+	// under paragraph open one in 2.1.220 where CommonMark read paragraph text.
+	// Same marker on boundary never reach this line -- code branch above claim
+	// it, and 2.1.220 stop there too.
 	if m := fenceMarker(text); m != "" {
-		s.fence = m
+		s.fence, s.fenceQuote, s.para = m, quote, false
 		return "", false
 	}
 
-	s.trackList(indent, text)
+	// Heading, setext underline and thematic break close paragraph above them,
+	// and list they sit at margin of close with it. Indent cap keep them out of
+	// paragraph continuation, where 2.1.220 read same three shapes as text.
+	if indent < s.listIndent+codeIndent && leafBlock(text, para) {
+		s.para, para = false, false
+	}
+
+	s.trackList(indent, text, para)
 	return text, true
 }
 
@@ -497,15 +527,77 @@ func (s *blockScan) prose(line string) (string, bool) {
 //
 // Bullet at margin holding four-space line below it hold a paragraph of that
 // item; same four spaces under plain prose hold code.
-func (s *blockScan) trackList(indent int, text string) {
+func (s *blockScan) trackList(indent int, text string, para bool) {
 	if n := listMarker(text); n > 0 {
 		s.listIndent = indent + n
 		return
 	}
-	// Line at margin that is no list item end whatever list ran above it.
-	if indent == 0 {
+	// Margin line opening block of its own end whatever list ran above it.
+	// Paragraph running on into that line is lazy continuation instead, and
+	// list stay open behind it.
+	if indent == 0 && !para {
 		s.listIndent = 0
 	}
+}
+
+// leafBlock say line close whatever paragraph run above it.
+//
+// para decide setext alone: "---" under paragraph underline it, same three
+// characters after blank line break instead, and block close either way.
+func leafBlock(text string, para bool) bool {
+	return atxHeading(text) || thematicBreak(text) || (para && setextRule(text))
+}
+
+// atxHeading say line open ATX heading: 1 to 6 "#" then space, tab or line end.
+// "#Title" carry no space and stay prose.
+func atxHeading(text string) bool {
+	n := 0
+	for n < len(text) && text[n] == '#' {
+		n++
+	}
+	if n == 0 || n > 6 {
+		return false
+	}
+	return n == len(text) || text[n] == ' ' || text[n] == '\t'
+}
+
+// thematicBreak say line hold 3 or more of one "-", "_" or "*", whitespace
+// between allowed.
+func thematicBreak(text string) bool {
+	var c byte
+	n := 0
+	for i := range len(text) {
+		switch ch := text[i]; ch {
+		case '-', '_', '*':
+			if c != 0 && ch != c {
+				return false
+			}
+			c, n = ch, n+1
+		case ' ', '\t':
+		default:
+			return false
+		}
+	}
+	return n >= 3
+}
+
+// setextRule say line underline paragraph above it: run of "=" or "-", with
+// whitespace alone behind it.
+func setextRule(text string) bool {
+	c := text[0]
+	if c != '=' && c != '-' {
+		return false
+	}
+	i := 0
+	for i < len(text) && text[i] == c {
+		i++
+	}
+	for ; i < len(text); i++ {
+		if text[i] != ' ' && text[i] != '\t' {
+			return false
+		}
+	}
+	return true
 }
 
 // listMarker measure bullet or ordered marker plus space behind it, 0 where
@@ -538,46 +630,56 @@ func listMarker(text string) int {
 	return i + n
 }
 
-// stripQuote peel blockquote markers off line, handing back what quote hold.
+// lineLead measure column line's content start at, peeling blockquote markers
+// on way, and hand back quote depth, that column and rest of line.
 //
-// Marker take up to 3 spaces ahead of ">" and eat one space behind it, so
-// column code block measure from sit inside quote rather than at margin.
-// Loop peel nested quote, since "> > " shift twice.
+// Marker take up to 3 columns ahead of ">" and eat one column behind it, so
+// column code block measure from sit inside quote rather than at margin. Tab
+// advance to next 4-column stop and marker eat one column of that, rest staying
+// indent -- byte count cannot stand in for column here.
 //
-// ">" alone strip to empty line, which is blank inside that quote -- block
-// boundary, way real blank line is.
-func stripQuote(line string) string {
-	for {
-		i := 0
-		for i < len(line) && i < codeIndent-1 && line[i] == ' ' {
-			i++
-		}
-		if i >= len(line) || line[i] != '>' {
-			return line
-		}
-		i++
-		if i < len(line) && line[i] == ' ' {
-			i++
-		}
-		line = line[i:]
-	}
-}
-
-// lineIndent measure leading whitespace in columns and hand back rest of line.
-// Line holding whitespace alone measure blank, whatever its width.
-func lineIndent(line string) (int, string) {
-	n := 0
-	for i := range len(line) {
+// ">" holding nothing behind it leave empty line, blank inside that quote --
+// block boundary, way real blank line is. Line holding whitespace alone measure
+// blank too, whatever its width.
+func lineLead(line string) (int, int, string) {
+	quote, col, base := 0, 0, 0
+	for i := 0; i < len(line); {
 		switch line[i] {
 		case ' ':
-			n++
+			col++
+			i++
 		case '\t':
-			n += tabStop - n%tabStop
+			col += tabStop - col%tabStop
+			i++
+		case '>':
+			// 4 columns in is indented code, and ">" sitting there is content.
+			if col-base >= codeIndent {
+				return quote, col - base, trimEOL(line[i:])
+			}
+			quote++
+			col++
+			i++
+			base = col
+			switch {
+			case i < len(line) && line[i] == ' ':
+				col++
+				i++
+				base = col
+			case i < len(line) && line[i] == '\t':
+				base = col + 1
+				col += tabStop - col%tabStop
+				i++
+			}
 		default:
-			return n, strings.TrimRight(line[i:], "\r\n")
+			return quote, col - base, trimEOL(line[i:])
 		}
 	}
-	return n, ""
+	return quote, col - base, ""
+}
+
+// trimEOL drop line terminator, CRLF included.
+func trimEOL(line string) string {
+	return strings.TrimRight(line, "\r\n")
 }
 
 // fenceMarker name marker a line open or close fence with, "" when line is no

@@ -550,6 +550,321 @@ func TestConfigCountsImportAfterIndentedCode(t *testing.T) {
 	}
 }
 
+// Quote marker eat one column of tab behind it, so 2 columns stay indent and
+// line land under code indent. Measured loading in 2.1.220, way three spaces do.
+func TestConfigCountsQuotedImportBehindTab(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> Setup:\n>\n>\t@quoted.md\n")
+	writeUnder(t, project, "quoted.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Margin line carrying paragraph of item above it is lazy continuation, and
+// list stay open behind it. Four spaces after that keep item's column, not
+// margin's. Measured loading in 2.1.220.
+func TestConfigCountsImportAfterLazyListContinuation(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "- item one\nlazy at margin\n\n    @nested.md\n")
+	writeUnder(t, project, "nested.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Closing fence end block, so four spaces right behind it open code with no
+// blank line between. Measured loading nothing in 2.1.220.
+func TestConfigSkipsIndentedCodeAfterFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Note:\n\n```sh\necho hi\n```\n    @after.md\n")
+	writeUnder(t, project, "after.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// ATX heading is leaf block, so no paragraph run past it and four spaces behind
+// open code. Measured loading nothing in 2.1.220.
+func TestConfigSkipsIndentedCodeUnderHeading(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "# Title\n    @under.md\n")
+	writeUnder(t, project, "under.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Quote marker showing up under running paragraph open block of its own, so
+// four spaces behind it are code. Measured loading nothing in 2.1.220.
+func TestConfigSkipsQuotedCodeInterruptingParagraph(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n>     @quoted.md\n")
+	writeUnder(t, project, "quoted.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Thematic break is leaf block, way heading is. Measured loading nothing in
+// 2.1.220.
+func TestConfigSkipsIndentedCodeAfterThematicBreak(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n---\n    @after.md\n")
+	writeUnder(t, project, "after.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Setext underline close heading it sit under, so paragraph stop there.
+// Measured loading nothing in 2.1.220.
+func TestConfigSkipsIndentedCodeAfterSetextHeading(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Title\n=====\n    @under.md\n")
+	writeUnder(t, project, "under.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Heading at margin end list above it, unlike lazy continuation, so item's
+// column go with it. Measured loading nothing in 2.1.220.
+func TestConfigSkipsIndentedCodeAfterHeadingEndsList(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "- item one\n# Title\n\n    @after.md\n")
+	writeUnder(t, project, "after.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Paragraph inside quote run on into margin line holding no marker, so four
+// spaces there are its text. Measured loading in 2.1.220.
+func TestConfigCountsImportLazyOutOfQuote(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> Setup:\n    @lazy.md\n")
+	writeUnder(t, project, "lazy.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Four-space "```" under running paragraph open fence in 2.1.220, where
+// CommonMark read paragraph text. Measured loading nothing, so fence carry no
+// indent cap.
+func TestConfigSkipsImportsInsideIndentedFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n    ```\n    @fenced.md\n    ```\n")
+	writeUnder(t, project, "fenced.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Same marker on block boundary is code, not fence, so it swallow no rest of
+// file. Measured loading in 2.1.220.
+func TestConfigCountsImportAfterFenceInsideIndentedCode(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n    ```\n@after.md\n")
+	writeUnder(t, project, "after.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Fence live inside quote that opened it, so margin line stand outside both
+// and load. Measured loading in 2.1.220.
+func TestConfigCountsImportAfterQuotedFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> ```sh\n> echo hi\n\n@after.md\n")
+	writeUnder(t, project, "after.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Blank line between is no part of it -- margin line alone end quote and fence.
+// Measured loading in 2.1.220.
+func TestConfigCountsImportAfterQuotedFenceWithoutBlank(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> ```sh\n> echo hi\n@after.md\n")
+	writeUnder(t, project, "after.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Tab behind quote marker leave 2 columns, under code indent, so "```" there
+// open fence where four spaces would open code. Measured loading in 2.1.220.
+func TestConfigCountsImportAfterTabQuotedFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", ">\t```sh\n> echo hi\n\n@after.md\n")
+	writeUnder(t, project, "after.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Fence closed inside quote need no quote ending to close it, and margin line
+// behind still load. Measured loading in 2.1.220.
+func TestConfigCountsImportAfterClosedQuotedFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> ```sh\n> echo hi\n> ```\n\n@after.md\n")
+	writeUnder(t, project, "after.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Import inside that quoted fence stay code all same. Measured loading nothing
+// in 2.1.220.
+func TestConfigSkipsImportsInsideQuotedFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> ```sh\n> @fenced.md\n> ```\n")
+	writeUnder(t, project, "fenced.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Fence opened at margin sit inside no quote, so nothing but its own marker
+// close it and rest of file stay code. Measured loading nothing in 2.1.220.
+func TestConfigSkipsImportsAfterUnclosedFence(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n\n```sh\necho hi\n\n@after.md\n")
+	writeUnder(t, project, "after.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Four-space "#" under running paragraph is that paragraph's text, no heading,
+// so line behind it stay prose. Measured loading in 2.1.220.
+func TestConfigCountsImportUnderIndentedHeading(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n    # Title\n    @under.md\n")
+	writeUnder(t, project, "under.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Four-space "***" under running paragraph is text too, way indented "#" is.
+// Measured loading in 2.1.220.
+func TestConfigCountsImportUnderIndentedBreak(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "Setup:\n    ***\n    @under.md\n")
+	writeUnder(t, project, "under.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Inner item content start at column 4, so six spaces sit 2 past it and hold
+// prose. Measured loading in 2.1.220.
+func TestConfigCountsImportUnderNestedListItem(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "- outer\n  - inner\n\n      @nested.md\n")
+	writeUnder(t, project, "nested.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Eight spaces sit 4 past that same column and hold code. Measured loading
+// nothing in 2.1.220.
+func TestConfigSkipsIndentedCodeUnderNestedListItem(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "- outer\n  - inner\n\n        @nested.md\n")
+	writeUnder(t, project, "nested.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Quote peel off ahead of column count, so "> - item" leave content column 2,
+// way bare bullet do. Four spaces behind marker sit 2 past that, under code
+// indent. Measured loading in 2.1.220.
+func TestConfigCountsQuotedImportUnderListItem(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "> - item\n>\n>     @quoted.md\n")
+	writeUnder(t, project, "quoted.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Ordered marker "1. " shift content column to 3, so three spaces land on it.
+// Measured loading in 2.1.220.
+func TestConfigCountsImportUnderOrderedListItem(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "1. item one\n\n   @nested.md\n")
+	writeUnder(t, project, "nested.md", "loaded\n")
+
+	if got, want := draw(c), "📋2"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
+// Seven spaces sit 4 past that column and hold code. Measured loading nothing
+// in 2.1.220.
+func TestConfigSkipsIndentedCodeUnderOrderedListItem(t *testing.T) {
+	c := configCtx(t)
+	project := c.In.Workspace.ProjectDir
+	writeUnder(t, project, "CLAUDE.md", "1. item one\n\n       @nested.md\n")
+	writeUnder(t, project, "nested.md", "not loaded\n")
+
+	if got, want := draw(c), "📋1"; got != want {
+		t.Errorf("rendered %q, want %q", got, want)
+	}
+}
+
 // Chain run 5 hops, so file sitting 6 hops out never load and never count.
 func TestConfigStopsImportChainAtHopCap(t *testing.T) {
 	c := configCtx(t)
