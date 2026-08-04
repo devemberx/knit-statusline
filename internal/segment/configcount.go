@@ -76,6 +76,19 @@ const (
 	maxImportBytes = 4 << 20
 )
 
+// Bound plugin walk, way import walk bound. Every enabled plugin cost three
+// manifest reads for hooks and two for MCP at maxConfigBytes each, before list
+// form send walkPluginDecl two hops deeper. installed_plugins.json carry its own
+// 1 MiB cap, which still hold thousands of install paths.
+//
+// Path budget bound stat calls plugin declaring nothing still pay; byte budget
+// bound their product. Real roster of 20 plugins spend at most 100 paths and
+// under 100 KiB, so both leave headroom maxImportBytes keep.
+const (
+	maxPluginPaths = 2000
+	maxPluginBytes = 4 << 20
+)
+
 // Variable Claude Code expand inside plugin paths.
 const pluginRootVar = "${CLAUDE_PLUGIN_ROOT}"
 
@@ -110,6 +123,7 @@ func defaultManagedSettings() string {
 var (
 	errConfigTooBig     = errors.New("config file over size cap")
 	errConfigNotRegular = errors.New("config path not regular file")
+	errPluginBudget     = errors.New("plugin walk over read budget")
 )
 
 // configCount hold one category. ok=false mean some source failed to read, so
@@ -657,7 +671,8 @@ type installedPlugins struct {
 // settings say which of them run.
 //
 // Registry read once for both counts: two passes cost same file twice and let
-// them disagree on which plugin ran.
+// them disagree on which plugin ran. Registry charged to walk budget too --
+// roster carry install path every later read start from.
 func scanEnabledPlugins(counts *configCounts, servers map[string]struct{}, user string, docs []settingsDoc) {
 	if user == "" {
 		return
@@ -673,8 +688,14 @@ func scanEnabledPlugins(counts *configCounts, servers map[string]struct{}, user 
 		return
 	}
 
+	w := pluginWalk{
+		hooks: &counts.hooks,
+		mcp:   &counts.mcp,
+		paths: maxPluginPaths,
+		bytes: maxPluginBytes,
+	}
 	var reg installedPlugins
-	switch err := readConfigJSON(filepath.Join(user, "plugins", "installed_plugins.json"), maxConfigBytes, &reg); {
+	switch err := w.read(filepath.Join(user, "plugins", "installed_plugins.json"), &reg); {
 	case errors.Is(err, fs.ErrNotExist):
 		return
 	case err != nil:
@@ -691,10 +712,70 @@ func scanEnabledPlugins(counts *configCounts, servers map[string]struct{}, user 
 			if inst.InstallPath == "" {
 				continue
 			}
-			countManifestHooks(&counts.hooks, inst.InstallPath)
-			countPluginMCP(&counts.mcp, servers, inst.InstallPath)
+			w.countManifestHooks(inst.InstallPath)
+			w.countPluginMCP(servers, inst.InstallPath)
 		}
 	}
+}
+
+// pluginWalk carry both counts plus every budget spanning every enabled plugin.
+//
+// One budget set, not one per plugin: cost bound here is product of roster
+// length and per-plugin reads, and per-plugin budget bound neither.
+type pluginWalk struct {
+	hooks *configCount
+	mcp   *configCount
+	paths int
+	bytes int64
+}
+
+// charge spend what one look pull off disk, false when budget cannot cover it.
+//
+// Compared before subtracting, way importWalk.charge do.
+//
+// Refusal zero path budget too. Caller keep walking past errPluginBudget, and
+// byte budget alone stop no read -- every later look pull maxConfigBytes again
+// before charge refuse it. Measured 2.09 GB, 1.7s warm, over 1200-plugin roster
+// against 4 MiB budget.
+func (w *pluginWalk) charge(n int64) bool {
+	if n > w.bytes {
+		w.paths = 0
+		return false
+	}
+	w.bytes -= n
+	return true
+}
+
+// read decode one plugin file, spending path budget on look and byte budget on
+// what came back.
+//
+// Exhausted budget answer errPluginBudget, which every caller resolve to
+// unknown -- count that stop early understate what run.
+//
+// Bytes charged after read, not off Stat size: read already capped at
+// maxConfigBytes, so overshoot bound to one file and no sparse size reach
+// subtraction.
+//
+// Over-cap file charged that cap in full: readCappedFile pull maxConfigBytes+1
+// before refusing, and error returning uncharged leave path budget alone
+// bounding 2000 such reads. Measured 1.27s over 1200 oversized manifests.
+func (w *pluginWalk) read(path string, v any) error {
+	if w.paths <= 0 {
+		return errPluginBudget
+	}
+	w.paths--
+
+	b, err := readCappedFile(path, maxConfigBytes)
+	if err != nil {
+		if errors.Is(err, errConfigTooBig) && !w.charge(maxConfigBytes) {
+			return errPluginBudget
+		}
+		return err
+	}
+	if !w.charge(int64(len(b))) {
+		return errPluginBudget
+	}
+	return json.Unmarshal(b, v)
 }
 
 // pluginDoc is two keys alone, undecoded. Manifest carry commands, agents and
@@ -713,23 +794,23 @@ type pluginDoc struct {
 // parse but declare nothing -- claude-plugins-official carry plugin.json
 // holding name and version alone, hooks sitting in hooks/hooks.json beside it.
 // Plugin declaring none anywhere is 0, not unknown.
-func countManifestHooks(n *configCount, install string) {
+func (w *pluginWalk) countManifestHooks(install string) {
 	for _, rel := range []string{
 		filepath.Join(".claude-plugin", "plugin.json"),
 		filepath.Join("hooks", "hooks.json"),
 		"hooks.json",
 	} {
 		var d pluginDoc
-		switch err := readConfigJSON(filepath.Join(install, rel), maxConfigBytes, &d); {
+		switch err := w.read(filepath.Join(install, rel), &d); {
 		case errors.Is(err, fs.ErrNotExist):
 			continue
 		case err != nil:
-			n.lost()
+			w.hooks.lost()
 			return
 		}
 
 		var c int
-		err := walkPluginDecl(d.Hooks, install, "hooks", 0, func(obj json.RawMessage) error {
+		err := w.walkPluginDecl(d.Hooks, install, "hooks", 0, func(obj json.RawMessage) error {
 			var events map[string][]hookGroup
 			if err := json.Unmarshal(obj, &events); err != nil {
 				return err
@@ -738,11 +819,11 @@ func countManifestHooks(n *configCount, install string) {
 			return nil
 		})
 		if err != nil {
-			n.lost()
+			w.hooks.lost()
 			return
 		}
 		if c > 0 {
-			n.n += c
+			w.hooks.n += c
 			return
 		}
 	}
@@ -756,21 +837,21 @@ func countManifestHooks(n *configCount, install string) {
 //
 // Plugin's own servers need no project approval: switching plugin on approve
 // them already, and no prompt ask twice.
-func countPluginMCP(n *configCount, seen map[string]struct{}, install string) {
+func (w *pluginWalk) countPluginMCP(seen map[string]struct{}, install string) {
 	for _, rel := range []string{
 		filepath.Join(".claude-plugin", "plugin.json"),
 		".mcp.json",
 	} {
 		var d pluginDoc
-		switch err := readConfigJSON(filepath.Join(install, rel), maxConfigBytes, &d); {
+		switch err := w.read(filepath.Join(install, rel), &d); {
 		case errors.Is(err, fs.ErrNotExist):
 			continue
 		case err != nil:
-			n.lost()
+			w.mcp.lost()
 			return
 		}
 
-		err := walkPluginDecl(d.MCPServers, install, "mcpServers", 0, func(obj json.RawMessage) error {
+		err := w.walkPluginDecl(d.MCPServers, install, "mcpServers", 0, func(obj json.RawMessage) error {
 			var servers map[string]json.RawMessage
 			if err := json.Unmarshal(obj, &servers); err != nil {
 				return err
@@ -781,7 +862,7 @@ func countPluginMCP(n *configCount, seen map[string]struct{}, install string) {
 			return nil
 		})
 		if err != nil {
-			n.lost()
+			w.mcp.lost()
 			return
 		}
 	}
@@ -796,7 +877,7 @@ func countPluginMCP(n *configCount, seen map[string]struct{}, install string) {
 //
 // key name what pointed-at file wrap its object in: hooks file carry "hooks",
 // .mcp.json carry "mcpServers".
-func walkPluginDecl(raw json.RawMessage, install, key string, hop int, fn func(json.RawMessage) error) error {
+func (w *pluginWalk) walkPluginDecl(raw json.RawMessage, install, key string, hop int, fn func(json.RawMessage) error) error {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
 		return nil
@@ -810,14 +891,14 @@ func walkPluginDecl(raw json.RawMessage, install, key string, hop int, fn func(j
 		if err := json.Unmarshal(raw, &p); err != nil {
 			return err
 		}
-		return walkPluginPath(p, install, key, hop, fn)
+		return w.walkPluginPath(p, install, key, hop, fn)
 	case '[':
 		var paths []json.RawMessage
 		if err := json.Unmarshal(raw, &paths); err != nil {
 			return err
 		}
 		for _, p := range paths {
-			if err := walkPluginDecl(p, install, key, hop, fn); err != nil {
+			if err := w.walkPluginDecl(p, install, key, hop, fn); err != nil {
 				return err
 			}
 		}
@@ -831,7 +912,7 @@ func walkPluginDecl(raw json.RawMessage, install, key string, hop int, fn func(j
 // Resolved path stay inside plugin: manifest reaching out of its own install
 // directory is not that plugin's hook file, whatever sit at other end. Declared
 // file missing is 0 -- plugin ship broken path, not unreadable bytes.
-func walkPluginPath(p, install, key string, hop int, fn func(json.RawMessage) error) error {
+func (w *pluginWalk) walkPluginPath(p, install, key string, hop int, fn func(json.RawMessage) error) error {
 	if hop >= maxHookHops || p == "" {
 		return nil
 	}
@@ -847,13 +928,13 @@ func walkPluginPath(p, install, key string, hop int, fn func(json.RawMessage) er
 	}
 
 	var d map[string]json.RawMessage
-	switch err := readConfigJSON(p, maxConfigBytes, &d); {
+	switch err := w.read(p, &d); {
 	case errors.Is(err, fs.ErrNotExist):
 		return nil
 	case err != nil:
 		return err
 	}
-	return walkPluginDecl(d[key], install, key, hop+1, fn)
+	return w.walkPluginDecl(d[key], install, key, hop+1, fn)
 }
 
 // claudeJSONDoc is subset of .claude.json MCP count read. `claude mcp add`
