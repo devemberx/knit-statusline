@@ -1,12 +1,8 @@
 package segment
 
 import (
-	"errors"
-	"io/fs"
-	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 	"unicode"
 
 	"github.com/devemberx/knit-statusline/internal/render"
@@ -20,43 +16,26 @@ func init() {
 	})
 }
 
-// Per-model weekly window never reach stdin. Claude Code build rate_limits out
-// of anthropic-ratelimit-unified-{5h,7d}-utilization response headers, and no
-// header name a model, so payload carry account-wide windows alone. Only copy
-// on this machine is cachedUsageUtilization in .claude.json, written from
-// GET /api/oauth/usage -- numbers /usage draw its "Current week (Fable)" row
-// from.
+// Per-model weekly window never reach stdin -- usagecache.go name where number
+// come from. Cache carry window two shapes and this segment read both: release
+// moving from one to other otherwise drop row silently, since Def.Stable stay
+// false and no placeholder mark loss.
 const (
-	// Claude Code refresh cache every 5 minutes while session send, and discard
-	// it past one hour. Older percentage name window that may have reset since.
-	usageCacheTTL = time.Hour
-
-	// kind marking per-model window. Session and account-wide weekly sit in
-	// same array under "session" and "weekly_all", scope null on both.
+	// kind marking per-model window inside limits[]. Session and account-wide
+	// weekly sit in same array under "session" and "weekly_all", scope null on
+	// both.
 	scopedWeeklyKind = "weekly_scoped"
+
+	// Top-level key holding same window, percentage alone and no scope object.
+	// Suffix is family word: seven_day_opus, seven_day_sonnet.
+	scopedWeeklyPrefix = "seven_day_"
 
 	// Word naming vendor, not family. Every model id open with it, and display
 	// name may too, so matching on it pair any session with any window.
 	vendorWord = "claude"
 )
 
-// usageCacheDoc is subset of .claude.json this segment read. configcount.go
-// open same file for MCP servers and decode own shape: two share no key, and
-// one type mismatch anywhere fail whole decode.
-type usageCacheDoc struct {
-	Usage *cachedUsage `json:"cachedUsageUtilization"`
-}
-
-type cachedUsage struct {
-	FetchedAtMS int64            `json:"fetchedAtMs"`
-	Utilization usageUtilization `json:"utilization"`
-}
-
-type usageUtilization struct {
-	Limits []scopedLimit `json:"limits"`
-}
-
-// scopedLimit is one window /usage draw row for.
+// scopedLimit is one limits[] entry /usage draw row for.
 //
 // Percent is 0-100 already, unlike rate_limits.*.used_percentage, which Claude
 // Code scale from 0-1 header before writing payload. Pointer separate null from
@@ -93,15 +72,15 @@ func buildModelLimit(c Context) Result {
 		return empty
 	}
 
-	lim, ok := pickScopedLimit(u.Utilization.Limits, modelNames(c))
+	win, ok := pickModelWindow(&u.Utilization, c)
 	if !ok {
 		return empty
 	}
 
 	t := c.Thresholds()
-	p := clampPct(*lim.Percent)
+	p := clampPct(win.pct)
 	f := render.Fields{
-		"model":      render.Colored(lim.Scope.Model.DisplayName, render.White),
+		"model":      render.Colored(win.label, render.White),
 		"pct":        render.Colored(pct(p), t.Color(p)),
 		"bar":        render.Plain(c.Palette.Bar(p, c.Cfg.BarWidth, t)),
 		"reset":      render.Plain(""),
@@ -109,7 +88,7 @@ func buildModelLimit(c Context) Result {
 	}
 	// Icon sit inside field, shape limit.5h and limit.7d use: template writing
 	// "⟳ {reset_time}" leave "⟳ " pointing at nothing when reset absent.
-	if at, ok := resetTime(lim.ResetsAt); ok {
+	if at, ok := resetTime(win.resetsAt); ok {
 		// Weekly window reset days out; bare clock time read ambiguous.
 		text := dateTime(at)
 		f["reset_time"] = render.Colored(text, render.White)
@@ -119,47 +98,57 @@ func buildModelLimit(c Context) Result {
 	return Result{Base: render.White, Fields: f}
 }
 
-// readUsageCache decode cachedUsageUtilization off .claude.json.
-//
-// CLAUDE_CONFIG_DIR move file inside config root; default install leave it
-// beside, at ~/.claude.json. Same probe configcount.go run.
-//
-// Search walk past file that parse but carry no usage block: both files exist
-// only when somebody moved root, and either one may be copy Claude Code write
-// its fetch to. Leftover from before move answer stale and drop on TTL, so
-// walking cost no wrong number.
-func readUsageCache(root string) (*cachedUsage, bool) {
-	// Clean before Dir: CLAUDE_CONFIG_DIR written with trailing slash leave
-	// Dir() pointing at root itself, and both probe collapse onto one file.
-	for _, p := range []string{
-		filepath.Join(root, ".claude.json"),
-		filepath.Join(filepath.Dir(filepath.Clean(root)), ".claude.json"),
-	} {
-		var d usageCacheDoc
-		switch err := readConfigJSON(p, maxClaudeJSONBytes, &d); {
-		case errors.Is(err, fs.ErrNotExist):
-			continue
-		case err != nil:
-			return nil, false
-		}
-		if d.Usage != nil {
-			return d.Usage, true
-		}
-	}
-	return nil, false
+// modelWindow is one per-model week, flattened out of whichever shape held it.
+type modelWindow struct {
+	pct      float64
+	resetsAt *string
+	label    string
 }
 
-// usageFresh reject cache too old to speak for current window, matching what
-// Claude Code itself refuse to read.
+// pickModelWindow find this session's per-model week, reading both shapes.
 //
-// Future stamp rejected too: clock moved, or file came off another machine, and
-// neither leave age this can reason about.
-func usageFresh(u *cachedUsage, now time.Time) bool {
-	if u.FetchedAtMS <= 0 {
-		return false
+// limits[] go first: entry there name its model in scope, so row draw name
+// usage document itself print. Top-level seven_day_<family> carry percentage
+// and reset alone, and label come off name session already answer to.
+func pickModelWindow(u *usageUtilization, c Context) (modelWindow, bool) {
+	names := modelNames(c)
+	if len(names) == 0 {
+		return modelWindow{}, false
 	}
-	age := now.Sub(time.UnixMilli(u.FetchedAtMS))
-	return age >= 0 && age <= usageCacheTTL
+
+	var limits []scopedLimit
+	if u.decode("limits", &limits) {
+		if l, ok := pickScopedLimit(limits, names); ok {
+			return modelWindow{*l.Percent, l.ResetsAt, l.Scope.Model.DisplayName}, true
+		}
+	}
+
+	for _, n := range names {
+		var w plainWindow
+		if !u.decode(scopedWeeklyPrefix+n, &w) || w.Utilization == nil {
+			continue
+		}
+		return modelWindow{*w.Utilization, w.ResetsAt, modelLabel(c, n)}, true
+	}
+	return modelWindow{}, false
+}
+
+// modelLabel name window for shape carrying no display name.
+//
+// Pin and payload display name are strings reader already met, and family word
+// is what matched, so either one naming that family stand in. Bare family word
+// is last resort: lowercase, but name invented here would be worse.
+func modelLabel(c Context, family string) string {
+	sources := []string{c.Cfg.Model}
+	if c.In != nil {
+		sources = append(sources, c.In.Model.DisplayName)
+	}
+	for _, s := range sources {
+		if s != "" && familyWord(s) == family {
+			return s
+		}
+	}
+	return family
 }
 
 // pickScopedLimit find window belonging to one of names.
@@ -246,36 +235,4 @@ func familyWord(name string) string {
 // separate id parts, and pin arrive in either shape.
 func nameBreak(r rune) bool {
 	return r == '-' || r == '_' || unicode.IsSpace(r)
-}
-
-// resetTime parse RFC 3339 stamp usage document write. Unparseable value drop
-// reset alone: percentage is number row exist for.
-//
-// Local() is what put this clock on same face as limit.5h and limit.7d: their
-// stamp arrive as Unix seconds and time.Unix hand back Local, while time.Parse
-// keep "+00:00" written in document. Seoul reader otherwise get "jul 28,
-// 8:59pm" beside "jul 29, 5:59am" for one instant, neither marked UTC.
-func resetTime(s *string) (time.Time, bool) {
-	if s == nil || *s == "" {
-		return time.Time{}, false
-	}
-	at, err := time.Parse(time.RFC3339, *s)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return at.Local(), true
-}
-
-// clampPct hold percentage in 0-100. Document report 100 on spent window and
-// nothing forbid reporting past that; bar drawn from larger number run off own
-// width.
-func clampPct(p float64) float64 {
-	switch {
-	case p < 0:
-		return 0
-	case p > 100:
-		return 100
-	default:
-		return p
-	}
 }

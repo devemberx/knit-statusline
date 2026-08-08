@@ -31,8 +31,16 @@ func modelScope(name string) string {
 }
 
 // writeUsageCache plant .claude.json carrying cachedUsageUtilization, way
-// Claude Code write it.
+// Claude Code write it. Top-level per-model key read null, which is what every
+// observed account carry.
 func writeUsageCache(t *testing.T, dir string, fetchedAt time.Time, limits ...string) {
+	t.Helper()
+	writeUsageCacheOpus(t, dir, fetchedAt, "null", limits...)
+}
+
+// writeUsageCacheOpus plant same cache with seven_day_opus written out, second
+// shape cache carry per-model week in.
+func writeUsageCacheOpus(t *testing.T, dir string, fetchedAt time.Time, opus string, limits ...string) {
 	t.Helper()
 	doc := fmt.Sprintf(`{
   "installMethod": "native",
@@ -42,11 +50,11 @@ func writeUsageCache(t *testing.T, dir string, fetchedAt time.Time, limits ...st
     "utilization": {
       "five_hour": {"utilization": 87, "resets_at": "2025-07-23T12:50:00.809792+00:00"},
       "seven_day": {"utilization": 89, "resets_at": "2025-07-28T21:00:00.809814+00:00"},
-      "seven_day_opus": null,
+      "seven_day_opus": %s,
       "limits": [%s]
     }
   }
-}`, fetchedAt.UnixMilli(), strings.Join(limits, ","))
+}`, fetchedAt.UnixMilli(), opus, strings.Join(limits, ","))
 	if err := os.WriteFile(filepath.Join(dir, ".claude.json"), []byte(doc), 0o644); err != nil {
 		t.Fatalf("write .claude.json: %v", err)
 	}
@@ -130,6 +138,85 @@ func TestModelLimitResetAgreesWithAccountWideWindow(t *testing.T) {
 
 	if got, want := scoped.Fields["reset_time"].Text, account.Fields["reset_time"].Text; got != want {
 		t.Errorf("one instant, two clocks: limit.model %q, limit.7d %q", got, want)
+	}
+}
+
+// Cache write per-model week two ways and limits[] is not guaranteed to be one
+// of them. Reading array alone drop row with no marker at all -- Def.Stable
+// stay false -- so release moving shape look like account that never had window.
+func TestModelLimitReadsTopLevelWindowWhenArrayEmpty(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCacheOpus(t, root, usageFetchedAt,
+		`{"utilization": 42, "resets_at": "2025-07-28T20:59:59.810071+00:00"}`,
+		scopedLimitJSON("weekly_all", "89", "null", "2025-07-28T21:00:00.809814+00:00"),
+	)
+
+	res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute))
+	if res.Empty {
+		t.Fatal("top-level per-model window dropped segment")
+	}
+	if got := res.Fields["pct"].Text; got != "42" {
+		t.Errorf("pct = %q, want %q", got, "42")
+	}
+	// Shape carry no display name. Label come off payload model this session
+	// already run under -- bare family word would print lowercase "opus".
+	if got := res.Fields["model"].Text; got != "Opus" {
+		t.Errorf("model = %q, want %q", got, "Opus")
+	}
+	if want := wantReset(t, "2025-07-28T20:59:59.810071+00:00"); res.Fields["reset_time"].Text != want {
+		t.Errorf("reset_time = %q, want %q", res.Fields["reset_time"].Text, want)
+	}
+}
+
+// Both shapes populated on one account mean cache mid-migration. Array entry
+// win: it name its own model, so row print name usage document print.
+func TestModelLimitPrefersScopedArrayOverTopLevel(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCacheOpus(t, root, usageFetchedAt,
+		`{"utilization": 11, "resets_at": "2025-07-28T20:59:59.810071+00:00"}`,
+		scopedLimitJSON("weekly_scoped", "42", modelScope("Opus"), "2025-07-28T20:59:59.810071+00:00"),
+	)
+
+	res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute))
+	if got := res.Fields["pct"].Text; got != "42" {
+		t.Errorf("pct = %q, want %q -- top-level shape beat limits[]", got, "42")
+	}
+	if got := res.Fields["model"].Text; got != "Opus" {
+		t.Errorf("model = %q, want %q", got, "Opus")
+	}
+}
+
+// Key present holding null is what every observed account carry, and shape
+// reporting no number prove no window.
+func TestModelLimitIgnoresNullTopLevelWindow(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCacheOpus(t, root, usageFetchedAt, `{"utilization": null, "resets_at": null}`)
+
+	if res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute)); !res.Empty {
+		t.Errorf("null utilization rendered %+v, want empty", res.Fields)
+	}
+}
+
+// Top-level key name family, so window belonging to another model must not
+// answer this session. Sonnet week under Opus session bind nothing here.
+func TestModelLimitSkipsTopLevelWindowOfOtherModel(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCacheOpus(t, root, usageFetchedAt, "null")
+	// seven_day_sonnet planted beside null opus key: family word decide, not
+	// presence of any per-model key.
+	doc, err := os.ReadFile(filepath.Join(root, ".claude.json"))
+	if err != nil {
+		t.Fatalf("read seeded cache: %v", err)
+	}
+	swapped := strings.Replace(string(doc),
+		`"seven_day_opus": null`,
+		`"seven_day_sonnet": {"utilization": 42, "resets_at": null}`, 1)
+	if err := os.WriteFile(filepath.Join(root, ".claude.json"), []byte(swapped), 0o644); err != nil {
+		t.Fatalf("write swapped cache: %v", err)
+	}
+
+	if res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute)); !res.Empty {
+		t.Errorf("Sonnet window rendered under Opus session: %+v", res.Fields)
 	}
 }
 

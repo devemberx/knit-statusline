@@ -265,7 +265,8 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `todo` | `icon` `ratio` `done` `total` `pending` | Read from the transcript's last `TodoWrite` call; absent until the session writes one, and `{icon}` is `☑` — green once `{done}` reaches `{total}` |
 | `limit.5h` | `pct` `bar` `reset` `reset_time` | Claude.ai subscribers only, after the first response |
 | `limit.7d` | `pct` `bar` `reset` `reset_time` | Same, and absent independently of `limit.5h` |
-| `limit.model` | `pct` `bar` `reset` `reset_time` `model` | The weekly window scoped to one model — the `Current week (Fable)` row in `/usage`. Read off disk rather than from the payload, and dropped whenever the account has no such window — see [Per-model weekly windows](#per-model-weekly-windows) |
+| `limit.model` | `pct` `bar` `reset` `reset_time` `model` | The weekly window scoped to one model — the `Current week (Fable)` row in `/usage`. Read off disk rather than from the payload, and dropped whenever the account has no such window — see [Windows read off `.claude.json`](#windows-read-off-claudejson) |
+| `limit.extra` | `pct` `bar` | Extra usage credits — the extra-usage row in `/usage`. Read off disk like `limit.model`, and dropped unless the account has extra usage switched on — see [Windows read off `.claude.json`](#windows-read-off-claudejson) |
 | `tokens` | `io` `cache` `cache_hit` `input` `cache_write` `cache_read` `output` `total` `input_raw` `output_raw` | Read from the transcript, so the totals are cumulative |
 | `cost` | `usd` `api_duration` | Client-side estimate; resets on `/clear` |
 | `lines` | `added` `removed` | |
@@ -279,7 +280,6 @@ segments = ["model", "dir", "limit.5h", "limit.7d"]
 | `mcp` | `icon` `count` `warn` `tools` `auth` `pending` `servers` | MCP servers attached to this session, read from the transcript; `{icon}` is `⛁` and `{warn}` is a preformatted ` ⚠3` counting servers reconnecting or awaiting authorization. Only rendered once something is attached or waiting — see [MCP servers](#mcp-servers) |
 | `caveman` | `mode` `icon` `savings` | Only while the [caveman](https://github.com/juliusbrussee/caveman) plugin is active; `{savings}` needs `/caveman-stats` and is out of the default template |
 | `skills` | `count` `icon` `last` | Number of skills Claude Code loaded for the session, read from the transcript; `{icon}` is `💡`, `{last}` names the skill invoked most recently and is out of the default template |
-| `config` | `summary` `labeled` `claude_md` `rules` `hooks` `mcp` | What this session loaded, counted off disk: non-empty `CLAUDE.md` files (config root, project, every directory above it, and whatever their `@path` imports pull in — followed 5 hops deep, the same as Claude Code, skipping any `@` inside a code fence or backticks), `.claude/rules/*.md`, hook commands (plugin and managed-policy hooks included), MCP servers that run — user scope, plugins, managed policy, and the project `.mcp.json` ones you approved, minus anything disabled. `{summary}` is `📋1 · 🪝6`, `{labeled}` is `📋 CLAUDE.md 1 · 🪝 hooks 6` — both drop every zero. The individual fields always print a number. Its `{mcp}` counts what is configured; `mcp` above counts what actually attached, so the two disagree when a server fails to start. Out of every preset — add it yourself |
 | `command` | `out` | Your own shell command |
 
 Abbreviated counts read as `62.1k`, `1.2M`, `364.9M`. The `_raw` fields give
@@ -321,14 +321,16 @@ Add it to a row like anything else:
 segments = ["model", "dir", "mcp"]
 ```
 
-### Per-model weekly windows
+### Windows read off `.claude.json`
 
 `/usage` shows a `Current week (Fable)` row beside the session and weekly ones.
 The status line payload does not: Claude Code builds `rate_limits` out of the
 `anthropic-ratelimit-unified-5h`/`-7d` response headers, and no header names a
 model. The only copy on the machine is the `cachedUsageUtilization` block in
 `.claude.json`, which Claude Code writes from its own usage fetch — so that is
-where `limit.model` reads it.
+where `limit.model` reads it. The extra-usage row has the same problem and the
+same answer: `limit.extra` reads `utilization.extra_usage` out of the same
+block, and everything below applies to it too.
 
 Three consequences follow from reading a cache rather than the payload:
 
@@ -338,11 +340,14 @@ Three consequences follow from reading a cache rather than the payload:
   a percentage that may belong to a window which has since reset.
 - **It is not a documented interface.** A Claude Code release that renames the
   block takes the segment with it. The failure is a silently missing segment,
-  never a broken row.
-- **It is out of every preset**, and `preview` never draws it. `preview` pins
+  never a broken row. The cache already writes the per-model window two ways —
+  a `weekly_scoped` entry in `utilization.limits`, and a top-level
+  `utilization.seven_day_<family>` object — so `limit.model` reads both, and a
+  release settling on either one keeps the row.
+- **Both are out of every preset**, and `preview` never draws them. `preview` pins
   its clock to a fixed instant so that two runs compare, and no real cache is
   ever fresh against that instant — so the segment expires there by the rule
-  above whatever `.claude.json` holds. Add it to a row yourself, and read the
+  above whatever `.claude.json` holds. Add them to a row yourself, and read the
   result off a live session rather than off `preview`.
 
 By default the segment shows the window belonging to the model the session is
@@ -365,6 +370,24 @@ so `Fable`, `fable`, `Fable 5`, `Claude Fable 5` and `claude-fable-5` all name
 the same window — case, the `claude` prefix and the release number are all
 ignored. Which means a pin cannot separate one release of a model from another,
 and does not need to: `/usage` scopes its row by family too.
+
+`limit.extra` takes neither a `model` nor a `reset`: the block names no model
+and carries no reset stamp. It reads two keys, `is_enabled` and `utilization`,
+and ignores the credit, currency and spend fields beside them — those are
+undocumented too, and money needs both a currency and an exponent read right
+before it can be printed at all. A percentage is already on the same scale as
+`limit.5h` and `limit.7d`, so it stacks with them:
+
+```toml
+[[lines]]
+segments = ["limit.5h"]
+
+[[lines]]
+segments = ["limit.7d"]
+
+[[lines]]
+segments = ["limit.extra"]
+```
 
 ---
 
