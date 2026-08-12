@@ -34,8 +34,9 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
 - `internal/config/` — `config.go` TOML types + `Resolve`, `load.go` read and
   merge, `validate.go` problem reporting.
 - `internal/segment/` — `segment.go` `Def` registry, `builtin.go` field-mapping
-  segments, `git.go`, `tokens.go`, `caveman.go`, `command.go`, `configcount.go`,
-  `format.go`.
+  segments, `git.go`, `tokens.go`, `caveman.go`, `command.go`, `format.go`.
+  Shared reader take own file too: `configread.go` capped JSON off disk,
+  `usagecache.go` `.claude.json` usage block both limit segments read.
   Segment reaching past parsed stdin — subprocess, filesystem, cache — take own
   file; `builtin.go` stay pure.
 - `internal/render/` — `style.go` colors, palette, thresholds; `template.go`
@@ -71,13 +72,19 @@ gofmt -l . && go vet ./...            # gofmt must print nothing
 - Config problem name file that declared it. `Load` keep bytes per layer and
   `Origin` search them, table headers before mentions. Guessing one file blame
   whichever layer merged last, pointing at its innocent rows.
-- Report what Claude Code load, never view Claude Code itself never show. File
-  Claude Code read is fair source: count taken off it check against that same
-  file. Rebuilding its resolution to publish new view — hook listed by origin,
-  merged config explained, server attributed to plugin — answer question `grep`
-  answer already, and bet every undocumented key name and path on next Claude
-  Code release. Problem report still name file that declared it, rule above;
-  healthy config get no tour.
+- Segment ship only when three test all pass. Source: Claude Code show the
+  number itself — stdin payload, `/usage`, `/status`. New view of what `grep`
+  answer already is not a row. Truth: number provable whole off one file or
+  payload, never merged across layer nor resolved through another program's
+  rules — hook listed by origin, merged config explained, server attributed to
+  plugin all bet every undocumented key name and path on next Claude Code
+  release. Field needing every source right print confident wrong number the
+  moment one go missing, so count either buy full resolution or not exist.
+  Cost: bounded in bytes and in clock, fixed path or own cache dir. Walk
+  climbing ancestor from stdin cost 14ms a stat on autofs and network mount,
+  and render path carry no timeout to cut it. Value static across session fail
+  on its own: row redraw every turn. Problem report still name file that
+  declared it; healthy config get no tour.
 - Subprocess need both a context deadline and `cmd.WaitDelay`. Context kill
   direct child alone; grandchild holding stdout keep `Output()` reading past it.
 - Caches disposable: temp file then rename — two renders may overlap. Corrupt or

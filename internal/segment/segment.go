@@ -27,6 +27,10 @@ type Context struct {
 	// beside it. Level never reach stdin payload, so file is only source.
 	ConfigDir string
 
+	// One decode of .claude.json usage block for whole render, shared by every
+	// segment reading it. Nil read per call.
+	Usage *UsageMemo
+
 	// Fresh mean transcript prove session sent nothing yet, so zero is a fact.
 	// False cover live session and unprovable freshness alike.
 	Fresh bool
