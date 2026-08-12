@@ -67,13 +67,22 @@ func buildModelLimit(c Context) Result {
 	if c.ConfigDir == "" {
 		return empty
 	}
-	u, ok := readUsageCache(c.ConfigDir)
+	u, ok := c.usage()
 	if !ok || !usageFresh(u, c.Now) {
 		return empty
 	}
 
 	win, ok := pickModelWindow(&u.Utilization, c)
 	if !ok {
+		return empty
+	}
+
+	// Stamp already passed prove window rolled since fetch: percentage beside it
+	// name week that ended. TTL hold cache up to one hour past reset, so row
+	// draw spent week over one sitting at zero. Same drop stale cache take --
+	// neither number is fact this render measured.
+	at, hasReset := resetTime(win.resetsAt)
+	if hasReset && !at.After(c.Now) {
 		return empty
 	}
 
@@ -88,7 +97,7 @@ func buildModelLimit(c Context) Result {
 	}
 	// Icon sit inside field, shape limit.5h and limit.7d use: template writing
 	// "⟳ {reset_time}" leave "⟳ " pointing at nothing when reset absent.
-	if at, ok := resetTime(win.resetsAt); ok {
+	if hasReset {
 		// Weekly window reset days out; bare clock time read ambiguous.
 		text := dateTime(at)
 		f["reset_time"] = render.Colored(text, render.White)
@@ -109,7 +118,7 @@ type modelWindow struct {
 //
 // limits[] go first: entry there name its model in scope, so row draw name
 // usage document itself print. Top-level seven_day_<family> carry percentage
-// and reset alone, and label come off name session already answer to.
+// and reset alone, so label come off family word its own key name.
 func pickModelWindow(u *usageUtilization, c Context) (modelWindow, bool) {
 	names := modelNames(c)
 	if len(names) == 0 {
@@ -128,27 +137,25 @@ func pickModelWindow(u *usageUtilization, c Context) (modelWindow, bool) {
 		if !u.decode(scopedWeeklyPrefix+n, &w) || w.Utilization == nil {
 			continue
 		}
-		return modelWindow{*w.Utilization, w.ResetsAt, modelLabel(c, n)}, true
+		return modelWindow{*w.Utilization, w.ResetsAt, modelLabel(n)}, true
 	}
 	return modelWindow{}, false
 }
 
 // modelLabel name window for shape carrying no display name.
 //
-// Pin and payload display name are strings reader already met, and family word
-// is what matched, so either one naming that family stand in. Bare family word
-// is last resort: lowercase, but name invented here would be worse.
-func modelLabel(c Context, family string) string {
-	sources := []string{c.Cfg.Model}
-	if c.In != nil {
-		sources = append(sources, c.In.Model.DisplayName)
+// Family word with first letter raised, never pin nor payload string: pin get
+// pasted off model id, and "claude-opus-4-5" printed verbatim eat 15 columns of
+// fixed-width row, then read "Opus" again on account whose cache hold same
+// window as limits[] entry. Raised family is name that shape print, so one
+// account read one label under either.
+func modelLabel(family string) string {
+	if family == "" {
+		return ""
 	}
-	for _, s := range sources {
-		if s != "" && familyWord(s) == family {
-			return s
-		}
-	}
-	return family
+	r := []rune(family)
+	r[0] = unicode.ToUpper(r[0])
+	return string(r)
 }
 
 // pickScopedLimit find window belonging to one of names.

@@ -476,6 +476,66 @@ func TestModelLimitDropsStaleCache(t *testing.T) {
 	}
 }
 
+// Window reset while cache still sit inside TTL: Claude Code hold block one
+// hour, so percentage written before reset stay readable up to one hour after
+// window rolled. Printing it draw spent week over one at zero, under stamp
+// reader can see has passed.
+func TestModelLimitDropsWindowPastItsReset(t *testing.T) {
+	// usageFetchedAt is 2025-07-23T04:00:00Z and every case render one minute
+	// past it, so stamps sit either side of 04:01Z.
+	for _, tc := range []struct {
+		name  string
+		reset string
+		empty bool
+	}{
+		{"elapsed", "2025-07-23T03:59:00+00:00", true},
+		{"reached", "2025-07-23T04:01:00+00:00", true},
+		{"ahead", "2025-07-23T04:02:00+00:00", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeUsageCache(t, root, usageFetchedAt,
+				scopedLimitJSON("weekly_scoped", "97", modelScope("Opus"), tc.reset),
+			)
+
+			res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute))
+			if res.Empty != tc.empty {
+				t.Errorf("reset %s: empty = %v, want %v (%+v)", tc.reset, res.Empty, tc.empty, res.Fields)
+			}
+		})
+	}
+}
+
+// Top-level shape reach same drop through its own path.
+func TestModelLimitDropsTopLevelWindowPastItsReset(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCacheOpus(t, root, usageFetchedAt,
+		`{"utilization": 97, "resets_at": "2025-07-23T03:59:00+00:00"}`)
+
+	if res := Build(modelLimitCtx(t, fixtures.Full, root, time.Minute)); !res.Empty {
+		t.Errorf("top-level window past its reset rendered %+v, want empty", res.Fields)
+	}
+}
+
+// Pin get pasted off model id, and top-level shape carry no display name to
+// print in its place. Raw id eat 15 columns of fixed-width row, then read
+// "Opus" again on account whose cache hold same window as limits[] entry.
+func TestModelLimitTopLevelLabelIgnoresPinnedID(t *testing.T) {
+	root := t.TempDir()
+	writeUsageCacheOpus(t, root, usageFetchedAt,
+		`{"utilization": 42, "resets_at": "2025-07-28T20:59:59.810071+00:00"}`)
+
+	c := modelLimitCtx(t, fixtures.Full, root, time.Minute)
+	c.Cfg.Model = "claude-opus-4-5"
+	res := Build(c)
+	if res.Empty {
+		t.Fatal("pinned id dropped top-level window")
+	}
+	if got := res.Fields["model"].Text; got != "Opus" {
+		t.Errorf("model = %q, want %q", got, "Opus")
+	}
+}
+
 // Stamp ahead of clock leave no age to reason about: clock moved, or file came
 // off another machine.
 func TestModelLimitDropsFutureStamp(t *testing.T) {

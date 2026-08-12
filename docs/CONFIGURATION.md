@@ -337,7 +337,10 @@ Three consequences follow from reading a cache rather than the payload:
 - **It expires.** Claude Code refreshes the block every five minutes while a
   session is sending and ignores it once it is an hour old. `limit.model` does
   the same, so an idle session eventually drops the segment rather than showing
-  a percentage that may belong to a window which has since reset.
+  a percentage that may belong to a window which has since reset. A window whose
+  own `resets_at` stamp has already passed is dropped for the same reason, even
+  while the block is still inside that hour: the percentage beside it describes
+  the week that just ended, not the one now filling.
 - **It is not a documented interface.** A Claude Code release that renames the
   block takes the segment with it. The failure is a silently missing segment,
   never a broken row. The cache already writes the per-model window two ways —
@@ -370,6 +373,12 @@ so `Fable`, `fable`, `Fable 5`, `Claude Fable 5` and `claude-fable-5` all name
 the same window — case, the `claude` prefix and the release number are all
 ignored. Which means a pin cannot separate one release of a model from another,
 and does not need to: `/usage` scopes its row by family too.
+
+`{model}` never echoes the pin back. A `weekly_scoped` entry names its own model
+and that name is printed; the top-level `seven_day_<family>` shape names none, so
+the family word is capitalised — `Opus`, `Fable`. Both shapes therefore print the
+same label on the same account, whichever one the cache happens to hold, and a
+pin pasted from a model id never puts `claude-opus-4-5` on the row.
 
 `limit.extra` takes neither a `model` nor a `reset`: the block names no model
 and carries no reset stamp. It reads two keys, `is_enabled` and `utilization`,
