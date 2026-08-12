@@ -4,8 +4,10 @@ import "github.com/devemberx/knit-statusline/internal/render"
 
 func init() {
 	register("limit.extra", Def{
-		Fields:          []string{"pct", "bar"},
-		DefaultTemplate: "extra {bar} {pct:>3}%",
+		Fields: []string{"pct", "bar"},
+		// Stem run 8 wide, way reference preset write "current " and "weekly  ":
+		// three bar stack in one column with no per-segment template.
+		DefaultTemplate: "extra   {bar} {pct:>3}%",
 		Build:           buildExtraUsage,
 	})
 }
@@ -31,7 +33,7 @@ func buildExtraUsage(c Context) Result {
 	if c.ConfigDir == "" {
 		return empty
 	}
-	u, ok := readUsageCache(c.ConfigDir)
+	u, ok := c.usage()
 	if !ok || !usageFresh(u, c.Now) {
 		return empty
 	}

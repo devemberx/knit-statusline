@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,13 +57,21 @@ func TestExtraUsageRendersEnabledWindow(t *testing.T) {
 }
 
 // Default template stand in same column shape as limit.5h and limit.7d, so
-// three rows stack without per-segment template.
+// three rows stack without per-segment template. Reference preset write
+// "current " and "weekly  ", both 8 wide, and bar two columns left of them read
+// ragged on row docs tell user to build.
 func TestExtraUsageDefaultTemplateNamesRow(t *testing.T) {
 	root := t.TempDir()
 	writeExtraUsage(t, root, usageFetchedAt, `{"is_enabled": true, "utilization": 18}`)
 
-	if got, want := draw(extraCtx(t, root, time.Minute)), "extra ●●○○○○○○○○  18%"; got != want {
+	got := draw(extraCtx(t, root, time.Minute))
+	if want := "extra   ●●○○○○○○○○  18%"; got != want {
 		t.Errorf("rendered %q, want %q", got, want)
+	}
+	// Column measured beside literal above: template edited on one side alone
+	// put three bar back out of line with no test saying so.
+	if got, want := strings.Index(got, "●"), len("current "); got != want {
+		t.Errorf("bar start column %d, want %d", got, want)
 	}
 }
 
