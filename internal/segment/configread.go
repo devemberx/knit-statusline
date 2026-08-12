@@ -43,6 +43,12 @@ func readCappedFile(path string, limit int64) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return nil, errConfigNotRegular
 	}
+	// Size already in hand: pulling limit bytes off 40 MB file to throw them
+	// away cost same clock as reading file that fit. Rename onto bigger file
+	// after this Stat still caught by cap in readRegular.
+	if fi.Size() > limit {
+		return nil, errConfigTooBig
+	}
 	return readRegular(path, limit)
 }
 
