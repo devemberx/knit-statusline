@@ -2,9 +2,8 @@ package segment
 
 import (
 	"encoding/json"
-	"errors"
-	"io/fs"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -75,6 +74,10 @@ type plainWindow struct {
 // only when somebody moved root, and either one may be copy Claude Code write
 // its fetch to. Leftover from before move answer stale and drop on TTL, so
 // walking cost no wrong number.
+//
+// Unreadable file walked past same as absent one: half-written, over cap,
+// owned by root, FIFO -- none prove other copy carry nothing, and stopping
+// there take both limit segment down while live cache sit one directory up.
 func readUsageCache(root string) (*cachedUsage, bool) {
 	// Clean before Dir: CLAUDE_CONFIG_DIR written with trailing slash leave
 	// Dir() pointing at root itself, and both probe collapse onto one file.
@@ -83,17 +86,40 @@ func readUsageCache(root string) (*cachedUsage, bool) {
 		filepath.Join(filepath.Dir(filepath.Clean(root)), ".claude.json"),
 	} {
 		var d usageCacheDoc
-		switch err := readConfigJSON(p, maxClaudeJSONBytes, &d); {
-		case errors.Is(err, fs.ErrNotExist):
+		if readConfigJSON(p, maxClaudeJSONBytes, &d) != nil {
 			continue
-		case err != nil:
-			return nil, false
 		}
 		if d.Usage != nil {
 			return d.Usage, true
 		}
 	}
 	return nil, false
+}
+
+// UsageMemo hold one decode of .claude.json for whole render.
+//
+// limit.model and limit.extra read same block off same file, and statusline
+// memo key on segment name, so it dedupe neither. File run to 4 MiB and parse
+// near 8ms per MiB, so second read cost real milliseconds to answer bytes
+// first one already hold.
+type UsageMemo struct {
+	once sync.Once
+	u    *cachedUsage
+	ok   bool
+}
+
+// usage read cache, once per render when memo present.
+//
+// Config root fixed for whole render, so first read answer every caller. Nil
+// memo read straight off disk -- test build Context by hand.
+func (c Context) usage() (*cachedUsage, bool) {
+	if c.Usage == nil {
+		return readUsageCache(c.ConfigDir)
+	}
+	c.Usage.once.Do(func() {
+		c.Usage.u, c.Usage.ok = readUsageCache(c.ConfigDir)
+	})
+	return c.Usage.u, c.Usage.ok
 }
 
 // usageFresh reject cache too old to speak for current window, matching what

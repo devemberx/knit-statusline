@@ -55,6 +55,11 @@ func Render(cfg *config.Config, in *schema.Input, opts Options) string {
 	// Same name on two rows otherwise run git and user command twice per redraw.
 	memo := map[string]string{}
 
+	// limit.model and limit.extra are two names reading one .claude.json, so
+	// memo above dedupe neither. File run to 4 MiB: second decode cost real
+	// milliseconds off row budget to answer bytes first one already hold.
+	usage := &segment.UsageMemo{}
+
 	var rows []string
 	for _, line := range cfg.Lines {
 		if line.Blank() {
@@ -66,7 +71,7 @@ func Render(cfg *config.Config, in *schema.Input, opts Options) string {
 		for _, name := range line.Segments {
 			text, done := memo[name]
 			if !done {
-				text = renderSegment(cfg, in, opts, name, fresh)
+				text = renderSegment(cfg, in, opts, name, fresh, usage)
 				memo[name] = text
 			}
 			if text != "" {
@@ -110,7 +115,7 @@ func sessionFresh(in *schema.Input, opts Options) bool {
 	return state == transcript.StateFresh
 }
 
-func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name string, fresh bool) string {
+func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name string, fresh bool, usage *segment.UsageMemo) string {
 	def, ok := segment.Lookup(cfg.Segments[name].Kind(name))
 	if !ok {
 		// Validate catch unknown name up front. One reaching here mean build
@@ -126,6 +131,7 @@ func renderSegment(cfg *config.Config, in *schema.Input, opts Options, name stri
 		Now:       opts.Now,
 		CacheDir:  opts.CacheDir,
 		ConfigDir: opts.ConfigDir,
+		Usage:     usage,
 		Fresh:     fresh,
 	})
 	if res.Empty {
